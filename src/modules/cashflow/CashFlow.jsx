@@ -497,22 +497,14 @@ function PageHeader({ spikeThreshold, thresholdInput, setThresholdInput, handleT
       marginBottom: '28px',
     }}>
       <div>
-        <div style={{
-          fontFamily: "'DM Mono', monospace",
-          fontSize: '10px',
-          color: 'var(--accent)',
-          letterSpacing: '0.1em',
-          marginBottom: '6px',
-        }}>
-          // cash flow timing
-        </div>
         <h1 style={{
           fontFamily: "'DM Serif Display', serif",
-          fontSize: mobile ? '24px' : '30px',
+          fontSize: '22px',
           fontWeight: 400,
           color: 'var(--tx-1)',
           margin: 0,
           lineHeight: 1.1,
+          textAlign: 'left',
         }}>
           12-Month Rolling Calendar
         </h1>
