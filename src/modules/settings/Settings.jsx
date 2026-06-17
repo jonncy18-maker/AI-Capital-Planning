@@ -34,9 +34,12 @@ const Q2_OPTS = [
 // ── Settings Component ────────────────────────────────────────────────────────
 
 export default function Settings({ profile, onSave, onBack }) {
+  // Accept both camelCase (onboarding) and snake_case (DB row) profile shapes.
   const [focuses, setFocuses] = useState(profile?.focuses || [])
   const [commitments, setCommitments] = useState(profile?.commitments || [])
-  const [planningHorizon, setPlanningHorizon] = useState(normalizeHorizon(profile?.planningHorizon))
+  const [planningHorizon, setPlanningHorizon] = useState(
+    normalizeHorizon(profile?.planningHorizon ?? profile?.planning_horizon)
+  )
   const [saved, setSaved] = useState(false)
 
   const allAboveSel = Q1_BASE.every(b => focuses.includes(b))

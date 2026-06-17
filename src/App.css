@@ -1,4 +1,10 @@
 /* Phase 0 shell layout. Full design system applied in Phase 3. */
+
+.app-loading {
+  min-height: 100vh;
+  background: var(--bg, #141624);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

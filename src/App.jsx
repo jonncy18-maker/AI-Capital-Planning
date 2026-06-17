@@ -1,5 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
+import { supabase } from './lib/supabase.js'
+import { useAuth } from './lib/auth/useAuth.js'
+import { getProfile, saveProfile } from './lib/db/profile.js'
+import Login from './modules/auth/Login.jsx'
 import Onboarding from './modules/onboarding/Onboarding.jsx'
 import Settings from './modules/settings/Settings.jsx'
 
@@ -22,19 +26,47 @@ const activeItemStyle = {
 }
 
 function App() {
-  const [showOnboarding, setShowOnboarding] = useState(true)
-  const [profile, setProfile] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('aicap_profile') || 'null') } catch { return null }
-  })
+  const { session, loading: authLoading, user } = useAuth()
+  const [profile, setProfile] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(false)
   const [activeModule, setActiveModule] = useState('dashboard')
 
-  function handleOnboardingComplete(profileData) {
-    localStorage.setItem('aicap_profile', JSON.stringify(profileData))
-    setProfile(profileData)
-    setShowOnboarding(false)
+  // Load profile from DB when user session is established
+  useEffect(() => {
+    if (!user) { setProfile(null); return }
+    setProfileLoading(true)
+    getProfile(user.id)
+      .then(p => setProfile(p))
+      .catch(() => setProfile(null))
+      .finally(() => setProfileLoading(false))
+  }, [user?.id])
+
+  async function handleOnboardingComplete(profileData) {
+    const saved = await saveProfile(user.id, { ...profileData, onboardingComplete: true })
+    setProfile(saved)
   }
 
-  if (showOnboarding) {
+  async function handleProfileSave(updated) {
+    const saved = await saveProfile(user.id, updated)
+    setProfile(saved)
+  }
+
+  function handleSignOut() {
+    supabase.auth.signOut()
+  }
+
+  // Auth loading
+  if (authLoading) return <div className="app-loading" />
+
+  // Not signed in
+  if (!session) return <Login />
+
+  // Profile loading
+  if (profileLoading) return <div className="app-loading" />
+
+  // Onboarding incomplete
+  const onboardingDone = profile?.onboarding_complete
+  if (!onboardingDone) {
     return <Onboarding onComplete={handleOnboardingComplete} />
   }
 
@@ -54,16 +86,20 @@ function App() {
             </div>
           ))}
         </nav>
+        <div
+          className="sidebar-item"
+          onClick={handleSignOut}
+          style={{ marginTop: 'auto', fontSize: '12px', color: 'var(--tx-3, #475569)' }}
+        >
+          Sign out
+        </div>
       </aside>
 
       <main className="canvas">
         {activeModule === 'settings' ? (
           <Settings
             profile={profile}
-            onSave={(updated) => {
-              localStorage.setItem('aicap_profile', JSON.stringify(updated))
-              setProfile(updated)
-            }}
+            onSave={handleProfileSave}
             onBack={() => setActiveModule('dashboard')}
           />
         ) : (
