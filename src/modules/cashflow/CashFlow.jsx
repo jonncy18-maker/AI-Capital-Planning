@@ -496,7 +496,22 @@ function PageHeader({ spikeThreshold, thresholdInput, setThresholdInput, handleT
       gap: '14px',
       marginBottom: '28px',
     }}>
-      <div>
+      <div style={{ textAlign: 'left' }}>
+        <div style={{
+          width: '46px',
+          height: '46px',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '22px',
+          color: 'var(--accent)',
+          background: 'var(--accent-bg)',
+          border: '1px solid var(--accent-bd)',
+          marginBottom: '12px',
+        }}>
+          ◷
+        </div>
         <h1 style={{
           fontFamily: "'DM Serif Display', serif",
           fontSize: '22px',
@@ -504,7 +519,6 @@ function PageHeader({ spikeThreshold, thresholdInput, setThresholdInput, handleT
           color: 'var(--tx-1)',
           margin: 0,
           lineHeight: 1.1,
-          textAlign: 'left',
         }}>
           12-Month Rolling Calendar
         </h1>
