@@ -85,7 +85,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
           />
         )
       case 'cashflow':    return <CashFlow userId={user.id} mobile={mobile} />
-      case 'scenarios':   return <Scenarios />
+      case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} />
       case 'budget':      return <Budget />
       case 'commitments': return <Commitments />
       case 'wealth':      return <Wealth />
