@@ -8,22 +8,53 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null) // { type: 'error'|'info', text }
 
+  // Coerce any error shape (Error, Supabase AuthError, plain object, string)
+  // into displayable text so the UI never renders a blank/`{}` box.
+  function readableError(err) {
+    if (!err) return ''
+    if (typeof err === 'string') return err
+    if (typeof err.message === 'string' && err.message) return err.message
+    if (typeof err.error_description === 'string') return err.error_description
+    try { return JSON.stringify(err) } catch { return String(err) }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
-    const fn = mode === 'signup'
-      ? supabase.auth.signUp({ email, password })
-      : supabase.auth.signInWithPassword({ email, password })
+    let result
+    try {
+      result = mode === 'signup'
+        ? await supabase.auth.signUp({ email, password })
+        : await supabase.auth.signInWithPassword({ email, password })
+    } catch (err) {
+      // Network/CORS/thrown errors never reach the { error } shape below.
+      console.error('[auth] threw:', err)
+      setLoading(false)
+      setMessage({ type: 'error', text: readableError(err) || 'Request failed — check the console.' })
+      return
+    }
 
-    const { error } = await fn
+    const { data, error } = result
     setLoading(false)
 
     if (error) {
-      setMessage({ type: 'error', text: error.message })
-    } else if (mode === 'signup') {
-      setMessage({ type: 'info', text: 'Check your email to confirm your account.' })
+      console.error('[auth] error:', error)
+      setMessage({ type: 'error', text: readableError(error) })
+      return
+    }
+
+    if (mode === 'signup') {
+      // Supabase returns a user with no identities when the email already exists.
+      const alreadyExists = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0
+      if (alreadyExists) {
+        setMessage({ type: 'error', text: 'An account with this email already exists. Try signing in.' })
+      } else if (data?.session) {
+        // Confirmation disabled — signed in immediately; auth listener takes over.
+      } else {
+        setMessage({ type: 'info', text: 'Account created. Check your email to confirm, then sign in.' })
+      }
     }
   }
 
