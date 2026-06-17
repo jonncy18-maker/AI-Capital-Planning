@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import './App.css'
+import Onboarding from './modules/onboarding/Onboarding.jsx'
 
 const MODULES = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -12,6 +14,12 @@ const MODULES = [
 ]
 
 function App() {
+  const [showOnboarding, setShowOnboarding] = useState(true)
+
+  if (showOnboarding) {
+    return <Onboarding onComplete={() => setShowOnboarding(false)} />
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
