@@ -5,7 +5,6 @@ import { useAuth } from './lib/auth/useAuth.js'
 import { getProfile, saveProfile } from './lib/db/profile.js'
 import Login from './modules/auth/Login.jsx'
 import Onboarding from './modules/onboarding/Onboarding.jsx'
-import ImportFlow from './modules/import/ImportFlow.jsx'
 import AppShell from './modules/shell/AppShell.jsx'
 
 function App() {
@@ -75,18 +74,6 @@ function App() {
     return <Onboarding onComplete={handleOnboardingComplete} />
   }
 
-  // CSV import flow (between onboarding and main app)
-  if (pendingImport) {
-    return (
-      <ImportFlow
-        csvRaw={pendingImport.csvRaw}
-        csvName={pendingImport.csvName}
-        userId={user.id}
-        onComplete={handleImportDone}
-      />
-    )
-  }
-
   return (
     <AppShell
       user={user}
@@ -94,6 +81,8 @@ function App() {
       onProfileSave={handleProfileSave}
       onSignOut={handleSignOut}
       onStartReImport={handleStartReImport}
+      pendingImport={pendingImport}
+      onImportDone={handleImportDone}
     />
   )
 }
