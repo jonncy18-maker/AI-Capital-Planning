@@ -6,11 +6,38 @@
 
 ---
 
+## Current Status — Session Log
+
+**Last updated:** 2026-06-17
+
+### Done so far
+- **Phase 0 complete** — Vite + React SPA, GitHub Pages deploy (auto on push to `main`), Supabase project live, client configured.
+- **Phase 1 schema live** — all tables created in Supabase via `supabase/migrations/001_initial_schema.sql`: `transactions`, `budget_categories`, `budget_line_items`, `commitments`, `scenarios`, `scenario_adjustments`, `wealth_snapshots`, `ai_briefings`, plus `user_profiles`. **RLS enabled** on every table (per-user `auth.uid()` policies).
+- **Auth working** (done early, ahead of Phase 10) — email/password sign-up + sign-in (`src/modules/auth/Login.jsx`), session tracking (`src/lib/auth/useAuth.js`), auth gate in `App.jsx` (Login → Onboarding → App shell), sign-out.
+- **Profile persistence** — onboarding answers saved to `user_profiles` in Supabase (`src/lib/db/profile.js`); a signup trigger auto-creates the profile row (`migration 002` hardened it with pinned `search_path` to fix a signup 500).
+- **DB helper layer scaffolded** — `src/lib/db/transactions.js` (`importTransactions` w/ dedup, `getRecentTransactions`, `getTransactions`), `src/lib/db/commitments.js`, `src/lib/db/profile.js`.
+- **Verified end-to-end:** new user can sign up → land in onboarding → profile row written.
+
+### Known follow-ups / gotchas
+- **Anthropic key:** stored in Supabase secrets (safe, server-side) but NOT yet used. `src/lib/anthropic.js` still calls Anthropic *directly from the browser* via `VITE_ANTHROPIC_API_KEY` — insecure for public use. **Build a Supabase Edge Function proxy** before wiring any AI feature, and keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty (rotate the key if a real one was ever put there). NOTE: proxy will be a **Supabase Edge Function**, not Netlify (architecture/roadmap text predates this decision).
+- `budget_categories` not yet seeded; dedup logic written (`buildDedupKey`) but not tested against a real Monarch CSV.
+- Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
+
+### Recommended next session — Phase 2: Data Ingestion (CSV import)
+1. Build the Monarch CSV parser and wire the existing onboarding CSV upload to it.
+2. Map parsed rows → `importTransactions(userId, rows)` (helper already exists, dedup built in).
+3. Show import summary (X added / Y skipped) and surface unmapped categories.
+4. Seed `budget_categories` and verify dedup with a real 12–24 month export.
+
+*(Alternative next step: Phase 3 dashboard shell rendering real Supabase data. But data ingestion is the foundation — recommend CSV import first.)*
+
+---
+
 ## Phase 0 — Repo and Project Setup
 *Goal: Clean foundation before a single line of product code is written.*
 
 - [x] Initialize Vite + React SPA (`npm create vite@latest`)
-- [ ] Configure GitHub Pages deployment
+- [x] Configure GitHub Pages deployment
 - [x] Set up Supabase project (new project, not shared with other apps)
 - [x] Install and configure Supabase client in React app
 - [x] Set up `.env` file with Supabase URL, anon key, and Anthropic API key
@@ -26,18 +53,18 @@
 ## Phase 1 — Supabase Schema
 *Goal: Full data model live in Supabase before any UI is built.*
 
-- [ ] Create `transactions` table with dedup_key unique index
-- [ ] Create `budget_categories` table
-- [ ] Create `budget_line_items` table
-- [ ] Create `scenarios` table
-- [ ] Create `scenario_adjustments` table
-- [ ] Create `commitments` table with jsonb cost_structure and split_rules
-- [ ] Create `wealth_snapshots` table
-- [ ] Create `ai_briefings` table
-- [ ] Set up Row Level Security (RLS) policies for all tables
+- [x] Create `transactions` table with dedup_key unique index
+- [x] Create `budget_categories` table
+- [x] Create `budget_line_items` table
+- [x] Create `scenarios` table
+- [x] Create `scenario_adjustments` table
+- [x] Create `commitments` table with jsonb cost_structure and split_rules
+- [x] Create `wealth_snapshots` table
+- [x] Create `ai_briefings` table
+- [x] Set up Row Level Security (RLS) policies for all tables
 - [ ] Seed `budget_categories` table from FY26 budget (46 categories, 11 groups, Fixed/Flexible/Non-Monthly types)
-- [ ] Write and test deduplication logic (composite key: date + merchant + amount + account)
-- [ ] Verify schema against architecture doc — no gaps, no John-specific hardcoding
+- [~] Write and test deduplication logic (composite key: date + merchant + amount + account) — logic written (`buildDedupKey`), not yet tested against a real CSV
+- [x] Verify schema against architecture doc — no gaps, no John-specific hardcoding
 
 **Exit criteria:** All tables live in Supabase. RLS enabled. Budget categories seeded. Dedup logic tested.
 
@@ -187,8 +214,8 @@
 ## Phase 10 — Onboarding Flow
 *Goal: A new user can get from zero to populated dashboard without help.*
 
-- [ ] Build login / auth screen (Supabase Auth)
-- [ ] Build empty state detection (no data → trigger onboarding)
+- [x] Build login / auth screen (Supabase Auth) — done early
+- [x] Build empty state detection (no data → trigger onboarding) — via `user_profiles.onboarding_complete`
 - [ ] Build welcome screen and priority mapping conversation (AI asks 3–5 setup questions)
 - [ ] Build CSV upload step with progress indicator
 - [ ] Build category confirmation step
