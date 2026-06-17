@@ -74,7 +74,14 @@ body {
   border-top: 1px solid #2d3148;
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 0 20px;
+}
+
+.command-bar-icon {
+  color: #00C2A8;
+  font-size: 15px;
+  flex-shrink: 0;
 }
 
 .command-bar input {
