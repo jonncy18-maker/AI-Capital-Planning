@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -16,6 +16,31 @@ function useWindowWidth() {
 
 function toggle(arr, v) {
   return arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+}
+
+// ── commitment → budget bucket mapping ───────────────────────────────────────
+
+const COMMITMENT_BUCKET_MAP = {
+  'Scholarship or education support': { id: 'scholarship', label: 'Scholarship / Education Support', type: 'Non-Monthly', group: 'Commitments' },
+  'Family financial support': { id: 'family_support', label: 'Family Financial Support', type: 'Non-Monthly', group: 'Commitments' },
+  'Vehicle lease or loan': { id: 'vehicle', label: 'Vehicle Lease / Loan', type: 'Fixed', group: 'Transportation' },
+  'Eldercare or dependent support': { id: 'eldercare', label: 'Eldercare / Dependent Support', type: 'Non-Monthly', group: 'Commitments' },
+}
+
+function deriveBudgetBuckets(q2, q2other, q2buckets) {
+  const buckets = []
+  q2.forEach(sel => {
+    if (sel === 'None currently' || sel === 'Other') return
+    const mapped = COMMITMENT_BUCKET_MAP[sel]
+    if (mapped) buckets.push(mapped)
+  })
+  if (q2.includes('Other') && q2other.trim()) {
+    buckets.push({ id: 'other_custom', label: q2other.trim(), type: 'Non-Monthly', group: 'Commitments' })
+  }
+  q2buckets.forEach((b, i) => {
+    if (b.trim()) buckets.push({ id: `custom_${i}`, label: b.trim(), type: 'Non-Monthly', group: 'Commitments' })
+  })
+  return buckets
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -149,18 +174,13 @@ const Q2_OPTS = [
   'None currently',
 ]
 
-const Q3_OPTS = [
-  '1 year or less',
-  '2–3 years',
-  '5+ years',
-  '10+ years — I think in full commitment horizons',
-]
 
 function Step2({
   sub,
   q1, setQ1,
   q2, setQ2, q2other, setQ2other, q2buckets, setQ2buckets,
   q3, setQ3,
+  mobile,
 }) {
   const otherRef = useRef(null)
 
@@ -456,19 +476,55 @@ function Step2({
             fontFamily: "'DM Mono', monospace",
             letterSpacing: '0.02em',
           }}>
-            SELECT ALL THAT APPLY
+            SELECT ONE
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
-            {Q3_OPTS.map(label => (
-              <OptRow
-                key={label}
-                label={label}
-                selected={q3.includes(label)}
-                onClick={() => setQ3(prev => toggle(prev, label))}
-                round={false}
-              />
-            ))}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: mobile ? 'repeat(5, 1fr)' : 'repeat(10, 1fr)',
+            gap: '8px',
+          }}>
+            {[1,2,3,4,5,6,7,8,9,10].map(yr => {
+              const sel = q3 === yr
+              return (
+                <div
+                  key={yr}
+                  onClick={() => setQ3(yr)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '44px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontFamily: "'DM Mono', monospace",
+                    fontSize: '13px',
+                    fontWeight: sel ? 500 : 400,
+                    transition: 'all .15s',
+                    border: sel ? '1px solid var(--accent)' : '1px solid var(--bd)',
+                    background: sel ? 'var(--accent-bg)' : 'var(--bg-card)',
+                    color: sel ? 'var(--accent)' : 'var(--tx-2)',
+                  }}
+                >
+                  {yr}
+                </div>
+              )
+            })}
           </div>
+          {q3 && (
+            <div style={{
+              marginTop: '16px',
+              fontFamily: "'DM Mono', monospace",
+              fontSize: '10px',
+              color: 'var(--tx-3)',
+              letterSpacing: '0.04em',
+            }}>
+              {q3 <= 2
+                ? `DASHBOARD WILL DEFAULT TO ${q3}Y PERIOD VIEW`
+                : q3 <= 5
+                  ? 'DASHBOARD WILL SHOW 1Y · 3Y · 5Y PERIOD OPTIONS'
+                  : 'DASHBOARD WILL SHOW 1Y · 3Y · 5Y · 10Y PERIOD OPTIONS'}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -605,9 +661,24 @@ const BASELINE_CATS = [
   ['commit', 'COMMITMENTS'],
 ]
 
-function Step4({ path, baseline, setBaseline, mobile }) {
+function Step4({ path, baseline, setBaseline, mobile, csvFile, setCsvFile }) {
   const showDrop = path === 'import' || path === 'partial'
   const showBaseline = path === 'manual' || path === 'partial'
+  const fileInputRef = useRef(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  function handleFile(file) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const raw = e.target.result
+      const lines = raw.split('\n')
+      const headers = lines[0] ? lines[0].split(',').map(h => h.trim()) : []
+      const rowCount = lines.filter(l => l.trim()).length - 1
+      setCsvFile({ name: file.name, headers, rowCount, raw })
+    }
+    reader.readAsText(file)
+  }
 
   const step4 = path === 'manual'
     ? {
@@ -658,31 +729,92 @@ function Step4({ path, baseline, setBaseline, mobile }) {
 
       {showDrop && (
         <>
-          <div style={{
-            border: '1.5px dashed var(--bd)',
-            borderRadius: '12px',
-            padding: '38px 20px',
-            textAlign: 'center',
-            background: 'var(--bg-card)',
-          }}>
-            <div style={{ fontSize: '30px', color: 'var(--accent)', lineHeight: 1 }}>↑</div>
-            <div style={{
-              fontSize: '14px',
-              color: 'var(--tx-1)',
-              marginTop: '14px',
-              fontWeight: 500,
-            }}>
-              Drop your CSV here or click to browse
-            </div>
-            <div style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '10px',
-              color: 'var(--tx-3)',
-              marginTop: '8px',
-              letterSpacing: '0.04em',
-            }}>
-              MONARCH MONEY · YNAB · ANY STANDARD CSV EXPORT
-            </div>
+          <input
+            type="file"
+            accept=".csv"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            onChange={e => handleFile(e.target.files[0])}
+          />
+          <div
+            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => {
+              e.preventDefault()
+              setDragOver(false)
+              handleFile(e.dataTransfer.files[0])
+            }}
+            style={{
+              border: dragOver ? '1.5px dashed var(--accent)' : '1.5px dashed var(--bd)',
+              borderRadius: '12px',
+              padding: '38px 20px',
+              textAlign: 'center',
+              background: 'var(--bg-card)',
+              cursor: 'pointer',
+              transition: 'border-color .15s',
+            }}
+          >
+            {csvFile ? (
+              <>
+                <div style={{ fontSize: '30px', color: 'var(--accent)', lineHeight: 1 }}>✓</div>
+                <div style={{
+                  fontSize: '14px',
+                  color: 'var(--tx-1)',
+                  marginTop: '14px',
+                  fontWeight: 500,
+                }}>
+                  {csvFile.name}
+                </div>
+                <div style={{
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: '10px',
+                  color: 'var(--tx-3)',
+                  marginTop: '6px',
+                  letterSpacing: '0.04em',
+                }}>
+                  {csvFile.rowCount} ROWS · {csvFile.headers.length} COLUMNS
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); setCsvFile(null) }}
+                  style={{
+                    marginTop: '12px',
+                    background: 'none',
+                    border: '1px solid var(--bd)',
+                    borderRadius: '6px',
+                    padding: '5px 12px',
+                    fontFamily: "'DM Mono', monospace",
+                    fontSize: '10px',
+                    color: 'var(--tx-3)',
+                    cursor: 'pointer',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  × Remove
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '30px', color: 'var(--accent)', lineHeight: 1 }}>↑</div>
+                <div style={{
+                  fontSize: '14px',
+                  color: 'var(--tx-1)',
+                  marginTop: '14px',
+                  fontWeight: 500,
+                }}>
+                  Drop your CSV here or click to browse
+                </div>
+                <div style={{
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: '10px',
+                  color: 'var(--tx-3)',
+                  marginTop: '8px',
+                  letterSpacing: '0.04em',
+                }}>
+                  MONARCH MONEY · YNAB · ANY STANDARD CSV EXPORT
+                </div>
+              </>
+            )}
           </div>
           <div style={{
             display: 'flex',
@@ -972,6 +1104,7 @@ export default function Onboarding({ onComplete }) {
   // step 3/4 state
   const [path, setPath] = useState(null)
   const [baseline, setBaseline] = useState({})
+  const [csvFile, setCsvFile] = useState(null)
 
   // AI bar
   const [aiInput, setAiInput] = useState('')
@@ -1009,7 +1142,28 @@ export default function Onboarding({ onComplete }) {
     }
     if (step === 3) { setStep(4); return }
     if (step === 4) { setStep(5); return }
-    if (step === 5 && onComplete) { onComplete(); return }
+    if (step === 5 && onComplete) {
+      const budgetBuckets = deriveBudgetBuckets(q2, q2other, q2buckets)
+      const periodOptions = q3 === null ? ['1Y', '3Y', '5Y'] :
+        q3 <= 1 ? ['1Y'] :
+        q3 <= 2 ? ['1Y', '2Y'] :
+        q3 <= 3 ? ['1Y', '2Y', '3Y'] :
+        q3 <= 5 ? ['1Y', '3Y', '5Y'] :
+        ['1Y', '3Y', '5Y', '10Y']
+      onComplete({
+        focuses: q1,
+        commitments: q2,
+        commitmentOther: q2other,
+        commitmentBuckets: q2buckets,
+        planningHorizon: q3,
+        dataPath: path,
+        baseline,
+        csvFile: csvFile ? { name: csvFile.name, rowCount: csvFile.rowCount, headers: csvFile.headers } : null,
+        budgetBuckets,
+        periodOptions,
+      })
+      return
+    }
   }
 
   function back() {
@@ -1175,6 +1329,7 @@ export default function Onboarding({ onComplete }) {
               q2other={q2other} setQ2other={setQ2other}
               q2buckets={q2buckets} setQ2buckets={setQ2buckets}
               q3={q3} setQ3={setQ3}
+              mobile={mobile}
             />
           )}
 
@@ -1186,6 +1341,8 @@ export default function Onboarding({ onComplete }) {
               baseline={baseline}
               setBaseline={setBaseline}
               mobile={mobile}
+              csvFile={csvFile}
+              setCsvFile={setCsvFile}
             />
           )}
 
