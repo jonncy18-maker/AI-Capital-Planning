@@ -3,6 +3,9 @@
 .env.local
 .env.production
 
+# Claude Code agent working directory
+.claude/
+
 # Logs
 logs
 *.log
