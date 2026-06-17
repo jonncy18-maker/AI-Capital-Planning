@@ -4,42 +4,32 @@
 
 export default function ModuleStub({ icon, eyebrow, title, description, phase, features = [] }) {
   return (
-    <div style={{ maxWidth: '640px', padding: '8px 0 48px' }}>
+    <div style={{ maxWidth: '640px', padding: '8px 0 48px', textAlign: 'left' }}>
       <div style={{
-        fontFamily: "'DM Mono', monospace",
-        fontSize: '10px',
+        width: '46px',
+        height: '46px',
+        borderRadius: '12px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '22px',
         color: 'var(--accent)',
-        letterSpacing: '0.1em',
-        marginBottom: '14px',
+        background: 'var(--accent-bg)',
+        border: '1px solid var(--accent-bd)',
+        marginBottom: '16px',
       }}>
-        {eyebrow}
+        {icon}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
-        <div style={{
-          width: '46px',
-          height: '46px',
-          flexShrink: 0,
-          borderRadius: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '22px',
-          color: 'var(--accent)',
-          background: 'var(--accent-bg)',
-          border: '1px solid var(--accent-bd)',
-        }}>
-          {icon}
-        </div>
-        <div style={{
-          fontFamily: "'DM Serif Display', serif",
-          fontSize: '22px',
-          lineHeight: '1.15',
-          color: 'var(--tx-1)',
-          letterSpacing: '-0.015em',
-        }}>
-          {title}
-        </div>
+      <div style={{
+        fontFamily: "'DM Serif Display', serif",
+        fontSize: '22px',
+        lineHeight: 1.1,
+        color: 'var(--tx-1)',
+        letterSpacing: '-0.015em',
+        marginBottom: '4px',
+      }}>
+        {title}
       </div>
 
       <div style={{

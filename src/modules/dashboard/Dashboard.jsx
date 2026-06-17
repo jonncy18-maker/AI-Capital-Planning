@@ -125,7 +125,7 @@ export default function Dashboard({ summary, mobile, periodDefault, periodOption
         gap: '12px',
         marginBottom: '24px',
       }}>
-        <div>
+        <div style={{ textAlign: 'left' }}>
           <div style={{
             fontFamily: "'DM Serif Display', serif",
             fontSize: '22px',
