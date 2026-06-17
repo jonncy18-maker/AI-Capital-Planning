@@ -6,7 +6,9 @@ export function buildDedupKey({ date, merchant, amount, account }) {
 }
 
 // Insert rows from a parsed CSV, skipping duplicates.
-// Returns { inserted: number, skipped: number, errors: Error[] }.
+// Returns { inserted: number, skipped: number }.
+// Uses count-before / count-after to accurately measure inserts, and
+// batches in groups of 500 to avoid payload limits on large files.
 export async function importTransactions(userId, rows) {
   const prepared = rows.map(r => ({
     user_id: userId,
@@ -23,14 +25,27 @@ export async function importTransactions(userId, rows) {
     dedup_key: buildDedupKey(r),
   }))
 
-  const { data, error } = await supabase
+  const { count: beforeCount, error: beforeErr } = await supabase
     .from('transactions')
-    .upsert(prepared, { onConflict: 'user_id,dedup_key', ignoreDuplicates: true })
-    .select('id')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+  if (beforeErr) throw beforeErr
 
-  if (error) throw error
+  const BATCH = 500
+  for (let i = 0; i < prepared.length; i += BATCH) {
+    const { error } = await supabase
+      .from('transactions')
+      .upsert(prepared.slice(i, i + BATCH), { onConflict: 'user_id,dedup_key', ignoreDuplicates: true })
+    if (error) throw error
+  }
 
-  const inserted = data?.length ?? 0
+  const { count: afterCount, error: afterErr } = await supabase
+    .from('transactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+  if (afterErr) throw afterErr
+
+  const inserted = (afterCount ?? 0) - (beforeCount ?? 0)
   const skipped = prepared.length - inserted
   return { inserted, skipped }
 }
@@ -65,6 +80,20 @@ export async function getTransactions(userId, { from, to, category, limit = 500 
   if (category) q = q.eq('category', category)
 
   const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+// Fetch transactions in a date range for cash flow calendar aggregation.
+export async function getTransactionsByMonth(userId, fromDate, toDate) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('date, amount, "group", category, merchant')
+    .eq('user_id', userId)
+    .gte('date', fromDate)
+    .lte('date', toDate)
+    .order('date', { ascending: true })
+
   if (error) throw error
   return data ?? []
 }

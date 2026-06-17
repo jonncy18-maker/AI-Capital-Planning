@@ -84,7 +84,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
             periodDefault={profile?.period_default ?? null}
           />
         )
-      case 'cashflow':    return <CashFlow />
+      case 'cashflow':    return <CashFlow userId={user.id} mobile={mobile} />
       case 'scenarios':   return <Scenarios />
       case 'budget':      return <Budget />
       case 'commitments': return <Commitments />
