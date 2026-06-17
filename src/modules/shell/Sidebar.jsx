@@ -45,7 +45,7 @@ export default function Sidebar({
         {!collapsed && (
           <div style={{
             fontFamily: "'DM Serif Display', serif",
-            fontSize: '16px',
+            fontSize: '24px',
             color: 'var(--tx-1)',
             letterSpacing: '-0.01em',
             whiteSpace: 'nowrap',
