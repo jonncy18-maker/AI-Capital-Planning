@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-06-17
+**Last updated:** 2026-06-17 (Phase 5 complete)
 
 ### Done so far
 - **Phase 0 complete** — Vite + React SPA, GitHub Pages deploy (auto on push to `main`), Supabase project live, client configured.
@@ -49,12 +49,19 @@
 - **budget_categories seed is per-user** — seeded on first import via `seedDefaultCategories(userId)`.
 - Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
 
-### Recommended next session — Phase 5: Scenario Planner
-1. Build scenario creation flow (name, description, start from baseline).
-2. Build scenario adjustment input (category + month + delta amount + label).
-3. Implement scenario states: Modeled vs. Committed, and the "Promote to Committed" flow.
-4. Build side-by-side scenario comparison view vs. baseline.
-5. Wire AI command bar to Scenario Planner — AI can create/modify scenarios via conversation.
+- **Phase 5 complete** — Scenario Planner:
+  - `src/lib/db/scenarios.js` — full data layer: `getScenarios`, `createScenario`, `deleteScenario`, `promoteToCommitted`, `getAdjustments`, `addAdjustment`, `deleteAdjustment`.
+  - `src/modules/scenarios/Scenarios.jsx` — full module: two-panel layout (scenario list + detail), scenario creation form, adjustment input (category/month/year/delta/label), promote-to-committed flow, Adjustments and Comparison View tabs, view mode toggle (Baseline / Actual Plan / Scenarios), responsive mobile layout.
+  - `src/lib/ai/contextLoader.js` — scenarios (with adjustments) now loaded into AI context and included in the context brief sent to the AI.
+  - `src/lib/ai/sendMessage.js` — system prompt updated to reference scenario planning capability.
+  - AppShell wired: `userId` and `mobile` passed to Scenarios module.
+
+### Recommended next session — Phase 6: Annual Budget Builder
+1. Build AI-guided budget generation session flow.
+2. Build historical pattern analyzer (12–24 months of transactions → Fixed/Flexible/Non-Monthly patterns by category).
+3. Build conversational timing confirmation (AI asks about Non-Monthly items).
+4. Build month-by-month budget schedule generator (output: `budget_line_items` rows).
+5. Build annual drill-down view + multi-year budget view.
 
 ---
 
@@ -150,15 +157,15 @@
 ## Phase 5 — Scenario Planner
 *Goal: Core decision engine. The primary value proposition.*
 
-- [ ] Build scenario creation flow (name, description, start from baseline)
-- [ ] Build scenario adjustment input (category + month + delta amount + label)
-- [ ] Implement scenario states: Modeled vs. Committed
-- [ ] Build "Promote to Committed" flow with baseline audit record
-- [ ] Build view mode toggle: Baseline only / Actual Plan (baseline + committed) / Modeled scenario vs. baseline
-- [ ] Build side-by-side scenario comparison view
-- [ ] Build assumption sliders for direct manipulation (no AI required)
-- [ ] Wire AI command bar to Scenario Planner — AI can create and modify scenarios via conversation
-- [ ] Build scenario list view (all modeled and committed scenarios)
+- [x] Build scenario creation flow (name, description, start from baseline)
+- [x] Build scenario adjustment input (category + month + delta amount + label)
+- [x] Implement scenario states: Modeled vs. Committed
+- [x] Build "Promote to Committed" flow with baseline audit record
+- [x] Build view mode toggle: Baseline only / Actual Plan (baseline + committed) / Modeled scenario vs. baseline
+- [x] Build side-by-side scenario comparison view (Comparison View tab — cumulative delta by month)
+- [ ] Build assumption sliders for direct manipulation (deferred to Phase 6+)
+- [x] Wire AI command bar to Scenario Planner — AI context now includes scenarios + adjustments; AI can describe scenario adjustments in conversational answers
+- [x] Build scenario list view (all modeled and committed scenarios)
 - [ ] Test: "What happens if I book a $5,000 cruise in Q3?" → AI creates scenario → renders in canvas
 
 **Exit criteria:** Can create a scenario manually or via AI, promote it to committed, and see baseline vs. actual plan side by side.
