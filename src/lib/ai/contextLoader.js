@@ -1,42 +1,38 @@
-import { supabase } from '../supabase.js'
 import { getRecentTransactions } from '../db/transactions.js'
 import { getBudgetCategories } from '../db/budgetCategories.js'
 import { getCommitments } from '../db/commitments.js'
 import { getScenarios, getAdjustments } from '../db/scenarios.js'
+import { getLatestWealthSnapshot } from '../db/wealthSnapshots.js'
+import { getBudgetLineItems, getBudgetYears } from '../db/budgetLineItems.js'
 
 // Loads the structured financial brief the AI reasons against at session start.
 // Mirrors ARCHITECTURE §5.2 (AI Context Strategy): last 90 days of transactions
-// (summary level), budget categories, active commitments, latest wealth snapshot.
-
-async function getLatestWealthSnapshot(userId) {
-  const { data, error } = await supabase
-    .from('wealth_snapshots')
-    .select('*')
-    .eq('user_id', userId)
-    .order('snapshot_date', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) return null
-  return data
-}
+// (summary level), budget categories, current-year budget line items, active
+// commitments, latest wealth snapshot, and all open scenarios.
 
 export async function loadAIContext(userId) {
-  const [transactions, categories, commitments, wealth, scenarios] = await Promise.all([
-    getRecentTransactions(userId, 90).catch(() => []),
-    getBudgetCategories(userId).catch(() => []),
-    getCommitments(userId, { status: 'active' }).catch(() => []),
-    getLatestWealthSnapshot(userId).catch(() => null),
-    getScenarios(userId).catch(() => []),
-  ])
+  const thisYear = new Date().getFullYear()
 
-  // Load adjustments for all open scenarios (modeled + committed)
-  const scenariosWithAdjs = await Promise.all(
-    scenarios.map(async s => {
-      const adjustments = await getAdjustments(userId, s.id).catch(() => [])
-      return { ...s, adjustments }
-    })
-  )
+  const [transactions, categories, commitments, wealth, scenarios, budgetYears] =
+    await Promise.all([
+      getRecentTransactions(userId, 90).catch(() => []),
+      getBudgetCategories(userId).catch(() => []),
+      getCommitments(userId, { status: null }).catch(() => []),
+      getLatestWealthSnapshot(userId).catch(() => null),
+      getScenarios(userId).catch(() => []),
+      getBudgetYears(userId).catch(() => []),
+    ])
+
+  const [budgetLineItems, scenariosWithAdjs] = await Promise.all([
+    getBudgetLineItems(userId, { year: thisYear }).catch(() => []),
+    // Load adjustments for all open scenarios (modeled + committed)
+    Promise.all(
+      scenarios.map(async s => {
+        const adjustments = await getAdjustments(userId, s.id).catch(() => [])
+        return { ...s, adjustments }
+      })
+    ),
+  ])
 
   return {
     transactions,
@@ -44,6 +40,9 @@ export async function loadAIContext(userId) {
     commitments,
     wealth,
     scenarios: scenariosWithAdjs,
+    budgetLineItems,
+    budgetYears,
+    thisYear,
     loadedAt: new Date().toISOString(),
   }
 }
@@ -59,16 +58,26 @@ export function summarizeContext(ctx) {
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
 
   const scenarios = ctx?.scenarios ?? []
+  const commitments = ctx?.commitments ?? []
+  const lineItems = ctx?.budgetLineItems ?? []
+  const budgetTotal = lineItems.reduce((sum, li) => sum + Number(li.amount || 0), 0)
+  const wealth = ctx?.wealth ?? null
+
   return {
     transactionCount: txn.length,
     categoryCount: (ctx?.categories ?? []).length,
-    commitmentCount: (ctx?.commitments ?? []).length,
+    commitmentCount: commitments.length,
+    activeCommitmentCount: commitments.filter(c => c.status === 'active').length,
     scenarioCount: scenarios.length,
     modeledCount: scenarios.filter(s => s.state === 'modeled').length,
     committedCount: scenarios.filter(s => s.state === 'committed').length,
+    budgetYears: ctx?.budgetYears ?? [],
+    budgetLineItemCount: lineItems.length,
+    budgetTotal,
     spend90d,
     income90d,
-    hasWealth: !!ctx?.wealth,
+    hasWealth: !!wealth,
+    netWorth: wealth ? Number(wealth.net_worth || 0) : null,
   }
 }
 
@@ -98,8 +107,18 @@ export function buildContextBrief(ctx) {
   }
 
   if (s.commitmentCount) {
-    const names = ctx.commitments.map(c => c.name).join(', ')
-    lines.push(`- Active commitments: ${names}`)
+    const active = ctx.commitments.filter(c => c.status === 'active')
+    const names = (active.length ? active : ctx.commitments).map(c => c.name).join(', ')
+    lines.push(`- Commitments: ${s.commitmentCount} (${s.activeCommitmentCount} active) — ${names}`)
+  }
+
+  if (s.budgetLineItemCount) {
+    lines.push(
+      `- Budget (${ctx.thisYear}): ${s.budgetLineItemCount} line items, ` +
+      `~$${Math.round(s.budgetTotal).toLocaleString()} planned for the year`
+    )
+  } else if (s.budgetYears.length) {
+    lines.push(`- Budget years on file: ${s.budgetYears.join(', ')}`)
   }
 
   if (ctx.wealth) {

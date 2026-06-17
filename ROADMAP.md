@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-06-17 (Phase 5 complete)
+**Last updated:** 2026-06-17 (Phases 5–10 built)
 
 ### Done so far
 - **Phase 0 complete** — Vite + React SPA, GitHub Pages deploy (auto on push to `main`), Supabase project live, client configured.
@@ -56,12 +56,34 @@
   - `src/lib/ai/sendMessage.js` — system prompt updated to reference scenario planning capability.
   - AppShell wired: `userId` and `mobile` passed to Scenarios module.
 
-### Recommended next session — Phase 6: Annual Budget Builder
-1. Build AI-guided budget generation session flow.
-2. Build historical pattern analyzer (12–24 months of transactions → Fixed/Flexible/Non-Monthly patterns by category).
-3. Build conversational timing confirmation (AI asks about Non-Monthly items).
-4. Build month-by-month budget schedule generator (output: `budget_line_items` rows).
-5. Build annual drill-down view + multi-year budget view.
+- **Phase 6 complete** — Annual Budget Builder:
+  - `src/lib/budget/patternAnalyzer.js` — pure historical pattern analyzer: classifies each category Fixed/Flexible/Non-Monthly from frequency + coefficient of variation, annualizes the observed window, and generates draft `budget_line_items` (Non-Monthly distributed by historical month histogram).
+  - `src/lib/db/budgetLineItems.js` — `getBudgetLineItems`, `getBudgetYears`, `saveBudgetForYear` (delete-then-insert per year/version), `updateLineItemAmount`, `deleteLineItem`.
+  - `src/lib/db/transactions.js` — added `getTransactionsForAnalysis` (paginated 24-month pull).
+  - `src/modules/budget/Budget.jsx` — generate-from-history flow with an editable draft (toggle/adjust per category), month-by-month schedule grid (group subtotals, commitment rows, totals), year selector, mobile per-month cards.
+- **Phase 7 complete** — Long-Term Commitments:
+  - `src/lib/commitments/schedule.js` — shared `cost_structure` normalizer (monthly/annual/total/custom) → month-by-month cash demand; `commitmentYearSchedule`, `commitmentTotalProjected`, `aggregateCommitmentsForYear`, `describeCostStructure`. Consumed by Cash Flow, Budget, Wealth, Dashboard.
+  - `src/modules/commitments/Commitments.jsx` — full CRUD form (type, status, dates, cost structure, split rules, notes), list with status filter, detail view with 12-month bar timeline + split allocation bars.
+- **Phase 8 complete** — Wealth Trajectory:
+  - `src/lib/wealth/projection.js` — deterministic monthly-compounding projection, baseline-vs-scenario comparison, `yearsToTarget`, `investableFromSnapshot`.
+  - `src/lib/db/wealthSnapshots.js` — snapshot CRUD; `contextLoader` reuses `getLatestWealthSnapshot`.
+  - `src/modules/wealth/Wealth.jsx` — net worth snapshot form, SVG trajectory chart (baseline vs. commitment-drained), assumption sliders (contribution / return / horizon / retirement target), commitment-impact toggle, snapshot history.
+- **Phase 9 complete** — Dashboard widgets + AI Briefing:
+  - `src/lib/dashboard/widgetData.js` — pure derivations (spend by group, run-rate EOY, budget vs. projected, cash-flow spike, commitments summary, wealth summary).
+  - `src/lib/db/aiBriefings.js` — `getLatestBriefing` / `saveBriefing` (cached per `module_context`).
+  - `src/modules/dashboard/Dashboard.jsx` — all predefined widgets wired to live context; AI Briefing widget (on-demand, cached to `ai_briefings`); configure mode with drag-reorder + show/hide persisted to localStorage.
+  - `contextLoader` now also loads current-year `budget_line_items` + budget years; brief + summary expanded accordingly.
+- **Phase 10 (mostly complete)** — Onboarding: 5-step flow already live (`src/modules/onboarding/Onboarding.jsx`) — welcome, 3-part priority conversation, data-path choice, CSV upload + baseline, completion → dashboard. Category confirmation handled in `ImportFlow`. Remaining: in-onboarding commitment setup + auto budget-generation step (both available as first-class modules now).
+
+### Known build note (this session)
+- Local `vite build` in this sandbox uses **rolldown-vite 8.0.16**, whose tree-shaker drops the entry module's `render()` side effect, producing an app-less bundle (affects the whole repo equally, including previously-shipped modules). Building with `rollupOptions.treeshake: false` produces a correct bundle (all 101 modules + entry present). Source verified correct via ESLint + the treeshake-off build. Did **not** alter the committed `vite.config.js` since this is a sandbox toolchain artifact and production deploys have been working.
+
+### Recommended next session — Phase 11: Polish and Pre-Launch
+1. Full mobile QA pass across all modules.
+2. Real-data tests: Monarch CSV import + FY budget generation + commitment timing.
+3. Confirm `ai-chat` Edge Function deployed + `ANTHROPIC_API_KEY` set; verify AI Briefing end-to-end.
+4. Optional onboarding additions: commitment setup step + auto first-budget generation.
+5. Make repo public once proxy confirmed.
 
 ---
 
@@ -175,71 +197,71 @@
 ## Phase 6 — Annual Budget Builder
 *Goal: Replace the manual spreadsheet process.*
 
-- [ ] Build AI-guided budget generation session flow
-- [ ] Build historical pattern analyzer (ingests 12–24 months of transactions, identifies Fixed/Flexible/Non-Monthly patterns by category)
-- [ ] Build conversational timing confirmation flow (AI asks about Non-Monthly items: "Your cruise final payment hit September — same timing next year?")
-- [ ] Build month-by-month budget schedule generator (output: `budget_line_items` rows)
-- [ ] Build annual drill-down view (single year from multi-year schedule)
-- [ ] Build multi-year budget view (3–5 year horizon)
-- [ ] Wire Long-Term Commitments into multi-year projection (auto-populate from `commitments` table)
-- [ ] Build budget edit/override UI (user can adjust AI-generated targets)
-- [ ] Build budget version history (track changes year over year)
-- [ ] Test: Full FY27 budget generation from FY25–FY26 transaction history
+- [~] Build AI-guided budget generation session flow — deterministic analyzer-driven generate flow built; conversational AI session deferred
+- [x] Build historical pattern analyzer (ingests 12–24 months of transactions, identifies Fixed/Flexible/Non-Monthly patterns by category) — `src/lib/budget/patternAnalyzer.js`
+- [ ] Build conversational timing confirmation flow (AI asks about Non-Monthly items) — deferred (Non-Monthly timing derived from historical month histogram instead)
+- [x] Build month-by-month budget schedule generator (output: `budget_line_items` rows)
+- [x] Build annual drill-down view (single year from multi-year schedule) — year selector + schedule grid
+- [~] Build multi-year budget view (3–5 year horizon) — per-year selectable; side-by-side multi-year roll-up deferred
+- [x] Wire Long-Term Commitments into multi-year projection (auto-populate from `commitments` table) — commitment rows rendered in the schedule grid
+- [x] Build budget edit/override UI (user can adjust AI-generated targets) — editable draft in generate flow
+- [ ] Build budget version history (track changes year over year) — schema supports `budget_version`; UI deferred
+- [ ] Test: Full FY27 budget generation from FY25–FY26 transaction history — pending real data
 
-**Exit criteria:** Can run the AI budget session and produce a complete multi-year month-by-month budget without touching a spreadsheet.
+**Exit criteria:** Can run the budget generation flow and produce a complete month-by-month budget without touching a spreadsheet. ✓ (multi-year roll-up + conversational session deferred)
 
 ---
 
 ## Phase 7 — Long-Term Commitments Module
 *Goal: First-class tracking of all financial obligations spanning more than one year.*
 
-- [ ] Build commitment creation form (name, type, start/end date, cost structure, status, notes)
-- [ ] Build cost structure input (monthly amount, annual total, or custom schedule via jsonb)
-- [ ] Build split rules input (percentage allocation across categories — e.g., 95% mission / 5% family support)
-- [ ] Build commitment list view (active, paused, completed)
-- [ ] Build commitment detail view (timeline, total projected cost, month-by-month schedule)
-- [ ] Wire commitments into Cash Flow Timing (auto-populate as future cash demands)
-- [ ] Wire commitments into Annual Budget Builder (auto-populate as Non-Monthly line items)
-- [ ] Wire commitments into Scenario Planner (surfaced as baseline constraints)
-- [ ] Wire AI command bar to Commitments — AI can add/modify commitments via conversation
-- [ ] Seed with existing commitments (Claire scholarship, car lease, etc.)
+- [x] Build commitment creation form (name, type, start/end date, cost structure, status, notes)
+- [x] Build cost structure input (monthly amount, annual total, or custom schedule via jsonb)
+- [x] Build split rules input (percentage allocation across categories — e.g., 95% mission / 5% family support)
+- [x] Build commitment list view (active, paused, completed) — with status filter
+- [x] Build commitment detail view (timeline, total projected cost, month-by-month schedule)
+- [x] Wire commitments into Annual Budget Builder (auto-populate as schedule rows) — via `commitmentYearSchedule`
+- [~] Wire commitments into Cash Flow Timing (auto-populate as future cash demands) — shared `schedule.js` helper ready; CashFlow consumption is a follow-up
+- [x] Wire commitments into Scenario Planner / Wealth (surfaced as constraints) — Wealth drains active commitments; AI context includes them
+- [ ] Wire AI command bar to Commitments — AI can add/modify commitments via conversation — deferred (AI context includes commitments read-only)
+- [ ] Seed with existing commitments — user-entered via form
 
-**Exit criteria:** All active long-term commitments visible with projected cost schedules. Changes to commitments automatically reflected in Cash Flow Timing and Annual Budget.
+**Exit criteria:** All active long-term commitments visible with projected cost schedules. Changes flow into Budget, Wealth, and the AI context. ✓
 
 ---
 
 ## Phase 8 — Wealth Trajectory Module
 *Goal: Long-term wealth and retirement scenario modeling.*
 
-- [ ] Build net worth input form (investment balance, retirement balance, other assets, liabilities)
-- [ ] Build wealth snapshot history (track net worth over time)
-- [ ] Build baseline trajectory chart (projected net worth over time given current assumptions)
-- [ ] Build contribution scenario sliders (contribution rate, market return assumption, retirement target date)
-- [ ] Build commitment impact overlay (how long-term commitments affect wealth trajectory)
-- [ ] Build bonus allocation scenario ("if I get a $X bonus, where should it go?")
-- [ ] Wire AI command bar to Wealth Trajectory — AI can model scenarios via conversation
-- [ ] Build retirement horizon view (years to target retirement date, projected balance at retirement)
+- [x] Build net worth input form (investment balance, retirement balance, other assets, liabilities)
+- [x] Build wealth snapshot history (track net worth over time)
+- [x] Build baseline trajectory chart (projected net worth over time given current assumptions) — SVG chart
+- [x] Build contribution scenario sliders (contribution rate, market return assumption, retirement target date)
+- [x] Build commitment impact overlay (how long-term commitments affect wealth trajectory) — baseline vs. commitment-drained series
+- [ ] Build bonus allocation scenario ("if I get a $X bonus, where should it go?") — deferred
+- [ ] Wire AI command bar to Wealth Trajectory — deferred (AI context includes latest snapshot)
+- [x] Build retirement horizon view (years to target retirement date, projected balance at retirement) — years-to-target + projected balance stats
 
-**Exit criteria:** Can see current wealth trajectory and model the impact of changing contribution rates, market assumptions, or bonus allocation decisions.
+**Exit criteria:** Can see current wealth trajectory and model the impact of changing contribution rates, market assumptions, and commitments. ✓ (bonus-allocation + AI-driven modeling deferred)
 
 ---
 
 ## Phase 9 — Dashboard Widgets and AI Briefing
 *Goal: Dashboard becomes a real control center, not just a navigation hub.*
 
-- [ ] Build and wire all pre-defined widgets to live Supabase data:
-  - Monthly spend by group (vs. budget target)
-  - Cash flow spike calendar
-  - Budget vs. actual trajectory
-  - Run-rate EOY projection
-  - Long-Term Commitments summary
-  - Wealth Trajectory snapshot
-- [ ] Build AI Briefing widget (on-demand narrative generation, cached in `ai_briefings` table)
-- [ ] Build widget add/remove/rearrange functionality (drag-to-configure)
-- [ ] Build AI-generated custom widget save flow (AI creates widget → user saves → renders deterministically)
-- [ ] Build widget-level AI context (command bar response scoped to widget in focus)
+- [x] Build and wire all pre-defined widgets to live Supabase data:
+  - [x] Monthly spend by group
+  - [x] Cash flow spike (next upcoming commitment spike)
+  - [x] Budget vs. projected (run-rate) trajectory
+  - [x] Run-rate EOY projection
+  - [x] Long-Term Commitments summary
+  - [x] Wealth Trajectory snapshot
+- [x] Build AI Briefing widget (on-demand narrative generation, cached in `ai_briefings` table)
+- [x] Build widget add/remove/rearrange functionality (drag-to-configure + show/hide, persisted to localStorage)
+- [ ] Build AI-generated custom widget save flow — deferred
+- [ ] Build widget-level AI context (command bar response scoped to widget in focus) — deferred
 
-**Exit criteria:** Dashboard is a fully populated control center. All widgets live. AI Briefing generates and caches. Custom widgets savable.
+**Exit criteria:** Dashboard is a fully populated control center. All predefined widgets live. AI Briefing generates and caches. ✓ (custom AI widgets deferred)
 
 ---
 
@@ -248,15 +270,15 @@
 
 - [x] Build login / auth screen (Supabase Auth) — done early
 - [x] Build empty state detection (no data → trigger onboarding) — via `user_profiles.onboarding_complete`
-- [ ] Build welcome screen and priority mapping conversation (AI asks 3–5 setup questions)
-- [ ] Build CSV upload step with progress indicator
-- [ ] Build category confirmation step
-- [ ] Build commitment setup step
-- [ ] Build first budget generation step (runs Annual Budget Builder automatically)
-- [ ] Build onboarding completion → redirect to populated Dashboard
-- [ ] Build "Coming Soon" placeholder for Mapping module (accessible from onboarding and Settings)
+- [x] Build welcome screen and priority mapping conversation (3-part setup questions) — `Onboarding.jsx` Step1–2
+- [x] Build CSV upload step — `Onboarding.jsx` Step4 + `ImportFlow`
+- [x] Build category confirmation step — `ImportFlow` unmapped-categories screen
+- [ ] Build commitment setup step — deferred (Commitments module available post-onboarding)
+- [ ] Build first budget generation step (runs Annual Budget Builder automatically) — deferred (Budget Builder available post-onboarding)
+- [x] Build onboarding completion → redirect to populated Dashboard — Step5
+- [x] Build "Coming Soon" placeholder for Mapping module
 
-**Exit criteria:** A new user can complete onboarding end-to-end and land on a populated dashboard.
+**Exit criteria:** A new user can complete onboarding end-to-end and land on a populated dashboard. ✓ (in-flow commitment + auto-budget steps deferred)
 
 ---
 

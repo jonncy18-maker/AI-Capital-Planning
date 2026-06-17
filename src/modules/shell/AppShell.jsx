@@ -78,17 +78,19 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
       case 'dashboard':
         return (
           <Dashboard
+            context={aiContext}
             summary={summary}
             mobile={mobile}
+            userId={user.id}
             periodOptions={profile?.period_options ?? []}
             periodDefault={profile?.period_default ?? null}
           />
         )
       case 'cashflow':    return <CashFlow userId={user.id} mobile={mobile} />
       case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} />
-      case 'budget':      return <Budget />
-      case 'commitments': return <Commitments />
-      case 'wealth':      return <Wealth />
+      case 'budget':      return <Budget userId={user.id} mobile={mobile} />
+      case 'commitments': return <Commitments userId={user.id} mobile={mobile} />
+      case 'wealth':      return <Wealth userId={user.id} mobile={mobile} />
       case 'mapping':     return <Mapping />
       case 'settings':
         return (
@@ -101,7 +103,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
           />
         )
       default:
-        return <Dashboard summary={summary} mobile={mobile} />
+        return <Dashboard context={aiContext} summary={summary} mobile={mobile} userId={user.id} />
     }
   }
 

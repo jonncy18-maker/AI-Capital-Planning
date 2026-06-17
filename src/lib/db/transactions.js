@@ -84,6 +84,35 @@ export async function getTransactions(userId, { from, to, category, limit = 500 
   return data ?? []
 }
 
+// Fetch a wide window of transactions for budget pattern analysis.
+// Pages through results so we aren't capped by Supabase's default row limit.
+export async function getTransactionsForAnalysis(userId, months = 24) {
+  const since = new Date()
+  since.setMonth(since.getMonth() - months)
+  const sinceStr = since.toISOString().slice(0, 10)
+
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('date, amount, category, "group"')
+      .eq('user_id', userId)
+      .gte('date', sinceStr)
+      .order('date', { ascending: true })
+      .range(from, from + PAGE - 1)
+
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
+  return all
+}
+
 // Fetch transactions in a date range for cash flow calendar aggregation.
 export async function getTransactionsByMonth(userId, fromDate, toDate) {
   const { data, error } = await supabase
