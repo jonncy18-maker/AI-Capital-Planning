@@ -17,19 +17,29 @@
 - **Profile persistence** — onboarding answers saved to `user_profiles` in Supabase (`src/lib/db/profile.js`); a signup trigger auto-creates the profile row (`migration 002` hardened it with pinned `search_path` to fix a signup 500).
 - **DB helper layer scaffolded** — `src/lib/db/transactions.js` (`importTransactions` w/ dedup, `getRecentTransactions`, `getTransactions`), `src/lib/db/commitments.js`, `src/lib/db/profile.js`.
 - **Verified end-to-end:** new user can sign up → land in onboarding → profile row written.
+- **Phase 2 complete** — Full CSV import pipeline:
+  - `src/lib/csv/monarchParser.js` — Monarch Money CSV parser (handles quoted fields, date/amount parsing, row-level error reporting).
+  - `src/lib/csv/categoryMap.js` — 100+ Monarch category → group/type mappings; `findUnmappedCategories`, `applyMappings`.
+  - `src/lib/db/budgetCategories.js` — `seedDefaultCategories(userId)` (idempotent upsert on first import), `upsertCategory`, `getBudgetCategories`.
+  - `src/lib/db/importLog.js` — `logImport`, `getImportHistory` backed by new `import_logs` table.
+  - `supabase/migrations/003_import_logs.sql` — `import_logs` table with RLS (apply in Supabase SQL Editor).
+  - `src/modules/import/ImportFlow.jsx` — Full-screen import state machine: parsing → unmapped-categories dialog → importing → summary.
+  - Onboarding now passes `raw` CSV through to `onComplete`; App.jsx inserts ImportFlow between onboarding and main app when CSV is present.
+  - Settings → Data Management section: re-import CSV drop zone + import history log.
 
 ### Known follow-ups / gotchas
 - **Anthropic key:** stored in Supabase secrets (safe, server-side) but NOT yet used. `src/lib/anthropic.js` still calls Anthropic *directly from the browser* via `VITE_ANTHROPIC_API_KEY` — insecure for public use. **Build a Supabase Edge Function proxy** before wiring any AI feature, and keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty (rotate the key if a real one was ever put there). NOTE: proxy will be a **Supabase Edge Function**, not Netlify (architecture/roadmap text predates this decision).
-- `budget_categories` not yet seeded; dedup logic written (`buildDedupKey`) but not tested against a real Monarch CSV.
+- **Apply migration 003** in Supabase SQL Editor (`supabase/migrations/003_import_logs.sql`) before import logging will work. The import itself succeeds without it; logging fails silently (non-fatal).
+- **Test with real Monarch CSV** — dedup logic and parser logic are written but not tested against an actual 12–24 month export. Verify `buildDedupKey` output matches what Monarch actually exports.
+- **budget_categories seed is per-user** — seeded on first import via `seedDefaultCategories(userId)`. Not a migration. Categories added by user during unmapped-categories dialog are also persisted.
 - Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
 
-### Recommended next session — Phase 2: Data Ingestion (CSV import)
-1. Build the Monarch CSV parser and wire the existing onboarding CSV upload to it.
-2. Map parsed rows → `importTransactions(userId, rows)` (helper already exists, dedup built in).
-3. Show import summary (X added / Y skipped) and surface unmapped categories.
-4. Seed `budget_categories` and verify dedup with a real 12–24 month export.
-
-*(Alternative next step: Phase 3 dashboard shell rendering real Supabase data. But data ingestion is the foundation — recommend CSV import first.)*
+### Recommended next session — Phase 3: Dashboard Shell and Navigation
+1. Build persistent collapsible left sidebar (already scaffolded in App.jsx — needs real styling).
+2. Build route structure for all modules (pages exist as placeholders).
+3. Build Dashboard canvas (empty widget grid).
+4. Wire AI command bar to Supabase Edge Function proxy before enabling.
+5. Build dark/light mode toggle in main app shell (currently only in onboarding).
 
 ---
 
@@ -73,17 +83,17 @@
 ## Phase 2 — Data Ingestion
 *Goal: CSV import pipeline working end-to-end with deduplication.*
 
-- [ ] Build CSV upload component (drag-and-drop + file picker)
-- [ ] Build Monarch CSV parser (expected columns: Date, Merchant, Category, Account, Original Statement, Notes, Amount, Tags, Owner)
-- [ ] Map Monarch Category → `budget_categories.category` on import
-- [ ] Derive Group from category mapping table (not imported directly)
-- [ ] Run deduplication check on every import
-- [ ] Display import summary: X new transactions added, Y duplicates skipped
-- [ ] Handle unmapped categories: surface for user confirmation before inserting
-- [ ] Test with real Monarch CSV exports (12-month and 24-month files)
-- [ ] Build import history log (what was imported, when, how many rows)
+- [x] Build CSV upload component (drag-and-drop + file picker) — in Onboarding Step 4 + Settings re-import
+- [x] Build Monarch CSV parser (`src/lib/csv/monarchParser.js`) — handles quoted fields, row-level errors, date/amount parsing
+- [x] Map Monarch Category → `budget_categories.category` on import (`src/lib/csv/categoryMap.js`, 100+ categories)
+- [x] Derive Group from category mapping table (not imported directly)
+- [x] Run deduplication check on every import (existing `importTransactions` dedup via `user_id,dedup_key` unique constraint)
+- [x] Display import summary: X new transactions added, Y duplicates skipped
+- [x] Handle unmapped categories: surface for user confirmation before inserting (UnmappedScreen in ImportFlow)
+- [~] Test with real Monarch CSV exports (12-month and 24-month files) — logic written, not yet tested against a real export
+- [x] Build import history log (`import_logs` table + `src/lib/db/importLog.js` + display in Settings)
 
-**Exit criteria:** Upload a Monarch CSV, see transactions in Supabase, duplicates correctly skipped, unmapped categories surfaced.
+**Exit criteria:** Upload a Monarch CSV, see transactions in Supabase, duplicates correctly skipped, unmapped categories surfaced. ✓ (pending real-data test)
 
 ---
 
