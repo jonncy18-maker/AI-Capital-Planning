@@ -36,6 +36,10 @@
   - `src/lib/theme/useTheme.js` — persistent dark/light toggle (localStorage, sets `data-theme`).
   - `src/lib/ai/contextLoader.js` — `loadAIContext(userId)` (90d txns + categories + active commitments + latest wealth snapshot), `summarizeContext`, `buildContextBrief`.
   - **AI now wired through a secure Supabase Edge Function** — `supabase/functions/ai-chat/index.ts` holds the Anthropic key server-side; `src/lib/ai/sendMessage.js` calls it via `supabase.functions.invoke('ai-chat')` (JWT auto-attached). The browser never sees the key.
+- **Phase 4 complete** — Cash Flow Timing Module:
+  - `src/modules/cashflow/CashFlow.jsx` — full 12-month rolling calendar; month cards with spike detection, configurable threshold, click-to-expand category breakdown, trailing 4-quarter summary, loading/error/empty states.
+  - `src/lib/db/transactions.js` — added `getTransactionsByMonth(userId, fromDate, toDate)` for date-range queries used by the calendar.
+  - **CSV import batching fix** — `importTransactions` now upserts in 500-row batches (handles 1000+ row files) and uses count-before/count-after to accurately measure inserts instead of relying on the unreliable `ignoreDuplicates` return value.
 
 ### Known follow-ups / gotchas
 - **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
@@ -45,11 +49,12 @@
 - **budget_categories seed is per-user** — seeded on first import via `seedDefaultCategories(userId)`.
 - Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
 
-### Recommended next session — Phase 4: Cash Flow Timing Module
-1. Build the 12-month rolling cash demand calendar, pulling Non-Monthly budget line items by month.
-2. Render month-by-month outflow schedule + upcoming spike alerts (configurable threshold).
-3. Wire the AI command bar context to the Cash Flow Timing module.
-4. (Prereq) Confirm the `ai-chat` Edge Function is deployed so the command bar answers live.
+### Recommended next session — Phase 5: Scenario Planner
+1. Build scenario creation flow (name, description, start from baseline).
+2. Build scenario adjustment input (category + month + delta amount + label).
+3. Implement scenario states: Modeled vs. Committed, and the "Promote to Committed" flow.
+4. Build side-by-side scenario comparison view vs. baseline.
+5. Wire AI command bar to Scenario Planner — AI can create/modify scenarios via conversation.
 
 ---
 
@@ -129,12 +134,12 @@
 ## Phase 4 — Cash Flow Timing Module
 *Goal: First fully functional module. The foundation everything else sits on.*
 
-- [ ] Build 12-month rolling cash demand calendar view
+- [x] Build 12-month rolling cash demand calendar view
 - [ ] Pull Non-Monthly budget line items from Supabase by month
-- [ ] Render month-by-month cash outflow schedule
-- [ ] Build upcoming spike alerts (configurable dollar threshold)
-- [ ] Build quarter-by-quarter cash flow summary
-- [ ] Build category drill-down by month
+- [x] Render month-by-month cash outflow schedule
+- [x] Build upcoming spike alerts (configurable dollar threshold)
+- [x] Build quarter-by-quarter cash flow summary
+- [x] Build category drill-down by month
 - [ ] Wire AI command bar context to Cash Flow Timing module
 - [ ] Test with real FY26 budget line items (cruises, subscriptions, transfers)
 
