@@ -78,12 +78,40 @@
 ### Known build note (this session)
 - Local `vite build` in this sandbox uses **rolldown-vite 8.0.16**, whose tree-shaker drops the entry module's `render()` side effect, producing an app-less bundle (affects the whole repo equally, including previously-shipped modules). Building with `rollupOptions.treeshake: false` produces a correct bundle (all 101 modules + entry present). Source verified correct via ESLint + the treeshake-off build. Did **not** alter the committed `vite.config.js` since this is a sandbox toolchain artifact and production deploys have been working.
 
-### Recommended next session — Phase 11: Polish and Pre-Launch
-1. Full mobile QA pass across all modules.
-2. Real-data tests: Monarch CSV import + FY budget generation + commitment timing.
-3. Confirm `ai-chat` Edge Function deployed + `ANTHROPIC_API_KEY` set; verify AI Briefing end-to-end.
-4. Optional onboarding additions: commitment setup step + auto first-budget generation.
-5. Make repo public once proxy confirmed.
+### Recommended next session — Phase 11: Polish and Pre-Launch (10-step plan)
+
+Ordered by "what unblocks the most." Steps 1, 2, 10 need Supabase/GitHub
+account access; steps 4, 5, 6, 8, 9 are pure code.
+
+**Foundation — make what's built actually work**
+1. **Deploy + verify the `ai-chat` Edge Function** and set `ANTHROPIC_API_KEY`
+   in Supabase. Every AI feature (command bar, briefing) returns a
+   "can't reach service" message until this is live. Highest leverage.
+2. **Apply migration `003_import_logs.sql`** in Supabase; confirm import
+   logging writes.
+3. **Real-data test of the CSV pipeline** — run an actual 12–24 month Monarch
+   export through parse → dedup → unmapped-category screen → insert. Validates
+   parser, dedup key, and category map together.
+
+**Close the functional wiring gaps**
+4. **Wire commitments into Cash Flow Timing** — `schedule.js` helper exists but
+   `CashFlow.jsx` doesn't consume it; future commitment spikes don't show on
+   the calendar yet (Phase 4/7 gap).
+5. **Pull Non-Monthly budget line items into Cash Flow by month** — remaining
+   unchecked Phase 4 item; makes the calendar reflect planned outflows, not
+   just historical txns.
+6. **Wire per-module AI context** — scope the command bar's context to the
+   active module so answers match what's on screen.
+
+**Polish + pre-launch**
+7. **Mobile QA pass** across all modules at the 760/1100 breakpoints.
+8. **Error-handling & empty-state audit** — failed imports, AI errors, no-data
+   states in every module.
+9. **Security cleanup** — delete the superseded browser-side
+   `src/lib/anthropic.js` path, confirm `VITE_ANTHROPIC_API_KEY` is empty,
+   rotate the key if ever exposed.
+10. **Make the repo public** once the proxy is confirmed, then do a final
+    ROADMAP reconciliation pass.
 
 ---
 
