@@ -1,4 +1,16 @@
 import { useState } from 'react'
+import { derivePeriods } from '../../lib/periods.js'
+
+// Normalize legacy scalar planningHorizon (e.g. 3) into the multi-select array form.
+function normalizeHorizon(h) {
+  if (Array.isArray(h)) return h
+  if (typeof h === 'number') return [h]
+  return []
+}
+
+function toggle(arr, v) {
+  return arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+}
 
 // ── Constants (mirrored from Onboarding) ─────────────────────────────────────
 
@@ -24,7 +36,7 @@ const Q2_OPTS = [
 export default function Settings({ profile, onSave, onBack }) {
   const [focuses, setFocuses] = useState(profile?.focuses || [])
   const [commitments, setCommitments] = useState(profile?.commitments || [])
-  const [planningHorizon, setPlanningHorizon] = useState(profile?.planningHorizon || null)
+  const [planningHorizon, setPlanningHorizon] = useState(normalizeHorizon(profile?.planningHorizon))
   const [saved, setSaved] = useState(false)
 
   const allAboveSel = Q1_BASE.every(b => focuses.includes(b))
@@ -52,11 +64,14 @@ export default function Settings({ profile, onSave, onBack }) {
   }
 
   function handleSave() {
+    const { periodOptions, periodDefault } = derivePeriods(planningHorizon)
     const updated = {
       ...(profile || {}),
       focuses,
       commitments,
       planningHorizon,
+      periodOptions,
+      periodDefault,
     }
     onSave(updated)
     setSaved(true)
@@ -212,7 +227,7 @@ export default function Settings({ profile, onSave, onBack }) {
           fontFamily: "'DM Mono', monospace",
           letterSpacing: '0.02em',
         }}>
-          SELECT ONE
+          SELECT ANY THAT APPLY — EACH BECOMES A DASHBOARD PERIOD FILTER
         </div>
         <div style={{
           display: 'grid',
@@ -220,11 +235,11 @@ export default function Settings({ profile, onSave, onBack }) {
           gap: '8px',
         }}>
           {[1,2,3,4,5,6,7,8,9,10].map(yr => {
-            const sel = planningHorizon === yr
+            const sel = planningHorizon.includes(yr)
             return (
               <div
                 key={yr}
-                onClick={() => setPlanningHorizon(yr)}
+                onClick={() => setPlanningHorizon(toggle(planningHorizon, yr))}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -246,21 +261,20 @@ export default function Settings({ profile, onSave, onBack }) {
             )
           })}
         </div>
-        {planningHorizon && (
-          <div style={{
-            marginTop: '14px',
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '10px',
-            color: 'var(--tx-3, #475569)',
-            letterSpacing: '0.04em',
-          }}>
-            {planningHorizon <= 2
-              ? `DASHBOARD WILL DEFAULT TO ${planningHorizon}Y PERIOD VIEW`
-              : planningHorizon <= 5
-                ? 'DASHBOARD WILL SHOW 1Y · 3Y · 5Y PERIOD OPTIONS'
-                : 'DASHBOARD WILL SHOW 1Y · 3Y · 5Y · 10Y PERIOD OPTIONS'}
-          </div>
-        )}
+        {planningHorizon.length > 0 && (() => {
+          const { periodOptions, periodDefault } = derivePeriods(planningHorizon)
+          return (
+            <div style={{
+              marginTop: '14px',
+              fontFamily: "'DM Mono', monospace",
+              fontSize: '10px',
+              color: 'var(--tx-3, #475569)',
+              letterSpacing: '0.04em',
+            }}>
+              {`DASHBOARD WILL SHOW ${periodOptions.join(' · ')} PERIOD OPTIONS · DEFAULTS TO ${periodDefault}`}
+            </div>
+          )
+        })()}
       </div>
 
       {/* Section 4: Data Path */}
