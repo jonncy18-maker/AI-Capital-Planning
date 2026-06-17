@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { derivePeriods } from '../../lib/periods.js'
+import { getImportHistory } from '../../lib/db/importLog.js'
 
 // Normalize legacy scalar planningHorizon (e.g. 3) into the multi-select array form.
 function normalizeHorizon(h) {
@@ -33,7 +34,7 @@ const Q2_OPTS = [
 
 // ── Settings Component ────────────────────────────────────────────────────────
 
-export default function Settings({ profile, onSave, onBack }) {
+export default function Settings({ profile, onSave, onBack, onImport, userId }) {
   // Accept both camelCase (onboarding) and snake_case (DB row) profile shapes.
   const [focuses, setFocuses] = useState(profile?.focuses || [])
   const [commitments, setCommitments] = useState(profile?.commitments || [])
@@ -41,6 +42,26 @@ export default function Settings({ profile, onSave, onBack }) {
     normalizeHorizon(profile?.planningHorizon ?? profile?.planning_horizon)
   )
   const [saved, setSaved] = useState(false)
+  const [importHistory, setImportHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    if (!userId) return
+    setHistoryLoading(true)
+    getImportHistory(userId)
+      .then(setImportHistory)
+      .catch(() => setImportHistory([]))
+      .finally(() => setHistoryLoading(false))
+  }, [userId])
+
+  function handleImportFile(file) {
+    if (!file || !onImport) return
+    const reader = new FileReader()
+    reader.onload = e => onImport(e.target.result, file.name)
+    reader.readAsText(file)
+  }
 
   const allAboveSel = Q1_BASE.every(b => focuses.includes(b))
 
@@ -302,6 +323,142 @@ export default function Settings({ profile, onSave, onBack }) {
         }}>
           Re-import data in Data Management to change this.
         </div>
+      </div>
+
+      {/* Section 5: Data Management */}
+      <div style={card}>
+        <div style={cardTitle}>// DATA MANAGEMENT</div>
+
+        {/* CSV Re-import drop zone */}
+        {onImport && (
+          <>
+            <div style={{
+              fontSize: '13px',
+              color: 'var(--tx-2, #94a3b8)',
+              marginBottom: '14px',
+              lineHeight: '1.6',
+            }}>
+              Import an additional Monarch Money CSV export. Duplicates are automatically skipped.
+            </div>
+            <input
+              type="file"
+              accept=".csv"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              onChange={e => handleImportFile(e.target.files[0])}
+            />
+            <div
+              onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => {
+                e.preventDefault()
+                setDragOver(false)
+                handleImportFile(e.dataTransfer.files[0])
+              }}
+              style={{
+                border: dragOver
+                  ? '1.5px dashed var(--accent, #00C2A8)'
+                  : '1.5px dashed var(--bd, #2d3148)',
+                borderRadius: '10px',
+                padding: '28px 20px',
+                textAlign: 'center',
+                background: 'var(--bg-app, #12141f)',
+                cursor: 'pointer',
+                transition: 'border-color .15s',
+                marginBottom: '20px',
+              }}
+            >
+              <div style={{ fontSize: '22px', color: 'var(--accent, #00C2A8)', lineHeight: 1 }}>↑</div>
+              <div style={{ fontSize: '13px', color: 'var(--tx-1, #e2e8f0)', marginTop: '10px', fontWeight: 500 }}>
+                Drop CSV here or click to browse
+              </div>
+              <div style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '9.5px',
+                color: 'var(--tx-3, #475569)',
+                marginTop: '6px',
+                letterSpacing: '0.04em',
+              }}>
+                MONARCH MONEY EXPORT FORMAT
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Import history */}
+        <div style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: '9.5px',
+          color: 'var(--tx-3, #475569)',
+          letterSpacing: '0.05em',
+          marginBottom: '10px',
+        }}>
+          IMPORT HISTORY
+        </div>
+
+        {historyLoading ? (
+          <div style={{ fontSize: '12px', color: 'var(--tx-3, #475569)' }}>Loading…</div>
+        ) : importHistory.length === 0 ? (
+          <div style={{
+            fontFamily: "'DM Mono', monospace",
+            fontSize: '11px',
+            color: 'var(--tx-3, #475569)',
+          }}>
+            No imports yet.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+            {importHistory.map(log => (
+              <div key={log.id} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '9px 0',
+                borderBottom: '0.5px solid var(--bd-light, #1a1d2e)',
+                gap: '12px',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: '12.5px',
+                    color: 'var(--tx-1, #e2e8f0)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {log.filename ?? 'CSV import'}
+                  </div>
+                  <div style={{
+                    fontFamily: "'DM Mono', monospace",
+                    fontSize: '9.5px',
+                    color: 'var(--tx-3, #475569)',
+                    marginTop: '2px',
+                  }}>
+                    {new Date(log.created_at).toLocaleDateString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric',
+                    })}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{
+                    fontFamily: "'DM Mono', monospace",
+                    fontSize: '11px',
+                    color: 'var(--accent, #00C2A8)',
+                  }}>
+                    +{log.inserted.toLocaleString()}
+                  </div>
+                  <div style={{
+                    fontFamily: "'DM Mono', monospace",
+                    fontSize: '9.5px',
+                    color: 'var(--tx-3, #475569)',
+                  }}>
+                    {log.skipped.toLocaleString()} skipped
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Save button */}

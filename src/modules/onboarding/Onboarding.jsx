@@ -1153,7 +1153,7 @@ export default function Onboarding({ onComplete }) {
         planningHorizon: q3,
         dataPath: path,
         baseline,
-        csvFile: csvFile ? { name: csvFile.name, rowCount: csvFile.rowCount, headers: csvFile.headers } : null,
+        csvFile: csvFile ? { name: csvFile.name, rowCount: csvFile.rowCount, headers: csvFile.headers, raw: csvFile.raw } : null,
         budgetBuckets,
         periodOptions,
         periodDefault,
