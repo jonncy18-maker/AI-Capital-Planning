@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { derivePeriods } from '../../lib/periods.js'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -467,7 +468,7 @@ function Step2({
             margin: '12px 0 6px',
             letterSpacing: '-0.01em',
           }}>
-            How far out do you typically plan your finances?
+            Which time horizons do you want to plan across?
           </div>
           <div style={{
             fontSize: '12px',
@@ -476,7 +477,7 @@ function Step2({
             fontFamily: "'DM Mono', monospace",
             letterSpacing: '0.02em',
           }}>
-            SELECT ONE
+            SELECT ANY THAT APPLY — EACH BECOMES A DASHBOARD PERIOD FILTER
           </div>
           <div style={{
             display: 'grid',
@@ -484,11 +485,11 @@ function Step2({
             gap: '8px',
           }}>
             {[1,2,3,4,5,6,7,8,9,10].map(yr => {
-              const sel = q3 === yr
+              const sel = q3.includes(yr)
               return (
                 <div
                   key={yr}
-                  onClick={() => setQ3(yr)}
+                  onClick={() => setQ3(toggle(q3, yr))}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -510,21 +511,20 @@ function Step2({
               )
             })}
           </div>
-          {q3 && (
-            <div style={{
-              marginTop: '16px',
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '10px',
-              color: 'var(--tx-3)',
-              letterSpacing: '0.04em',
-            }}>
-              {q3 <= 2
-                ? `DASHBOARD WILL DEFAULT TO ${q3}Y PERIOD VIEW`
-                : q3 <= 5
-                  ? 'DASHBOARD WILL SHOW 1Y · 3Y · 5Y PERIOD OPTIONS'
-                  : 'DASHBOARD WILL SHOW 1Y · 3Y · 5Y · 10Y PERIOD OPTIONS'}
-            </div>
-          )}
+          {q3.length > 0 && (() => {
+            const { periodOptions, periodDefault } = derivePeriods(q3)
+            return (
+              <div style={{
+                marginTop: '16px',
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '10px',
+                color: 'var(--tx-3)',
+                letterSpacing: '0.04em',
+              }}>
+                {`DASHBOARD WILL SHOW ${periodOptions.join(' · ')} PERIOD OPTIONS · DEFAULTS TO ${periodDefault}`}
+              </div>
+            )
+          })()}
         </div>
       )}
     </div>
@@ -1144,12 +1144,7 @@ export default function Onboarding({ onComplete }) {
     if (step === 4) { setStep(5); return }
     if (step === 5 && onComplete) {
       const budgetBuckets = deriveBudgetBuckets(q2, q2other, q2buckets)
-      const periodOptions = q3 === null ? ['1Y', '3Y', '5Y'] :
-        q3 <= 1 ? ['1Y'] :
-        q3 <= 2 ? ['1Y', '2Y'] :
-        q3 <= 3 ? ['1Y', '2Y', '3Y'] :
-        q3 <= 5 ? ['1Y', '3Y', '5Y'] :
-        ['1Y', '3Y', '5Y', '10Y']
+      const { periodOptions, periodDefault } = derivePeriods(q3)
       onComplete({
         focuses: q1,
         commitments: q2,
@@ -1161,6 +1156,7 @@ export default function Onboarding({ onComplete }) {
         csvFile: csvFile ? { name: csvFile.name, rowCount: csvFile.rowCount, headers: csvFile.headers } : null,
         budgetBuckets,
         periodOptions,
+        periodDefault,
       })
       return
     }
