@@ -1,0 +1,68 @@
+/* AI Capital Planning OS — Design System Tokens */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+
+::selection { background: var(--accent-bg); }
+
+:root {
+  --bg-app: #0C0F12;
+  --bg-card: #0A0D10;
+  --bd: #1E2530;
+  --bd-light: #141820;
+  --tx-1: #E2E8F0;
+  --tx-2: #8A9AAA;
+  --tx-3: #3A4A5A;
+  --tx-4: #2A3540;
+  --accent: #00C2A8;
+  --accent-bg: rgba(0, 194, 168, 0.1);
+  --accent-bd: rgba(0, 194, 168, 0.25);
+  --accent-tx-on: #06231F;
+  --warn: #E8A020;
+  --warn-bg: rgba(232, 160, 32, 0.1);
+  --green: #2ECC71;
+  --red: #E53935;
+  --ghost-bd: #2E3742;
+  --ghost-txt: #8A9AAA;
+  --field: #0E1318;
+  --hover: rgba(255, 255, 255, 0.03);
+  --bar-budget: rgba(56, 132, 220, 0.45);
+  --forecast-fill: rgba(130, 80, 210, 0.15);
+  --forecast-bd: rgba(150, 100, 230, 0.55);
+  --teal: #00C2A8;
+}
+
+[data-theme="light"] {
+  --bg-app: #F0F4F8;
+  --bg-card: #FFFFFF;
+  --bd: #CBD5E0;
+  --bd-light: #E2E8F0;
+  --tx-1: #0D1520;
+  --tx-2: #4A5A6A;
+  --tx-3: #8A9AAA;
+  --tx-4: #A0B0C0;
+  --accent: #0A7A6A;
+  --accent-bg: rgba(10, 122, 106, 0.08);
+  --accent-bd: rgba(10, 122, 106, 0.2);
+  --accent-tx-on: #FFFFFF;
+  --warn: #B07010;
+  --warn-bg: rgba(176, 112, 16, 0.08);
+  --green: #1A8A40;
+  --red: #C62828;
+  --ghost-bd: #8A9AAA;
+  --ghost-txt: #4A5A6A;
+  --field: #F7FAFC;
+  --hover: rgba(0, 0, 0, 0.025);
+  --bar-budget: rgba(40, 110, 200, 0.38);
+  --forecast-fill: rgba(130, 80, 210, 0.12);
+  --forecast-bd: rgba(120, 80, 200, 0.55);
+  --teal: #0A7A6A;
+}
+
+input::placeholder { color: var(--tx-3); }
+input { color: var(--tx-1); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--bd); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.ob-opt:hover { border-color: var(--accent-bd) !important; }
