@@ -39,6 +39,7 @@ function App() {
       </main>
 
       <div className="command-bar">
+        <span className="command-bar-icon">✦</span>
         <input placeholder="Ask anything about your finances…" disabled />
       </div>
     </div>

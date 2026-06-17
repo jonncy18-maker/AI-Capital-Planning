@@ -456,16 +456,16 @@ function Step2({
             fontFamily: "'DM Mono', monospace",
             letterSpacing: '0.02em',
           }}>
-            CHOOSE ONE
+            SELECT ALL THAT APPLY
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
             {Q3_OPTS.map(label => (
               <OptRow
                 key={label}
                 label={label}
-                selected={q3 === label}
-                onClick={() => setQ3(label)}
-                round={true}
+                selected={q3.includes(label)}
+                onClick={() => setQ3(prev => toggle(prev, label))}
+                round={false}
               />
             ))}
           </div>
@@ -967,7 +967,7 @@ export default function Onboarding({ onComplete }) {
   const [q2, setQ2] = useState([])
   const [q2other, setQ2other] = useState('')
   const [q2buckets, setQ2buckets] = useState([])
-  const [q3, setQ3] = useState(null)
+  const [q3, setQ3] = useState([])
 
   // step 3/4 state
   const [path, setPath] = useState(null)
@@ -994,7 +994,7 @@ export default function Onboarding({ onComplete }) {
     if (step === 2) {
       if (sub === 0) return q1.length > 0
       if (sub === 1) return true
-      if (sub === 2) return q3 !== null
+      if (sub === 2) return q3.length > 0
     }
     if (step === 3) return path !== null
     return true
@@ -1156,12 +1156,12 @@ export default function Onboarding({ onComplete }) {
       {/* ── Scrollable content ── */}
       <div style={{
         flex: 1,
-        overflowY: 'auto',
+        overflowY: step === 1 ? 'hidden' : 'auto',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'flex-start',
-        padding: '48px 24px',
+        justifyContent: step === 1 ? 'center' : 'flex-start',
+        padding: step === 1 ? '24px 24px' : '48px 24px',
       }}>
         <div style={{ width: '100%', maxWidth: '480px' }}>
 
@@ -1246,56 +1246,19 @@ export default function Onboarding({ onComplete }) {
         flexShrink: 0,
         background: 'var(--bg-card)',
         borderTop: '0.5px solid var(--bd)',
-        padding: '14px 24px 16px',
+        padding: '10px 24px',
       }}>
         <div style={{ width: '100%', maxWidth: '480px', margin: '0 auto' }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
             gap: '10px',
-            marginBottom: '9px',
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '7px',
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '9.5px',
-              color: 'var(--accent)',
-              letterSpacing: '0.08em',
-            }}>
-              ✦ SETUP ASSISTANT
-            </div>
-            <button
-              onClick={() => setAiInput('Walk me through onboarding step by step')}
-              style={{
-                flexShrink: 0,
-                background: 'none',
-                border: '0.5px solid var(--bd)',
-                borderRadius: '30px',
-                padding: '4px 11px',
-                fontFamily: "'DM Mono', monospace",
-                fontSize: '9.5px',
-                color: 'var(--tx-2)',
-                letterSpacing: '0.04em',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Walk me through onboarding
-            </button>
-          </div>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
             border: '0.5px solid var(--accent-bd)',
             borderRadius: '9px',
             background: 'var(--accent-bg)',
-            padding: '12px 16px',
+            padding: '9px 14px',
           }}>
-            <span style={{ color: 'var(--accent)', fontSize: '15px' }}>✦</span>
+            <span style={{ color: 'var(--accent)', fontSize: '14px', flexShrink: 0 }}>✦</span>
             <input
               value={aiInput}
               onChange={e => setAiInput(e.target.value)}
@@ -1311,6 +1274,26 @@ export default function Onboarding({ onComplete }) {
                 fontSize: '13px',
               }}
             />
+            {!mobile && (
+              <button
+                onClick={() => setAiInput('Walk me through onboarding step by step')}
+                style={{
+                  flexShrink: 0,
+                  background: 'none',
+                  border: '0.5px solid var(--bd)',
+                  borderRadius: '30px',
+                  padding: '3px 9px',
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: '9px',
+                  color: 'var(--tx-2)',
+                  letterSpacing: '0.04em',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Walk me through
+              </button>
+            )}
             {!mobile && (
               <span style={{
                 fontFamily: "'DM Mono', monospace",
