@@ -6,6 +6,7 @@ import { getModule } from '../registry.js'
 
 import Sidebar from './Sidebar.jsx'
 import CommandBar from './CommandBar.jsx'
+import ImportFlow from '../import/ImportFlow.jsx'
 import Dashboard from '../dashboard/Dashboard.jsx'
 import CashFlow from '../cashflow/CashFlow.jsx'
 import Scenarios from '../scenarios/Scenarios.jsx'
@@ -27,7 +28,7 @@ function useWindowWidth() {
   return width
 }
 
-export default function AppShell({ user, profile, onProfileSave, onSignOut, onStartReImport }) {
+export default function AppShell({ user, profile, onProfileSave, onSignOut, onStartReImport, pendingImport, onImportDone }) {
   const { theme, toggleTheme } = useTheme()
   const vw = useWindowWidth()
   const mobile = vw < 760
@@ -190,13 +191,25 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <main style={{ flex: 1, overflowY: 'auto', padding: mobile ? '22px 18px 90px' : '34px 28px' }}>
             <div style={{ maxWidth: '960px', margin: '0 auto' }}>
-              {aiResponse && (
-                <AiResponseCard
-                  response={aiResponse}
-                  onDismiss={() => setAiResponse(null)}
+              {pendingImport ? (
+                <ImportFlow
+                  csvRaw={pendingImport.csvRaw}
+                  csvName={pendingImport.csvName}
+                  userId={user.id}
+                  onComplete={onImportDone}
+                  mobile={mobile}
                 />
+              ) : (
+                <>
+                  {aiResponse && (
+                    <AiResponseCard
+                      response={aiResponse}
+                      onDismiss={() => setAiResponse(null)}
+                    />
+                  )}
+                  {renderModule()}
+                </>
               )}
-              {renderModule()}
             </div>
           </main>
 

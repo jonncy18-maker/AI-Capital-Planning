@@ -96,7 +96,7 @@ function ParseError({ errors, onRetry, onSkip }) {
 
 // ── Unmapped categories screen ─────────────────────────────────────────────────
 
-function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll }) {
+function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile }) {
   const [mappings, setMappings] = useState(() => {
     const m = {}
     unmapped.forEach(cat => { m[cat] = { group: 'Uncategorized', type: 'Flexible', skip: false } })
@@ -126,23 +126,23 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll }) {
     <div>
       <div style={{
         fontFamily: "'DM Mono', monospace",
-        fontSize: '10px',
+        fontSize: 10,
         color: 'var(--accent)',
         letterSpacing: '0.1em',
-        marginBottom: '10px',
+        marginBottom: 6,
       }}>
         // unmapped categories
       </div>
-      <div style={{
+      <h1 style={{
         fontFamily: "'DM Serif Display', serif",
-        fontSize: '24px',
-        lineHeight: '1.25',
+        fontSize: mobile ? 24 : 30,
+        fontWeight: 400,
         color: 'var(--tx-1)',
-        marginBottom: '8px',
-        letterSpacing: '-0.01em',
+        margin: '0 0 8px',
+        lineHeight: 1.1,
       }}>
         {unmapped.length} {unmapped.length === 1 ? 'category needs' : 'categories need'} mapping
-      </div>
+      </h1>
       <div style={{
         fontSize: '13px',
         color: 'var(--tx-2)',
@@ -152,7 +152,15 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll }) {
         These Monarch categories aren't in our default map. Assign each to a group, or skip to leave them uncategorized.
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        marginBottom: '16px',
+        maxHeight: '55vh',
+        overflowY: 'auto',
+        paddingRight: '4px',
+      }}>
         {unmapped.map(cat => {
           const m = mappings[cat]
           return (
@@ -234,7 +242,13 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll }) {
         })}
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between' }}>
+      <div style={{
+        borderTop: '1px solid var(--bd)',
+        paddingTop: '16px',
+        display: 'flex',
+        gap: '12px',
+        justifyContent: 'space-between',
+      }}>
         <button onClick={onSkipAll} style={{
           border: '1px solid var(--ghost-bd)',
           background: 'none',
@@ -261,6 +275,7 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll }) {
           Apply & import →
         </button>
       </div>
+      <div style={{ marginBottom: '24px' }} />
     </div>
   )
 }
@@ -494,7 +509,7 @@ function StatRow({ label, value, accent }) {
 // ── Main ImportFlow component ───────────────────────────────────────────────────
 
 // Screens: 'parsing' | 'parse_error' | 'unmapped' | 'importing' | 'summary'
-export default function ImportFlow({ csvRaw, csvName, userId, onComplete }) {
+export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile }) {
   const [screen, setScreen] = useState('parsing')
   const [parseResult, setParseResult] = useState(null)
   const [unmapped, setUnmapped] = useState([])
@@ -594,35 +609,13 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete }) {
   }
 
   return (
-    <div
-      style={{
-        fontFamily: 'Inter, sans-serif',
-        background: 'var(--bg-app)',
-        color: 'var(--tx-1)',
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: screen === 'importing' ? 'center' : 'flex-start',
-        padding: '48px 24px',
-        WebkitFontSmoothing: 'antialiased',
-      }}
-    >
+    <div style={{
+      fontFamily: 'Inter, sans-serif',
+      color: 'var(--tx-1)',
+      WebkitFontSmoothing: 'antialiased',
+    }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      <div style={{ width: '100%', maxWidth: '480px' }}>
-
-        {/* Header */}
-        {screen !== 'importing' && (
-          <div style={{
-            fontFamily: "'DM Serif Display', serif",
-            fontSize: '18px',
-            color: 'var(--tx-1)',
-            marginBottom: '36px',
-            letterSpacing: '-0.01em',
-          }}>
-            AI Capital Planning OS
-          </div>
-        )}
+      <div style={{ maxWidth: '520px' }}>
 
         {screen === 'parsing' && (
           <div style={{ textAlign: 'center', paddingTop: '48px' }}>
@@ -653,6 +646,7 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete }) {
             exampleRows={parseResult?.rows ?? []}
             onConfirm={handleUnmappedConfirm}
             onSkipAll={handleSkipAllUnmapped}
+            mobile={mobile}
           />
         )}
 
