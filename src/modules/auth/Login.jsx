@@ -9,13 +9,28 @@ export default function Login() {
   const [message, setMessage] = useState(null) // { type: 'error'|'info', text }
 
   // Coerce any error shape (Error, Supabase AuthError, plain object, string)
-  // into displayable text so the UI never renders a blank/`{}` box.
+  // into displayable text. Error subclasses keep message/status/code on
+  // non-enumerable props, so JSON.stringify alone yields "{}" — pull the
+  // known fields explicitly so the box is never blank/uninformative.
   function readableError(err) {
     if (!err) return ''
     if (typeof err === 'string') return err
-    if (typeof err.message === 'string' && err.message) return err.message
-    if (typeof err.error_description === 'string') return err.error_description
-    try { return JSON.stringify(err) } catch { return String(err) }
+
+    const parts = []
+    if (err.message) parts.push(err.message)
+    if (err.error_description && err.error_description !== err.message) parts.push(err.error_description)
+    if (err.status) parts.push(`status ${err.status}`)
+    if (err.code && err.code !== err.status) parts.push(`code ${err.code}`)
+    if (!parts.length && err.name) parts.push(err.name)
+    if (parts.length) return parts.join(' · ')
+
+    try {
+      const own = Object.getOwnPropertyNames(err).reduce((o, k) => { o[k] = err[k]; return o }, {})
+      const s = JSON.stringify(own)
+      return s && s !== '{}' ? s : String(err)
+    } catch {
+      return String(err)
+    }
   }
 
   async function handleSubmit(e) {
