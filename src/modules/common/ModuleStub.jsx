@@ -33,7 +33,7 @@ export default function ModuleStub({ icon, eyebrow, title, description, phase, f
         </div>
         <div style={{
           fontFamily: "'DM Serif Display', serif",
-          fontSize: '30px',
+          fontSize: '22px',
           lineHeight: '1.15',
           color: 'var(--tx-1)',
           letterSpacing: '-0.015em',

@@ -127,20 +127,19 @@ export default function Dashboard({ summary, mobile, periodDefault, periodOption
       }}>
         <div>
           <div style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '10px',
-            color: 'var(--accent)',
-            letterSpacing: '0.1em',
-            marginBottom: '8px',
-          }}>
-            // dashboard
-          </div>
-          <div style={{
             fontFamily: "'DM Serif Display', serif",
-            fontSize: '30px',
+            fontSize: '22px',
             color: 'var(--tx-1)',
             letterSpacing: '-0.015em',
             lineHeight: 1.1,
+            marginBottom: '4px',
+          }}>
+            Dashboard
+          </div>
+          <div style={{
+            fontSize: '14px',
+            color: 'var(--tx-2)',
+            lineHeight: 1.4,
           }}>
             Your control center
           </div>
