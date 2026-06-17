@@ -1,9 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Sanitize copy-paste artifacts that break Supabase requests:
-// trailing whitespace/newlines and trailing slashes both produce
-// "Invalid path specified in request URL" errors.
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '')
+// Sanitize copy-paste artifacts that break Supabase requests. Pasting the
+// REST endpoint (…supabase.co/rest/v1) or leaving a trailing slash both
+// produce "Invalid path specified in request URL" errors — strip the known
+// API path suffixes and any trailing slashes/whitespace.
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
+  .trim()
+  .replace(/\/(rest|auth|storage|realtime|functions)\/v\d+\/?$/, '')
+  .replace(/\/+$/, '')
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
 
 if (!supabaseUrl || !supabaseAnonKey) {
