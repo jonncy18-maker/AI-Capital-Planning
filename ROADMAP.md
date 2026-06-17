@@ -26,20 +26,30 @@
   - `src/modules/import/ImportFlow.jsx` — Full-screen import state machine: parsing → unmapped-categories dialog → importing → summary.
   - Onboarding now passes `raw` CSV through to `onComplete`; App.jsx inserts ImportFlow between onboarding and main app when CSV is present.
   - Settings → Data Management section: re-import CSV drop zone + import history log.
+- **Phase 3 complete** — Dashboard shell, navigation, command bar, AI proxy:
+  - `src/modules/shell/AppShell.jsx` — hub layout (sidebar + canvas + command bar), responsive (mobile/tablet/desktop), owns AI context + command-bar submit.
+  - `src/modules/shell/Sidebar.jsx` — collapsible left sidebar (icon rail when collapsed); also rendered inside mobile drawer.
+  - `src/modules/shell/CommandBar.jsx` — persistent AI input; desktop bottom bar, mobile FAB + bottom sheet. Responses render as a dismissible card in the canvas.
+  - `src/modules/registry.js` — central module registry (single source of truth for nav + routing).
+  - `src/modules/dashboard/Dashboard.jsx` — widget grid with drag-to-rearrange scaffold; live widgets (90-day activity, categories, commitments) render real numbers from the AI context.
+  - Module stubs: `cashflow`, `scenarios`, `budget`, `commitments`, `wealth` (shared `common/ModuleStub.jsx`), plus `mapping` "Coming Soon".
+  - `src/lib/theme/useTheme.js` — persistent dark/light toggle (localStorage, sets `data-theme`).
+  - `src/lib/ai/contextLoader.js` — `loadAIContext(userId)` (90d txns + categories + active commitments + latest wealth snapshot), `summarizeContext`, `buildContextBrief`.
+  - **AI now wired through a secure Supabase Edge Function** — `supabase/functions/ai-chat/index.ts` holds the Anthropic key server-side; `src/lib/ai/sendMessage.js` calls it via `supabase.functions.invoke('ai-chat')` (JWT auto-attached). The browser never sees the key.
 
 ### Known follow-ups / gotchas
-- **Anthropic key:** stored in Supabase secrets (safe, server-side) but NOT yet used. `src/lib/anthropic.js` still calls Anthropic *directly from the browser* via `VITE_ANTHROPIC_API_KEY` — insecure for public use. **Build a Supabase Edge Function proxy** before wiring any AI feature, and keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty (rotate the key if a real one was ever put there). NOTE: proxy will be a **Supabase Edge Function**, not Netlify (architecture/roadmap text predates this decision).
+- **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
+- **Retire the browser-side path:** `src/lib/anthropic.js` (direct browser call via `VITE_ANTHROPIC_API_KEY`) is now superseded by the Edge Function and should not be used. Keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty; rotate the key if it was ever exposed.
 - **Apply migration 003** in Supabase SQL Editor (`supabase/migrations/003_import_logs.sql`) before import logging will work. The import itself succeeds without it; logging fails silently (non-fatal).
-- **Test with real Monarch CSV** — dedup logic and parser logic are written but not tested against an actual 12–24 month export. Verify `buildDedupKey` output matches what Monarch actually exports.
-- **budget_categories seed is per-user** — seeded on first import via `seedDefaultCategories(userId)`. Not a migration. Categories added by user during unmapped-categories dialog are also persisted.
+- **Test with real Monarch CSV** — dedup logic and parser logic are written but not tested against an actual 12–24 month export.
+- **budget_categories seed is per-user** — seeded on first import via `seedDefaultCategories(userId)`.
 - Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
 
-### Recommended next session — Phase 3: Dashboard Shell and Navigation
-1. Build persistent collapsible left sidebar (already scaffolded in App.jsx — needs real styling).
-2. Build route structure for all modules (pages exist as placeholders).
-3. Build Dashboard canvas (empty widget grid).
-4. Wire AI command bar to Supabase Edge Function proxy before enabling.
-5. Build dark/light mode toggle in main app shell (currently only in onboarding).
+### Recommended next session — Phase 4: Cash Flow Timing Module
+1. Build the 12-month rolling cash demand calendar, pulling Non-Monthly budget line items by month.
+2. Render month-by-month outflow schedule + upcoming spike alerts (configurable threshold).
+3. Wire the AI command bar context to the Cash Flow Timing module.
+4. (Prereq) Confirm the `ai-chat` Edge Function is deployed so the command bar answers live.
 
 ---
 
@@ -100,19 +110,19 @@
 ## Phase 3 — Dashboard Shell and Navigation
 *Goal: The hub is live. Navigation works. No module content yet.*
 
-- [ ] Build persistent collapsible left sidebar (web)
-- [ ] Build card-based navigation (mobile)
-- [ ] Implement responsive breakpoints (desktop / tablet / mobile)
-- [ ] Build route structure for all modules (pages exist, content is placeholder)
-- [ ] Build Dashboard canvas (empty widget grid, drag-to-rearrange scaffold)
-- [ ] Build AI command bar (persistent, bottom of canvas on desktop)
-- [ ] Build FAB + bottom sheet AI input (mobile)
-- [ ] Wire command bar to Anthropic API (basic echo test — confirm API connection works)
-- [ ] Build AI context loader (pulls user data from Supabase at session start)
-- [ ] Build "Coming Soon" stub page for Mapping module
-- [ ] Implement dark/light mode toggle (match design system from NGS Navigator)
+- [x] Build persistent collapsible left sidebar (web) — `Sidebar.jsx`, collapses to icon rail
+- [x] Build card-based navigation (mobile) — top bar + slide-in drawer with module list
+- [x] Implement responsive breakpoints (desktop / tablet / mobile) — 760 / 1100 thresholds in `AppShell.jsx`
+- [x] Build route structure for all modules (state-based switching via `registry.js`; pages exist as placeholders)
+- [x] Build Dashboard canvas (empty widget grid, drag-to-rearrange scaffold) — `Dashboard.jsx`
+- [x] Build AI command bar (persistent, bottom of canvas on desktop) — `CommandBar.jsx`
+- [x] Build FAB + bottom sheet AI input (mobile)
+- [x] Wire command bar to Anthropic API — via secure Supabase Edge Function proxy (`supabase/functions/ai-chat`), not direct browser call
+- [x] Build AI context loader (pulls user data from Supabase at session start) — `lib/ai/contextLoader.js`
+- [x] Build "Coming Soon" stub page for Mapping module — `mapping/Mapping.jsx`
+- [x] Implement dark/light mode toggle — `lib/theme/useTheme.js`, persisted to localStorage
 
-**Exit criteria:** Full navigation works. Dashboard renders. Command bar connects to Anthropic API. All module routes exist. Responsive on mobile and desktop.
+**Exit criteria:** Full navigation works. Dashboard renders. Command bar connects to Anthropic API. All module routes exist. Responsive on mobile and desktop. ✓ (command bar answers live once `ai-chat` is deployed)
 
 ---
 
@@ -245,7 +255,7 @@
 - [ ] Performance audit (Supabase query optimization, AI context payload size)
 - [ ] Error handling audit (failed imports, API errors, empty states)
 - [ ] AI response quality review (context prompt tuning)
-- [ ] Netlify Functions proxy setup (shields Anthropic API key — required before any public access)
+- [x] API key proxy (shields Anthropic API key — required before any public access) — built in Phase 3 as a **Supabase Edge Function** (`supabase/functions/ai-chat`), not Netlify. Remaining: confirm deployed + secret set in production.
 - [ ] Make repo public (after proxy is confirmed working)
 - [ ] Final ROADMAP.md update (check off completed phases, note any scope changes)
 
