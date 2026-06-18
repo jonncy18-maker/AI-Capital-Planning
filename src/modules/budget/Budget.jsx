@@ -650,6 +650,11 @@ export default function Budget({ userId, mobile }) {
         mobile={mobile}
         icon="▦"
         title={reviewing ? 'Match Detail Tabs' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
+        subtitle={reviewing
+          ? 'Confirm which detail tab feeds each non-monthly category.'
+          : generating
+            ? 'Review and adjust the proposed targets, then save the year.'
+            : 'Build and review a month-by-month budget for the year.'}
         actions={!generating && !reviewing && (
           <>
             <select value={year} onChange={e => setYear(Number(e.target.value))} style={{

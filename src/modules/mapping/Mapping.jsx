@@ -118,12 +118,12 @@ export default function Mapping({ userId, mobile }) {
         mobile={mobile}
         icon="⊹"
         title="Category Mapping"
+        subtitle="Control how your categories roll up into budget groups."
       />
       <div style={{ fontSize: '13px', color: 'var(--tx-2)', lineHeight: 1.6, marginBottom: '22px', maxWidth: 600 }}>
-        Review and refine how your categories roll up into budget groups. Groups are
-        yours — pick an existing one, or add a new bucket. These mappings drive the
-        budget, forecasts, and AI briefings. Mark transfers or credit-card payments
-        as <em>exclude</em> so they don't overstate your spend and income.
+        Groups are yours — pick an existing one, or add a new bucket. These mappings
+        drive the budget, forecasts, and AI briefings. Mark transfers or credit-card
+        payments as <em>exclude</em> so they don't overstate your spend and income.
       </div>
 
       {/* Import existing budget / map */}

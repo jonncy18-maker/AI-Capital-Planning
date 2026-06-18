@@ -28,6 +28,14 @@ function csvCell(v) {
 // Render normalized Monarch rows as a CSV string in the exact column layout the
 // existing Monarch CSV parser/import pipeline expects — so a sync reuses the same
 // parse → category-map → dedup-import flow as a manual upload, no special-casing.
+//
+// Deduplication is automatic and bidirectional: importTransactions computes a
+// dedup_key of `date|merchant_lower|amount|account` for every row and upserts
+// with onConflict (user_id, dedup_key) + ignoreDuplicates against a UNIQUE
+// constraint. Because the API sync is funneled through the SAME Monarch CSV
+// parser, an identical transaction — whether it first arrived via a CSV export
+// or a sync — produces the same key and is skipped. So a sync never re-inserts
+// what a CSV already added, and a later CSV won't duplicate what a sync added.
 export function monarchRowsToCSV(rows) {
   const header = MONARCH_COLUMNS.join(',')
   const lines = rows.map(r => [
