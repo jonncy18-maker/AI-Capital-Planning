@@ -206,25 +206,6 @@ function BriefingWidget({ userId, ctx, briefing, onGenerated }) {
   )
 }
 
-// Wrapper that makes a full-width block (chart, briefing) configurable the same
-// way grid widgets are: a label + show/hide eye in configure mode, dimmed when
-// hidden. Outside configure mode it's a plain pass-through.
-function ConfigBlock({ id, label, configure, isHidden, onToggle, children }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      {configure && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, padding: '0 2px' }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: '0.05em', color: 'var(--tx-3)' }}>{label}</span>
-          <button onClick={() => onToggle(id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13 }}>
-            {isHidden ? '◌' : '⏿'}
-          </button>
-        </div>
-      )}
-      <div style={{ opacity: isHidden ? 0.4 : 1, transition: 'opacity .15s' }}>{children}</div>
-    </div>
-  )
-}
-
 // ── Main dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [] }) {
@@ -268,19 +249,30 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
     return () => { cancelled = true }
   }, [userId])
 
-  const widgets = useMemo(() => buildWidgets(context, summary), [context, summary])
+  // Every dashboard block — the full-width chart and AI briefing plus the stat
+  // widgets — lives in one list so all of them are draggable and hideable.
+  const blocks = useMemo(() => [
+    { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: () => <BudgetActualsChart data={monthly} mobile={mobile} /> },
+    { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: () => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} /> },
+    ...buildWidgets(context, summary),
+  ], [context, summary, monthly, mobile, userId, briefing])
 
-  // Apply saved order then append any new widgets not yet in the order.
+  // Apply the saved order; full-width blocks not yet in a saved order lead, then
+  // saved order, then any other new blocks. After the first drag the persisted
+  // order contains every id, so this default only applies before any reordering.
   const ordered = useMemo(() => {
-    const byId = Object.fromEntries(widgets.map(w => [w.id, w]))
+    const byId = Object.fromEntries(blocks.map(b => [b.id, b]))
     const seen = new Set()
     const result = []
-    for (const id of layout.order) {
-      if (byId[id]) { result.push(byId[id]); seen.add(id) }
+    for (const b of blocks) {
+      if (b.fullWidth && !layout.order.includes(b.id)) { result.push(b); seen.add(b.id) }
     }
-    for (const w of widgets) if (!seen.has(w.id)) result.push(w)
+    for (const id of layout.order) {
+      if (byId[id] && !seen.has(id)) { result.push(byId[id]); seen.add(id) }
+    }
+    for (const b of blocks) if (!seen.has(b.id)) result.push(b)
     return result
-  }, [widgets, layout.order])
+  }, [blocks, layout.order])
 
   const hidden = new Set(layout.hidden)
 
@@ -348,48 +340,61 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
         </div>
       )}
 
-      {/* Monthly Budget vs Actuals — the centerpiece, full width */}
-      {(configure || !hidden.has('monthlyChart')) && (
-        <ConfigBlock id="monthlyChart" label="MONTHLY BUDGET VS ACTUALS" configure={configure} isHidden={hidden.has('monthlyChart')} onToggle={toggleHidden}>
-          <BudgetActualsChart data={monthly} mobile={mobile} />
-        </ConfigBlock>
-      )}
-
-      {/* AI Briefing — full width */}
-      {(configure || !hidden.has('briefing')) && (
-        <ConfigBlock id="briefing" label="AI BRIEFING" configure={configure} isHidden={hidden.has('briefing')} onToggle={toggleHidden}>
-          <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} />
-        </ConfigBlock>
-      )}
-
-      {/* Widget grid */}
+      {/* Unified block grid — full-width chart & briefing and the stat widgets,
+          all draggable + hideable. Full-width blocks span every column. */}
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
-        {(configure ? ordered : visible).map(w => {
-          const isHidden = hidden.has(w.id)
+        {(configure ? ordered : visible).map(b => {
+          const isHidden = hidden.has(b.id)
+          const dragProps = {
+            draggable: configure,
+            onDragStart: () => setDragId(b.id),
+            onDragOver: e => configure && e.preventDefault(),
+            onDrop: () => onDrop(b.id),
+          }
+
+          if (b.fullWidth) {
+            return (
+              <div key={b.id} {...dragProps} style={{
+                gridColumn: '1 / -1',
+                cursor: configure ? 'grab' : 'default',
+                opacity: dragId === b.id ? 0.5 : isHidden ? 0.4 : 1,
+                outline: dragId === b.id ? '2px solid var(--accent)' : 'none',
+                outlineOffset: 3, borderRadius: 14, transition: 'opacity .15s',
+              }}>
+                {configure && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, padding: '0 2px' }}>
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: '0.05em', color: 'var(--tx-3)' }}>⠿ {b.title.toUpperCase()}</span>
+                    <button onClick={() => toggleHidden(b.id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13 }}>
+                      {isHidden ? '◌' : '⏿'}
+                    </button>
+                  </div>
+                )}
+                {b.render()}
+              </div>
+            )
+          }
+
           return (
             <div
-              key={w.id}
-              draggable={configure}
-              onDragStart={() => setDragId(w.id)}
-              onDragOver={e => configure && e.preventDefault()}
-              onDrop={() => onDrop(w.id)}
+              key={b.id}
+              {...dragProps}
               style={{
-                border: dragId === w.id ? '1px solid var(--accent)' : '1px solid var(--bd)',
+                border: dragId === b.id ? '1px solid var(--accent)' : '1px solid var(--bd)',
                 borderRadius: 13, background: 'var(--bg-card)', padding: 20, minHeight: 128,
                 cursor: configure ? 'grab' : 'default',
-                opacity: dragId === w.id ? 0.5 : isHidden ? 0.4 : 1,
+                opacity: dragId === b.id ? 0.5 : isHidden ? 0.4 : 1,
                 transition: 'border-color .15s, opacity .15s',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx-2)' }}>{w.title}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx-2)' }}>{b.title}</div>
                 {configure && (
-                  <button onClick={() => toggleHidden(w.id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13 }}>
+                  <button onClick={() => toggleHidden(b.id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13 }}>
                     {isHidden ? '◌' : '⏿'}
                   </button>
                 )}
               </div>
-              {w.render()}
+              {b.render()}
             </div>
           )
         })}
