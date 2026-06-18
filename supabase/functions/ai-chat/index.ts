@@ -94,6 +94,7 @@ serve(async (req) => {
     model?: string
     modelFamily?: string
     cacheSystem?: boolean
+    tools?: unknown
   }
   try {
     payload = await req.json()
@@ -101,7 +102,7 @@ serve(async (req) => {
     return json({ error: 'Invalid JSON body.' }, 400)
   }
 
-  const { messages, system, maxTokens, model, modelFamily, cacheSystem } = payload
+  const { messages, system, maxTokens, model, modelFamily, cacheSystem, tools } = payload
   if (!Array.isArray(messages) || messages.length === 0) {
     return json({ error: 'messages[] is required.' }, 400)
   }
@@ -131,6 +132,9 @@ serve(async (req) => {
         max_tokens: maxTokens ?? 1024,
         system: systemParam,
         messages,
+        // Tool definitions enable the assistant to take actions (e.g. create a
+        // scenario). The client runs the tool loop and sends tool_result turns.
+        ...(Array.isArray(tools) && tools.length ? { tools } : {}),
       }),
     })
 
@@ -140,8 +144,11 @@ serve(async (req) => {
     }
 
     const data = await res.json()
-    const text = data?.content?.[0]?.text ?? ''
-    return json({ text })
+    // Concatenate text blocks for simple callers; pass the raw content blocks and
+    // stop_reason through so the client can drive multi-step tool use.
+    const content = Array.isArray(data?.content) ? data.content : []
+    const text = content.filter((b: { type?: string }) => b?.type === 'text').map((b: { text?: string }) => b.text ?? '').join('\n').trim()
+    return json({ text, content, stop_reason: data?.stop_reason ?? 'end_turn' })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)
   }

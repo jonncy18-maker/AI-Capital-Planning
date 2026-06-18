@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../../lib/theme/useTheme.js'
 import { loadAIContext, summarizeContext } from '../../lib/ai/contextLoader.js'
-import { sendAIMessage } from '../../lib/ai/sendMessage.js'
+import { runScenarioAgent } from '../../lib/ai/scenarioAgent.js'
 import { getModule } from '../registry.js'
+import Markdown from '../common/Markdown.jsx'
 
 import Sidebar from './Sidebar.jsx'
 import CommandBar from './CommandBar.jsx'
@@ -42,8 +43,18 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
   // thread ([{ role, content, status }]); the assistant can ask a follow-up and
   // the user answers in the same command bar without losing context.
   const [aiContext, setAiContext] = useState(null)
-  const [conversation, setConversation] = useState([]) // { role, content, status }
+  const [conversation, setConversation] = useState([]) // { role, content, status, created }
   const [aiLoading, setAiLoading] = useState(false)
+  // Bumped whenever the AI writes data (e.g. creates a scenario) so dependent
+  // modules reload without a manual refresh.
+  const [dataNonce, setDataNonce] = useState(0)
+
+  const reloadAiContext = useCallback(() => {
+    if (!user) return
+    loadAIContext(user.id)
+      .then(ctx => setAiContext(ctx))
+      .catch(() => {})
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!user) return
@@ -57,11 +68,11 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
   const summary = useMemo(() => summarizeContext(aiContext), [aiContext])
 
   async function handleAiSubmit(prompt) {
-    // Build the API history from completed turns, then append the new question.
+    // Build history from completed turns, then run the agent (tool-enabled, so it
+    // can actually create a scenario rather than only describing it).
     const history = conversation
       .filter(m => m.content && m.status !== 'loading')
       .map(m => ({ role: m.role, content: m.content }))
-    const apiMessages = [...history, { role: 'user', content: prompt }]
 
     setAiLoading(true)
     setConversation(prev => [
@@ -71,8 +82,18 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
     ])
 
     try {
-      const res = await sendAIMessage({ messages: apiMessages, context: aiContext })
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status }))
+      const res = await runScenarioAgent({
+        userId: user.id,
+        history,
+        prompt,
+        context: aiContext,
+        onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
+      })
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
+      if (res.created && res.created.length) {
+        setDataNonce(n => n + 1)
+        reloadAiContext()
+      }
     } catch (e) {
       setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
     } finally {
@@ -101,7 +122,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
           />
         )
       case 'cashflow':    return <CashFlow userId={user.id} mobile={mobile} />
-      case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} />
+      case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} reloadSignal={dataNonce} context={aiContext} onDataChange={() => { setDataNonce(n => n + 1); reloadAiContext() }} />
       case 'budget':      return <Budget userId={user.id} mobile={mobile} />
       case 'commitments': return <Commitments userId={user.id} mobile={mobile} />
       case 'wealth':      return <Wealth userId={user.id} mobile={mobile} />
@@ -218,6 +239,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
                     <ConversationCard
                       messages={conversation}
                       onClear={() => setConversation([])}
+                      onViewScenarios={() => selectModule('scenarios')}
                     />
                   )}
                   {renderModule()}
@@ -247,7 +269,7 @@ function replaceLast(messages, next) {
 
 // Running conversation thread. Renders each turn; the user can keep answering in
 // the command bar and the assistant retains context across turns.
-function ConversationCard({ messages, onClear }) {
+function ConversationCard({ messages, onClear, onViewScenarios }) {
   return (
     <div style={{
       border: '1px solid var(--accent-bd)',
@@ -279,15 +301,15 @@ function ConversationCard({ messages, onClear }) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {messages.map((m, i) => (
-          <Turn key={i} message={m} />
+          <Turn key={i} message={m} onViewScenarios={onViewScenarios} />
         ))}
       </div>
     </div>
   )
 }
 
-function Turn({ message }) {
-  const { role, content, status } = message
+function Turn({ message, onViewScenarios }) {
+  const { role, content, status, statusText, created } = message
 
   if (role === 'user') {
     return (
@@ -307,15 +329,44 @@ function Turn({ message }) {
   return (
     <div style={{ display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
       <span style={{ flexShrink: 0, color: isError ? 'var(--warn)' : 'var(--accent)', fontSize: '13px', marginTop: '2px', width: '34px' }}>✦</span>
-      {status === 'loading' ? (
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px', color: 'var(--tx-3)', letterSpacing: '0.04em', marginTop: '2px' }}>
-          Thinking…
-        </div>
-      ) : (
-        <div style={{ fontSize: '13.5px', lineHeight: 1.65, color: isError ? 'var(--warn)' : 'var(--tx-1)', whiteSpace: 'pre-wrap', minWidth: 0 }}>
-          {content}
-        </div>
-      )}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        {status === 'loading' ? (
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px', color: 'var(--tx-3)', letterSpacing: '0.04em', marginTop: '2px' }}>
+            {statusText || 'Thinking…'}
+          </div>
+        ) : isError ? (
+          <div style={{ fontSize: '13.5px', lineHeight: 1.65, color: 'var(--warn)', whiteSpace: 'pre-wrap' }}>{content}</div>
+        ) : (
+          <Markdown text={content} />
+        )}
+
+        {created && created.length > 0 && (
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {created.map((c, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                border: '1px solid var(--accent-bd)', background: 'var(--accent-bg)',
+                borderRadius: 9, padding: '9px 12px',
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    ✓ {c.name}
+                  </div>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', letterSpacing: '0.03em', marginTop: 2 }}>
+                    {c.adjustmentCount} adjustment{c.adjustmentCount === 1 ? '' : 's'} · net {c.netDelta >= 0 ? '+' : '−'}${Math.abs(Math.round(c.netDelta)).toLocaleString()}
+                  </div>
+                </div>
+                <button onClick={onViewScenarios} style={{
+                  flexShrink: 0, background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none',
+                  borderRadius: 7, padding: '6px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                }}>
+                  Open →
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
