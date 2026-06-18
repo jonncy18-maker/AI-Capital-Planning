@@ -1,45 +1,45 @@
 import { useState, useRef } from 'react'
-import { parseBudgetCSV } from '../../lib/csv/budgetParser.js'
+import { parseBudgetFile } from '../../lib/csv/budgetParser.js'
 import { importCategoryMappings } from '../../lib/db/budgetCategories.js'
 
-// Reusable drop zone for importing an existing budget / category-map CSV.
-// Parses the file, upserts the mappings, and reports the result. Used from
-// Settings and the Mapping module. `onImported(count)` fires on success.
+// Reusable drop zone for importing an existing budget / category-map file —
+// CSV or .xlsx. Parses the file, upserts the mappings, and reports the result.
+// Used from Settings and the Mapping module. `onImported(count)` fires on success.
 export default function BudgetMapImport({ userId, onImported, compact }) {
   const [status, setStatus] = useState(null) // { kind: 'ok' | 'error', msg }
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const ref = useRef(null)
 
-  function handleFile(file) {
+  async function handleFile(file) {
     if (!file || !userId) return
-    const reader = new FileReader()
-    reader.onload = async e => {
-      const { rows, errors } = parseBudgetCSV(e.target.result)
+    setBusy(true)
+    setStatus(null)
+    try {
+      const { rows, errors, sheet } = await parseBudgetFile(file)
       if (!rows.length) {
         setStatus({ kind: 'error', msg: errors[0] || 'No mappings found in that file.' })
         return
       }
-      setBusy(true)
-      setStatus(null)
-      try {
-        const { imported } = await importCategoryMappings(userId, rows)
-        setStatus({ kind: 'ok', msg: `Imported ${imported} category mapping${imported === 1 ? '' : 's'}.` })
-        if (onImported) onImported(imported)
-      } catch (err) {
-        setStatus({ kind: 'error', msg: err.message })
-      } finally {
-        setBusy(false)
-      }
+      const { imported } = await importCategoryMappings(userId, rows)
+      const from = sheet ? ` from “${sheet}”` : ''
+      setStatus({
+        kind: 'ok',
+        msg: `Imported ${imported} category mapping${imported === 1 ? '' : 's'}${from}.`,
+      })
+      if (onImported) onImported(imported)
+    } catch (err) {
+      setStatus({ kind: 'error', msg: err.message })
+    } finally {
+      setBusy(false)
     }
-    reader.readAsText(file)
   }
 
   return (
     <div>
       <input
         type="file"
-        accept=".csv"
+        accept=".csv,.xlsx,.xlsm"
         ref={ref}
         style={{ display: 'none' }}
         onChange={e => handleFile(e.target.files[0])}
@@ -61,7 +61,7 @@ export default function BudgetMapImport({ userId, onImported, compact }) {
       >
         <div style={{ fontSize: '20px', color: 'var(--accent)', lineHeight: 1 }}>⊹</div>
         <div style={{ fontSize: '13px', color: 'var(--tx-1)', marginTop: '9px', fontWeight: 500 }}>
-          {busy ? 'Importing…' : 'Drop budget CSV here or click to browse'}
+          {busy ? 'Importing…' : 'Drop budget CSV or Excel file here, or click to browse'}
         </div>
         <div style={{
           fontFamily: "'DM Mono', monospace",
