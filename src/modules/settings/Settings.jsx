@@ -3,6 +3,7 @@ import { derivePeriods } from '../../lib/periods.js'
 import { getImportHistory } from '../../lib/db/importLog.js'
 import BudgetMapImport from '../import/BudgetMapImport.jsx'
 import MonarchConnect from './MonarchConnect.jsx'
+import ModuleHeader from '../common/ModuleHeader.jsx'
 
 // Normalize legacy scalar planningHorizon (e.g. 3) into the multi-select array form.
 function normalizeHorizon(h) {
@@ -193,16 +194,11 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
       </button>
 
       {/* Page heading */}
-      <div style={{
-        fontFamily: "'DM Serif Display', serif",
-        fontSize: '26px',
-        lineHeight: '1.2',
-        color: 'var(--tx-1, #e2e8f0)',
-        letterSpacing: '-0.01em',
-        marginBottom: '28px',
-      }}>
-        Settings
-      </div>
+      <ModuleHeader
+        icon="⚙"
+        title="Settings"
+        subtitle="Preferences, data management, and account connections."
+      />
 
       {/* Section 1: Financial Focuses */}
       <div style={card}>

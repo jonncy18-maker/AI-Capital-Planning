@@ -227,6 +227,7 @@ export default function Wealth({ userId, mobile }) {
         mobile={mobile}
         icon="↗"
         title="Wealth Trajectory"
+        subtitle="Project your net worth and retirement horizon from a snapshot."
         actions={!showForm && <button onClick={() => setShowForm(true)} style={primaryBtn}>+ Add Snapshot</button>}
       />
 

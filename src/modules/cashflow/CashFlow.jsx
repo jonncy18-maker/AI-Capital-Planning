@@ -4,6 +4,7 @@ import { getExcludedCategoryNames } from '../../lib/db/budgetCategories.js'
 import { getCommitments } from '../../lib/db/commitments.js'
 import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
 import { commitmentMonthlyDemand, describeCostStructure } from '../../lib/commitments/schedule.js'
+import ModuleHeader from '../common/ModuleHeader.jsx'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -693,96 +694,67 @@ function PlannedTable({ sources }) {
 }
 
 function PageHeader({ view, switchView, thresholdInput, setThresholdInput, handleThresholdBlur, mobile }) {
-  return (
-    <div style={{ marginBottom: '28px' }}>
+  const spikeControl = (
+    <>
+      <label style={{
+        fontFamily: "'DM Mono', monospace",
+        fontSize: '10px',
+        color: 'var(--tx-3)',
+        letterSpacing: '0.06em',
+        whiteSpace: 'nowrap',
+      }}>
+        Spike threshold
+      </label>
       <div style={{
         display: 'flex',
-        alignItems: mobile ? 'flex-start' : 'center',
-        flexDirection: mobile ? 'column' : 'row',
-        justifyContent: 'space-between',
-        gap: '14px',
+        alignItems: 'center',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--bd)',
+        borderRadius: '7px',
+        padding: '5px 10px',
+        gap: '4px',
       }}>
-        <div style={{ textAlign: 'left' }}>
-          <div style={{
-            width: '46px',
-            height: '46px',
-            borderRadius: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '22px',
-            color: 'var(--accent)',
-            background: 'var(--accent-bg)',
-            border: '1px solid var(--accent-bd)',
-            marginBottom: '12px',
-          }}>
-            ◷
-          </div>
-          <h1 style={{
-            fontFamily: "'DM Serif Display', serif",
-            fontSize: '22px',
-            fontWeight: 400,
-            color: 'var(--tx-1)',
-            margin: 0,
-            lineHeight: 1.1,
-          }}>
-            {view === 'planned' ? 'Next 12 Months — Planned' : '12-Month Rolling Calendar'}
-          </h1>
-        </div>
-
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          flexShrink: 0,
-        }}>
-          <label style={{
+        <span style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: '12px',
+          color: 'var(--tx-3)',
+        }}>$</span>
+        <input
+          type="text"
+          value={thresholdInput}
+          onChange={e => setThresholdInput(e.target.value)}
+          onBlur={handleThresholdBlur}
+          onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+          style={{
+            background: 'none',
+            border: 'none',
+            outline: 'none',
             fontFamily: "'DM Mono', monospace",
-            fontSize: '10px',
-            color: 'var(--tx-3)',
-            letterSpacing: '0.06em',
-            whiteSpace: 'nowrap',
-          }}>
-            Spike threshold
-          </label>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            background: 'var(--bg-card)',
-            border: '1px solid var(--bd)',
-            borderRadius: '7px',
-            padding: '5px 10px',
-            gap: '4px',
-          }}>
-            <span style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '12px',
-              color: 'var(--tx-3)',
-            }}>$</span>
-            <input
-              type="text"
-              value={thresholdInput}
-              onChange={e => setThresholdInput(e.target.value)}
-              onBlur={handleThresholdBlur}
-              onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-              style={{
-                background: 'none',
-                border: 'none',
-                outline: 'none',
-                fontFamily: "'DM Mono', monospace",
-                fontSize: '12px',
-                color: 'var(--tx-1)',
-                width: '64px',
-              }}
-            />
-          </div>
-        </div>
+            fontSize: '12px',
+            color: 'var(--tx-1)',
+            width: '64px',
+          }}
+        />
       </div>
+    </>
+  )
+
+  return (
+    <div style={{ marginBottom: '28px' }}>
+      <ModuleHeader
+        mobile={mobile}
+        icon="◷"
+        title="Cash Flow Timing"
+        subtitle={view === 'planned'
+          ? 'Next 12 months of planned cash demands — commitments and non-monthly budget.'
+          : 'Rolling 12-month calendar of actual money in and out.'}
+        actions={spikeControl}
+      />
 
       {/* View toggle: Actuals (trailing) vs Planned (forward) */}
       <div style={{
         display: 'inline-flex',
-        marginTop: '18px',
+        marginTop: '2px',
         background: 'var(--bg-card)',
         border: '1px solid var(--bd)',
         borderRadius: '8px',

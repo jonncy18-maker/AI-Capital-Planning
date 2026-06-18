@@ -410,6 +410,7 @@ export default function Commitments({ userId, mobile }) {
         mobile={mobile}
         icon="◈"
         title="Long-Term Commitments"
+        subtitle="Track recurring obligations and forecast their cash demands."
         actions={view === 'list' && (
           <button onClick={() => { setEditing(null); setView('form') }} style={primaryBtn}>+ New Commitment</button>
         )}

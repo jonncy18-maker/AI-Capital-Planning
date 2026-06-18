@@ -82,8 +82,10 @@ export default function MonarchConnect({ onImport }) {
           <div style={{ fontSize: 12.5, color: 'var(--tx-2)', lineHeight: 1.6 }}>
             Monarch has no official API. This connects through Monarch's private
             endpoint server-side (the same approach community connectors use). Your
-            credentials are used once to pull transactions and are never stored. If
-            this isn't set up yet, use the CSV export below.
+            credentials are used once to pull transactions and are never stored.
+            Transactions you already imported by CSV are matched and skipped
+            automatically — no duplicates either way. If this isn't set up yet, use
+            the CSV export below.
           </div>
 
           <div>

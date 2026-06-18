@@ -108,7 +108,7 @@ export default function BudgetActualsChart({ data, mobile }) {
         })()}
 
         {/* Bars */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 3 : 6, height: chartH }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 4 : 10, height: chartH }}>
           {data.months.map(mo => {
             const budgetH = (mo.budget / max) * chartH
             const actualH = mo.actual != null ? (mo.actual / max) * chartH : budgetH
@@ -127,13 +127,13 @@ export default function BudgetActualsChart({ data, mobile }) {
               >
                 {/* Budget bar */}
                 <div style={{
-                  width: mobile ? 6 : '42%', maxWidth: 16, height: Math.max(budgetH, 2),
+                  width: mobile ? 9 : '48%', maxWidth: 30, height: Math.max(budgetH, 2),
                   background: 'var(--bar-budget)', borderRadius: '3px 3px 0 0',
                   transition: 'opacity .15s', opacity: isHover ? 1 : 0.9,
                 }} />
                 {/* Actual / forecast bar */}
                 <div style={{
-                  width: mobile ? 6 : '42%', maxWidth: 16, height: Math.max(actualH, 2),
+                  width: mobile ? 9 : '48%', maxWidth: 30, height: Math.max(actualH, 2),
                   background: showForecast ? 'var(--forecast-fill)' : STATUS_COLOR[mo.status],
                   border: showForecast ? '1px dashed var(--forecast-bd)' : 'none',
                   borderRadius: '3px 3px 0 0', transition: 'opacity .15s',
@@ -159,7 +159,7 @@ export default function BudgetActualsChart({ data, mobile }) {
         </div>
 
         {/* Month labels */}
-        <div style={{ display: 'flex', gap: mobile ? 3 : 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: mobile ? 4 : 10, marginTop: 8 }}>
           {data.months.map(mo => (
             <div key={mo.month} style={{
               flex: 1, textAlign: 'center',

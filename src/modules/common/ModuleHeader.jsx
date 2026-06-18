@@ -1,7 +1,11 @@
-// Shared module header — an accent icon tile above a serif title, optionally
-// with a subtitle and right-aligned actions. This is the house style the
-// Dashboard and Cash Flow modules already use; routing every module through it
-// retires the old tiny teal "// eyebrow" labels for a consistent, calmer header.
+// Shared module header — the single source of truth for every module's title
+// block, so titles and subtitles render in the exact same fonts everywhere.
+// Style follows the Scenario Planner header: an inline accent icon + serif
+// title, with a smaller subtitle beneath. Optional right-aligned actions.
+// The shared type ramp lives in headerStyles.js so modules that hand-roll their
+// header (e.g. Scenarios' sticky layout) stay pixel-consistent.
+
+import { headerStyles } from './headerStyles.js'
 
 export default function ModuleHeader({ icon, title, subtitle, actions, mobile }) {
   return (
@@ -13,28 +17,13 @@ export default function ModuleHeader({ icon, title, subtitle, actions, mobile })
         justifyContent: 'space-between',
         gap: 14,
       }}>
-        <div style={{ textAlign: 'left' }}>
-          {icon && (
-            <div style={{
-              width: 46, height: 46, borderRadius: 12,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 22, color: 'var(--accent)',
-              background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
-              marginBottom: 12,
-            }}>
-              {icon}
-            </div>
-          )}
-          <h1 style={{
-            fontFamily: "'DM Serif Display', serif",
-            fontSize: mobile ? 24 : 30,
-            fontWeight: 400, color: 'var(--tx-1)',
-            margin: 0, lineHeight: 1.1, letterSpacing: '-0.01em',
-          }}>
-            {title}
-          </h1>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {icon && <span style={headerStyles.icon}>{icon}</span>}
+            <h1 style={headerStyles.title(mobile)}>{title}</h1>
+          </div>
           {subtitle && (
-            <div style={{ fontSize: 14, color: 'var(--tx-2)', marginTop: 6, lineHeight: 1.5 }}>
+            <div style={{ ...headerStyles.subtitle, marginTop: 6, marginLeft: icon ? 30 : 0 }}>
               {subtitle}
             </div>
           )}

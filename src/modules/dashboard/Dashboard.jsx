@@ -13,6 +13,7 @@ import { getTransactionsByMonth } from '../../lib/db/transactions.js'
 import { sendAIMessage } from '../../lib/ai/sendMessage.js'
 import { summarizeContext } from '../../lib/ai/contextLoader.js'
 import BudgetActualsChart from './BudgetActualsChart.jsx'
+import ModuleHeader from '../common/ModuleHeader.jsx'
 
 const LS_LAYOUT = 'acp.dashboard.layout.v2'
 
@@ -205,6 +206,25 @@ function BriefingWidget({ userId, ctx, briefing, onGenerated }) {
   )
 }
 
+// Wrapper that makes a full-width block (chart, briefing) configurable the same
+// way grid widgets are: a label + show/hide eye in configure mode, dimmed when
+// hidden. Outside configure mode it's a plain pass-through.
+function ConfigBlock({ id, label, configure, isHidden, onToggle, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {configure && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, padding: '0 2px' }}>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: '0.05em', color: 'var(--tx-3)' }}>{label}</span>
+          <button onClick={() => onToggle(id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13 }}>
+            {isHidden ? '◌' : '⏿'}
+          </button>
+        </div>
+      )}
+      <div style={{ opacity: isHidden ? 0.4 : 1, transition: 'opacity .15s' }}>{children}</div>
+    </div>
+  )
+}
+
 // ── Main dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [] }) {
@@ -288,20 +308,22 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   return (
     <div style={{ maxWidth: 1120 }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
-        <div>
-          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: 'var(--tx-1)', letterSpacing: '-0.015em', lineHeight: 1.1, marginBottom: 4 }}>Dashboard</div>
-          <div style={{ fontSize: 14, color: 'var(--tx-2)' }}>Your control center</div>
-        </div>
-        <button onClick={() => setConfigure(c => !c)} style={{
-          background: configure ? 'var(--accent-bg)' : 'none',
-          border: configure ? '1px solid var(--accent-bd)' : '1px solid var(--bd)',
-          borderRadius: 8, padding: '8px 14px', fontFamily: "'DM Mono', monospace",
-          fontSize: 10, letterSpacing: '0.05em', color: configure ? 'var(--accent)' : 'var(--tx-2)', cursor: 'pointer',
-        }}>
-          {configure ? '✓ DONE' : '⊞ CONFIGURE'}
-        </button>
-      </div>
+      <ModuleHeader
+        mobile={mobile}
+        icon="◉"
+        title="Dashboard"
+        subtitle="Your command center — plan vs. actuals, cash, and trajectory at a glance."
+        actions={(
+          <button onClick={() => setConfigure(c => !c)} style={{
+            background: configure ? 'var(--accent-bg)' : 'none',
+            border: configure ? '1px solid var(--accent-bd)' : '1px solid var(--bd)',
+            borderRadius: 8, padding: '8px 14px', fontFamily: "'DM Mono', monospace",
+            fontSize: 10, letterSpacing: '0.05em', color: configure ? 'var(--accent)' : 'var(--tx-2)', cursor: 'pointer',
+          }}>
+            {configure ? '✓ DONE' : '⊞ CONFIGURE'}
+          </button>
+        )}
+      />
 
       {/* Period filter */}
       {periodOptions.length > 0 && (
@@ -327,17 +349,17 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
       )}
 
       {/* Monthly Budget vs Actuals — the centerpiece, full width */}
-      {!hidden.has('monthlyChart') && (
-        <div style={{ marginBottom: 14 }}>
+      {(configure || !hidden.has('monthlyChart')) && (
+        <ConfigBlock id="monthlyChart" label="MONTHLY BUDGET VS ACTUALS" configure={configure} isHidden={hidden.has('monthlyChart')} onToggle={toggleHidden}>
           <BudgetActualsChart data={monthly} mobile={mobile} />
-        </div>
+        </ConfigBlock>
       )}
 
       {/* AI Briefing — full width */}
-      {!hidden.has('briefing') && (
-        <div style={{ marginBottom: 14 }}>
+      {(configure || !hidden.has('briefing')) && (
+        <ConfigBlock id="briefing" label="AI BRIEFING" configure={configure} isHidden={hidden.has('briefing')} onToggle={toggleHidden}>
           <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} />
-        </div>
+        </ConfigBlock>
       )}
 
       {/* Widget grid */}

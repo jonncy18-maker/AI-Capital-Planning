@@ -9,6 +9,7 @@ import {
   deleteAdjustment,
 } from '../../lib/db/scenarios.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import { headerStyles } from '../common/headerStyles.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CUR_YEAR = new Date().getFullYear()
@@ -852,19 +853,22 @@ export default function Scenarios({ userId, mobile }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Module header */}
       <div style={{
-        padding: mobile ? '16px 16px 12px' : '20px 24px 14px',
+        padding: mobile ? '16px 16px 12px' : '18px 24px 14px',
         borderBottom: '1px solid var(--bd)',
         flexShrink: 0,
         display: 'flex',
-        alignItems: 'center',
+        alignItems: mobile ? 'flex-start' : 'flex-end',
         gap: 12,
         flexWrap: 'wrap',
       }}>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 18, color: 'var(--accent)' }}>◑</span>
-          <h1 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 20 : 24, fontWeight: 400, color: 'var(--tx-1)' }}>
-            Scenario Planner
-          </h1>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={headerStyles.icon}>◑</span>
+            <h1 style={headerStyles.title(mobile)}>Scenario Planner</h1>
+          </div>
+          <div style={{ ...headerStyles.subtitle, marginTop: 6, marginLeft: 30 }}>
+            Model one-off and recurring changes against your real baseline.
+          </div>
         </div>
         {/* View mode toggle */}
         <div style={{ display: 'flex', gap: 4, background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 8, padding: 3 }}>
