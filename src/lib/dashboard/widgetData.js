@@ -82,9 +82,17 @@ export function commitmentsSummary(ctx) {
 // reads as a continuous plan-vs-reality picture.
 //
 // status per month:  'under' | 'on' (±10% of budget) | 'over' | 'none' (no budget)
+//
+// Transfers and credit-card payments (categories flagged exclude_from_totals)
+// are dropped so actuals aren't overstated — the same rule loadAIContext applies
+// to the 90-day context. The full-year transactions are fetched raw, so we must
+// re-apply the exclusion here against ctx.categories.
 export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   const lineItems = ctx?.budgetLineItems ?? []
   const year = ctx?.thisYear ?? new Date().getFullYear()
+  const excluded = new Set(
+    (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
+  )
 
   const budget = Array(12).fill(0)
   for (const li of lineItems) {
@@ -97,6 +105,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   for (const t of yearTransactions) {
     const amt = Number(t.amount) || 0
     if (amt >= 0) continue // expenses only
+    if (excluded.has(t.category)) continue // transfers / credit-card payments
     const d = new Date(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     const m = d.getMonth()
