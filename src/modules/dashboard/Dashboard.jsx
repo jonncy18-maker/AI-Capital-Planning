@@ -6,10 +6,13 @@ import {
   cashFlowSpike,
   commitmentsSummary,
   wealthSummary,
+  monthlyBudgetVsActual,
 } from '../../lib/dashboard/widgetData.js'
 import { getLatestBriefing, saveBriefing } from '../../lib/db/aiBriefings.js'
+import { getTransactionsByMonth } from '../../lib/db/transactions.js'
 import { sendAIMessage } from '../../lib/ai/sendMessage.js'
 import { summarizeContext } from '../../lib/ai/contextLoader.js'
+import BudgetActualsChart from './BudgetActualsChart.jsx'
 
 const LS_LAYOUT = 'acp.dashboard.layout.v2'
 
@@ -209,6 +212,22 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   const [configure, setConfigure] = useState(false)
   const [dragId, setDragId] = useState(null)
   const [activePeriod, setActivePeriod] = useState(periodDefault)
+  const [yearTxns, setYearTxns] = useState([])
+
+  // Full-year transactions power the Monthly Budget vs Actuals chart. The shared
+  // AI context only holds the trailing 90 days, so the chart loads the wider
+  // window itself (current calendar year).
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    const year = context?.thisYear ?? new Date().getFullYear()
+    getTransactionsByMonth(userId, `${year}-01-01`, `${year}-12-31`)
+      .then(rows => { if (!cancelled) setYearTxns(rows) })
+      .catch(() => { if (!cancelled) setYearTxns([]) })
+    return () => { cancelled = true }
+  }, [userId, context?.thisYear])
+
+  const monthly = useMemo(() => monthlyBudgetVsActual(context, yearTxns), [context, yearTxns])
 
   // Persisted layout: { order: [...ids], hidden: [...ids] }
   const [layout, setLayout] = useState(() => {
@@ -267,7 +286,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   const visible = ordered.filter(w => !hidden.has(w.id))
 
   return (
-    <div style={{ maxWidth: 960 }}>
+    <div style={{ maxWidth: 1120 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
         <div>
@@ -307,7 +326,14 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
         </div>
       )}
 
-      {/* AI Briefing — always on top, full width */}
+      {/* Monthly Budget vs Actuals — the centerpiece, full width */}
+      {!hidden.has('monthlyChart') && (
+        <div style={{ marginBottom: 14 }}>
+          <BudgetActualsChart data={monthly} mobile={mobile} />
+        </div>
+      )}
+
+      {/* AI Briefing — full width */}
       {!hidden.has('briefing') && (
         <div style={{ marginBottom: 14 }}>
           <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} />

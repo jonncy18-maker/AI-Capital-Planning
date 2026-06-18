@@ -11,6 +11,7 @@ import {
 } from '../../lib/db/budgetLineItems.js'
 import { analyzeTransactions, MONTHS } from '../../lib/budget/patternAnalyzer.js'
 import { commitmentYearSchedule } from '../../lib/commitments/schedule.js'
+import ModuleHeader from '../common/ModuleHeader.jsx'
 
 const CUR_YEAR = new Date().getFullYear()
 
@@ -399,18 +400,22 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
     )
   }
 
-  const cellStyle = { textAlign: 'right', fontSize: 11.5, padding: '6px 8px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+  const curMonth = year === CUR_YEAR ? new Date().getMonth() : -1
+  const cellStyle = { textAlign: 'right', fontSize: 12, padding: '9px 12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+  // Tint the current month's column so "where we are now" reads at a glance.
+  const colBg = m => (m === curMonth ? 'var(--accent-bg)' : 'transparent')
+  const STICKY = 168 // first-column width
 
   return (
-    <div style={{ overflowX: 'auto', border: '1px solid var(--bd)', borderRadius: 10 }}>
-      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 880 }}>
+    <div style={{ overflowX: 'auto', border: '1px solid var(--bd)', borderRadius: 12, background: 'var(--bg-card)' }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 1040 }}>
         <thead>
-          <tr style={{ background: 'var(--bg-card)' }}>
-            <th style={{ textAlign: 'left', fontSize: 10, color: 'var(--tx-3)', padding: '8px 12px', letterSpacing: '0.05em', textTransform: 'uppercase', position: 'sticky', left: 0, background: 'var(--bg-card)' }}>Category</th>
-            {MONTHS.map(m => (
-              <th key={m} style={{ ...cellStyle, color: 'var(--tx-3)', fontWeight: 600, fontSize: 10, textTransform: 'uppercase' }}>{m}</th>
+          <tr>
+            <th style={{ textAlign: 'left', fontSize: 10, color: 'var(--tx-3)', padding: '12px 14px', letterSpacing: '0.06em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg-card)', borderBottom: '1px solid var(--bd)', minWidth: STICKY }}>Category</th>
+            {MONTHS.map((m, mi) => (
+              <th key={m} style={{ ...cellStyle, color: mi === curMonth ? 'var(--accent)' : 'var(--tx-3)', fontWeight: 600, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', background: colBg(mi), borderBottom: '1px solid var(--bd)' }}>{m}</th>
             ))}
-            <th style={{ ...cellStyle, color: 'var(--tx-2)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase' }}>Total</th>
+            <th style={{ ...cellStyle, color: 'var(--tx-2)', fontWeight: 700, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', borderBottom: '1px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>Total</th>
           </tr>
         </thead>
         <tbody>
@@ -422,20 +427,20 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
             return (
               <Fragment key={`group-${g}`}>
                 <tr style={{ background: 'var(--hover)' }}>
-                  <td style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-2)', padding: '6px 12px', letterSpacing: '0.04em', textTransform: 'uppercase', position: 'sticky', left: 0, background: 'var(--bg-app)' }}>{g}</td>
-                  {gTotals.map((v, m) => <td key={m} style={{ ...cellStyle, color: 'var(--tx-3)' }}>{v > 0 ? fmt(v) : '·'}</td>)}
-                  <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--tx-2)' }}>{fmt(gTotal)}</td>
+                  <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-2)', padding: '8px 14px', letterSpacing: '0.05em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)' }}>{g}</td>
+                  {gTotals.map((v, m) => <td key={m} style={{ ...cellStyle, color: 'var(--tx-3)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
+                  <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(gTotal)}</td>
                 </tr>
                 {gRows.map((r, ri) => {
                   const rTotal = r.months.reduce((a, b) => a + b, 0)
                   return (
                     <tr key={`${g}-${ri}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
-                      <td style={{ fontSize: 12.5, color: 'var(--tx-1)', padding: '6px 12px 6px 22px', position: 'sticky', left: 0, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
+                      <td style={{ fontSize: 12.5, color: 'var(--tx-1)', padding: '9px 14px 9px 26px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap' }}>
                         {r.name}
                         {r.isCommitment && <span style={{ fontSize: 9, color: '#8B5CF6', marginLeft: 6 }}>◈</span>}
                       </td>
-                      {r.months.map((v, m) => <td key={m} style={{ ...cellStyle, color: v > 0 ? 'var(--tx-1)' : 'var(--tx-4)' }}>{v > 0 ? fmt(v) : '·'}</td>)}
-                      <td style={{ ...cellStyle, fontWeight: 600, color: 'var(--tx-1)' }}>{fmt(rTotal)}</td>
+                      {r.months.map((v, m) => <td key={m} style={{ ...cellStyle, color: v > 0 ? 'var(--tx-1)' : 'var(--tx-4)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
+                      <td style={{ ...cellStyle, fontWeight: 600, color: 'var(--tx-1)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(rTotal)}</td>
                     </tr>
                   )
                 })}
@@ -444,10 +449,10 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
           })}
         </tbody>
         <tfoot>
-          <tr style={{ borderTop: '2px solid var(--bd)', background: 'var(--bg-card)' }}>
-            <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-1)', padding: '9px 12px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', left: 0, background: 'var(--bg-card)' }}>Total</td>
-            {monthTotals.map((v, m) => <td key={m} style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)' }}>{fmt(v)}</td>)}
-            <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)' }}>{fmt(grandTotal)}</td>
+          <tr style={{ background: 'var(--bg-card)' }}>
+            <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-1)', padding: '12px 14px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', borderTop: '2px solid var(--bd)' }}>Total</td>
+            {monthTotals.map((v, m) => <td key={m} style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', background: colBg(m), borderTop: '2px solid var(--bd)' }}>{fmt(v)}</td>)}
+            <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', borderTop: '2px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(grandTotal)}</td>
           </tr>
         </tfoot>
       </table>
@@ -641,32 +646,27 @@ export default function Budget({ userId, mobile }) {
         onChange={e => handleUploadFile(e.target.files[0])}
       />
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--accent)', letterSpacing: '0.1em', marginBottom: 6 }}>
-          // annual budget builder
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 24 : 30, fontWeight: 400, color: 'var(--tx-1)', margin: 0, lineHeight: 1.1 }}>
-            {reviewing ? 'Match Detail Tabs' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
-          </h1>
-          {!generating && !reviewing && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <select value={year} onChange={e => setYear(Number(e.target.value))} style={{
-                padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--bd)',
-                borderRadius: 7, color: 'var(--tx-1)', fontSize: 13, outline: 'none', cursor: 'pointer',
-              }}>
-                {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <button onClick={() => fileRef.current?.click()} disabled={importing || analyzing} style={{ ...ghostBtn, opacity: importing || analyzing ? 0.6 : 1 }}>
-                {importing ? 'Importing…' : '⤓ Upload Budget'}
-              </button>
-              <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...primaryBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
-                {analyzing ? 'Analyzing…' : lineItems.length ? '↻ Regenerate' : '✦ Generate from History'}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <ModuleHeader
+        mobile={mobile}
+        icon="▦"
+        title={reviewing ? 'Match Detail Tabs' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
+        actions={!generating && !reviewing && (
+          <>
+            <select value={year} onChange={e => setYear(Number(e.target.value))} style={{
+              padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--bd)',
+              borderRadius: 7, color: 'var(--tx-1)', fontSize: 13, outline: 'none', cursor: 'pointer',
+            }}>
+              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <button onClick={() => fileRef.current?.click()} disabled={importing || analyzing} style={{ ...ghostBtn, opacity: importing || analyzing ? 0.6 : 1 }}>
+              {importing ? 'Importing…' : '⤓ Upload Budget'}
+            </button>
+            <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...primaryBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
+              {analyzing ? 'Analyzing…' : lineItems.length ? '↻ Regenerate' : '✦ Generate from History'}
+            </button>
+          </>
+        )}
+      />
 
       {error && (
         <div style={{ padding: '12px 16px', background: 'var(--warn-bg)', border: '1px solid var(--warn)', borderRadius: 8, color: 'var(--tx-1)', fontSize: 13, marginBottom: 18 }}>

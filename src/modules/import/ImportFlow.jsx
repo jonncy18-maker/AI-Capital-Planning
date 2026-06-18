@@ -172,11 +172,12 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
       <div style={{
         fontFamily: "'DM Mono', monospace",
         fontSize: 10,
-        color: 'var(--accent)',
-        letterSpacing: '0.1em',
+        color: 'var(--tx-3)',
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
         marginBottom: 6,
       }}>
-        // unmapped categories
+        Unmapped categories
       </div>
       <h1 style={{
         fontFamily: "'DM Serif Display', serif",
@@ -205,11 +206,12 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
           <div style={{
             fontFamily: "'DM Mono', monospace",
             fontSize: '10px',
-            color: 'var(--accent)',
-            letterSpacing: '0.1em',
+            color: 'var(--tx-3)',
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
             marginBottom: '8px',
           }}>
-            // a few things to clarify
+            A few things to clarify
           </div>
           {relevantQuestions.map(q => (
             <div key={q.category} style={{
@@ -477,11 +479,12 @@ function SummaryScreen({ result, onDone }) {
       <div style={{
         fontFamily: "'DM Mono', monospace",
         fontSize: '10px',
-        color: 'var(--accent)',
-        letterSpacing: '0.1em',
+        color: 'var(--tx-3)',
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
         marginBottom: '10px',
       }}>
-        // import complete
+        Import complete
       </div>
       <div style={{
         fontFamily: "'DM Serif Display', serif",

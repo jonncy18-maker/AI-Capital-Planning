@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { getBudgetCategories, upsertCategory } from '../../lib/db/budgetCategories.js'
 import { ALL_GROUPS } from '../../lib/csv/categoryMap.js'
 import BudgetMapImport from '../import/BudgetMapImport.jsx'
+import ModuleHeader from '../common/ModuleHeader.jsx'
 
 const TYPES = ['Fixed', 'Flexible', 'Non-Monthly']
 
@@ -90,11 +91,13 @@ export default function Mapping({ userId, mobile }) {
     padding: '22px 24px',
     marginBottom: '20px',
   }
+  // Calmer in-card section label — replaces the old tiny teal "// xxx" eyebrows.
   const eyebrow = {
     fontFamily: "'DM Mono', monospace",
     fontSize: '10px',
-    color: 'var(--accent)',
-    letterSpacing: '0.1em',
+    color: 'var(--tx-3)',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
     marginBottom: '14px',
   }
   const selectStyle = {
@@ -111,17 +114,12 @@ export default function Mapping({ userId, mobile }) {
 
   return (
     <div style={{ maxWidth: '720px', padding: '8px 0 96px' }}>
-      <div style={eyebrow}>// mapping</div>
-      <div style={{
-        fontFamily: "'DM Serif Display', serif",
-        fontSize: mobile ? 24 : 28,
-        color: 'var(--tx-1)',
-        letterSpacing: '-0.01em',
-        marginBottom: '8px',
-      }}>
-        Category Mapping
-      </div>
-      <div style={{ fontSize: '13px', color: 'var(--tx-2)', lineHeight: 1.6, marginBottom: '22px' }}>
+      <ModuleHeader
+        mobile={mobile}
+        icon="⊹"
+        title="Category Mapping"
+      />
+      <div style={{ fontSize: '13px', color: 'var(--tx-2)', lineHeight: 1.6, marginBottom: '22px', maxWidth: 600 }}>
         Review and refine how your categories roll up into budget groups. Groups are
         yours — pick an existing one, or add a new bucket. These mappings drive the
         budget, forecasts, and AI briefings. Mark transfers or credit-card payments
@@ -130,7 +128,7 @@ export default function Mapping({ userId, mobile }) {
 
       {/* Import existing budget / map */}
       <div style={card}>
-        <div style={eyebrow}>// import a budget / category map</div>
+        <div style={eyebrow}>Import a budget / category map</div>
         <div style={{ fontSize: '12.5px', color: 'var(--tx-2)', lineHeight: 1.6, marginBottom: '14px' }}>
           Maintain your buckets in a spreadsheet? Import it as the authoritative map.
         </div>
@@ -140,7 +138,7 @@ export default function Mapping({ userId, mobile }) {
       {/* Current mappings */}
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <div style={{ ...eyebrow, marginBottom: 0 }}>// current mappings ({cats.length})</div>
+          <div style={{ ...eyebrow, marginBottom: 0 }}>Current mappings ({cats.length})</div>
           {dirtyCount > 0 && (
             <button
               onClick={save}
