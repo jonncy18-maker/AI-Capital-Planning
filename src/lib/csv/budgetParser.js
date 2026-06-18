@@ -150,8 +150,55 @@ export function parseBudgetCSV(raw) {
   return { rows, errors, headers: loc.rawHeaders }
 }
 
+// Normalize a name for matching a category to its detail tab: case-, space-,
+// and punctuation-insensitive, with "&" treated as "and".
+function normName(s) {
+  return String(s ?? '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '')
+}
+
+// A detail tab lays out a single category month-by-month: a "Period" row of
+// 1..12 marks the month columns, then each line item carries an amount per
+// month. Sum every line item's month columns to get the category's true 12-month
+// distribution. Returns number[12] or null if no Period 1..12 grid is found.
+function extractMonthlyDetail(sheetRows) {
+  let periodRow = -1
+  let monthCols = null
+  const scan = Math.min(sheetRows.length, 12)
+  for (let r = 0; r < scan && !monthCols; r++) {
+    const row = sheetRows[r] || []
+    for (let s = 0; s + 12 <= row.length; s++) {
+      let ok = true
+      for (let k = 0; k < 12; k++) {
+        if (parseAmount(row[s + k]) !== k + 1) { ok = false; break }
+      }
+      if (ok) {
+        periodRow = r
+        monthCols = Array.from({ length: 12 }, (_, k) => s + k)
+        break
+      }
+    }
+  }
+  if (!monthCols) return null
+
+  const labelCol = monthCols[0] - 1
+  const months = Array(12).fill(0)
+  for (let r = periodRow + 1; r < sheetRows.length; r++) {
+    const row = sheetRows[r] || []
+    const label = labelCol >= 0 ? normHeader(row[labelCol]) : ''
+    if (label === 'quarter' || label === 'total' || label === 'period') continue
+    for (let k = 0; k < 12; k++) {
+      const v = parseAmount(row[monthCols[k]])
+      if (v > 0) months[k] += v
+    }
+  }
+  return months.some(v => v > 0) ? months : null
+}
+
 // Returns { rows, errors, headers, sheet } — scans every worksheet and keeps
 // the one yielding the most mapping rows, so multi-tab workbooks "just work".
+// Non-Monthly rows that have a matching detail tab (a sheet named after the
+// category with a Period 1..12 grid) gain a `monthly12` array carrying their
+// true month-by-month amounts; callers without one spread the annual evenly.
 export async function parseBudgetWorkbook(arrayBuffer) {
   let wb
   try {
@@ -178,6 +225,21 @@ export async function parseBudgetWorkbook(arrayBuffer) {
       headers: [],
     }
   }
+
+  // Pull true month-by-month detail for Non-Monthly categories backed by a tab.
+  const detailByName = new Map()
+  for (const sheet of wb.sheets) {
+    if (sheet.name === best.sheet) continue
+    detailByName.set(normName(sheet.name), sheet.rows)
+  }
+  for (const row of best.rows) {
+    if (row.type !== 'Non-Monthly') continue
+    const sheetRows = detailByName.get(normName(row.category))
+    if (!sheetRows) continue
+    const months = extractMonthlyDetail(sheetRows)
+    if (months) row.monthly12 = months
+  }
+
   return { rows: best.rows, errors: [], headers: best.headers, sheet: best.sheet }
 }
 

@@ -409,8 +409,11 @@ export default function Budget({ userId, mobile }) {
 
       const categories = rows
         .map(r => {
+          // A detail tab (e.g. a "Cruise" sheet) gives the real month-by-month
+          // amounts; otherwise spread the yearly total evenly across 12 months.
+          const detail = r.monthly12 && r.monthly12.length === 12 ? r.monthly12 : null
           const monthly = r.monthlyTarget ?? (r.annual != null ? r.annual / 12 : 0)
-          const annual = r.annual ?? monthly * 12
+          const annual = detail ? detail.reduce((a, b) => a + b, 0) : (r.annual ?? monthly * 12)
           return {
             category_id: idByName.get(r.category) ?? null,
             category: r.category,
@@ -418,7 +421,7 @@ export default function Budget({ userId, mobile }) {
             type: r.type || 'Flexible',
             monthlyAvg: monthly,
             annualTotal: annual,
-            monthHistogram: Array(12).fill(annual / 12), // even spread for Non-Monthly
+            monthHistogram: detail ?? Array(12).fill(annual / 12),
           }
         })
         .filter(c => c.category_id && c.annualTotal >= 1)
