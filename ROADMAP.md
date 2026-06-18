@@ -192,7 +192,7 @@ account access; steps 4, 5, 6, 8, 9 are pure code.
 *Goal: First fully functional module. The foundation everything else sits on.*
 
 - [x] Build 12-month rolling cash demand calendar view
-- [ ] Pull Non-Monthly budget line items from Supabase by month
+- [x] Pull Non-Monthly budget line items from Supabase by month — surfaced in the CashFlow "Planned" view
 - [x] Render month-by-month cash outflow schedule
 - [x] Build upcoming spike alerts (configurable dollar threshold)
 - [x] Build quarter-by-quarter cash flow summary
@@ -249,7 +249,7 @@ account access; steps 4, 5, 6, 8, 9 are pure code.
 - [x] Build commitment list view (active, paused, completed) — with status filter
 - [x] Build commitment detail view (timeline, total projected cost, month-by-month schedule)
 - [x] Wire commitments into Annual Budget Builder (auto-populate as schedule rows) — via `commitmentYearSchedule`
-- [~] Wire commitments into Cash Flow Timing (auto-populate as future cash demands) — shared `schedule.js` helper ready; CashFlow consumption is a follow-up
+- [x] Wire commitments into Cash Flow Timing (auto-populate as future cash demands) — CashFlow "Planned" view aggregates active commitments via `schedule.js` + Non-Monthly budget line items into a forward 12-month cash-demand calendar
 - [x] Wire commitments into Scenario Planner / Wealth (surfaced as constraints) — Wealth drains active commitments; AI context includes them
 - [ ] Wire AI command bar to Commitments — AI can add/modify commitments via conversation — deferred (AI context includes commitments read-only)
 - [ ] Seed with existing commitments — user-entered via form
