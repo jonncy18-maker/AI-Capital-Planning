@@ -29,7 +29,13 @@ export async function invokeAIChat({ messages, tools, context, systemExtra = '',
     messages,
     maxTokens,
     modelFamily: AI_MODEL_FAMILIES.assistant,
-    cacheSystem: !systemExtra, // only cache when the system text is stable across the session
+    // Cache the system prompt + context brief (+ category list). It's stable
+    // within a session, so repeat turns read it at ~0.1x instead of full price.
+    // Tool definitions sit before the system block in Anthropic's cache prefix,
+    // so this breakpoint caches the create_scenario tool schema too. The cache
+    // naturally re-writes when the context changes (e.g. after a scenario is
+    // created and the brief reloads).
+    cacheSystem: true,
   }
   if (Array.isArray(tools) && tools.length) body.tools = tools
 
