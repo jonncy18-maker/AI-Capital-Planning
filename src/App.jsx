@@ -3,6 +3,8 @@ import './App.css'
 import { supabase } from './lib/supabase.js'
 import { useAuth } from './lib/auth/useAuth.js'
 import { getProfile, saveProfile } from './lib/db/profile.js'
+import { parseBudgetCSV } from './lib/csv/budgetParser.js'
+import { importCategoryMappings } from './lib/db/budgetCategories.js'
 import Login from './modules/auth/Login.jsx'
 import Onboarding from './modules/onboarding/Onboarding.jsx'
 import AppShell from './modules/shell/AppShell.jsx'
@@ -25,15 +27,26 @@ function App() {
   }, [user?.id])
 
   async function handleOnboardingComplete(profileData) {
-    if (profileData.csvFile?.raw) {
-      const { raw, name } = profileData.csvFile
+    // Seed the user's own category map first (if provided) so the subsequent
+    // transaction import maps cleanly against their real buckets.
+    if (profileData.budgetMap?.raw) {
+      try {
+        const { rows } = parseBudgetCSV(profileData.budgetMap.raw)
+        if (rows.length) await importCategoryMappings(user.id, rows)
+      } catch {
+        // Non-fatal — the user can re-import the map from Settings later.
+      }
+    }
+    const cleaned = { ...profileData, budgetMap: null }
+    if (cleaned.csvFile?.raw) {
+      const { raw, name } = cleaned.csvFile
       setPendingImport({
         csvRaw: raw,
         csvName: name,
-        profileData: { ...profileData, csvFile: null },
+        profileData: { ...cleaned, csvFile: null },
       })
     } else {
-      const saved = await saveProfile(user.id, { ...profileData, onboardingComplete: true })
+      const saved = await saveProfile(user.id, { ...cleaned, onboardingComplete: true })
       setProfile(saved)
     }
   }

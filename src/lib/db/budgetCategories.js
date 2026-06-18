@@ -42,3 +42,43 @@ export async function getBudgetCategories(userId) {
   if (error) throw error
   return data ?? []
 }
+
+// Distinct, non-empty groups this user already uses — i.e. their own budget
+// buckets. Used to drive flexible mapping (AI + dropdowns map into these
+// instead of a fixed built-in list).
+export async function getUserGroups(userId) {
+  const { data, error } = await supabase
+    .from('budget_categories')
+    .select('group')
+    .eq('user_id', userId)
+    .not('group', 'is', null)
+
+  if (error) throw error
+  return [...new Set((data ?? []).map(r => r.group).filter(Boolean))].sort()
+}
+
+// Bulk upsert category → { group, type, monthly_target } mappings, e.g. from a
+// budget/mapping CSV the user already maintains. This is authoritative: it seeds
+// the user's own buckets so subsequent imports map cleanly without AI guessing.
+// Rows without a category or group are skipped.
+export async function importCategoryMappings(userId, rows) {
+  const payload = (rows ?? [])
+    .filter(r => r.category && r.group)
+    .map(r => ({
+      user_id: userId,
+      category: r.category,
+      group: r.group,
+      ...(r.type ? { type: r.type } : {}),
+      ...(r.monthlyTarget != null ? { monthly_target: r.monthlyTarget } : {}),
+      is_active: true,
+    }))
+
+  if (payload.length === 0) return { imported: 0 }
+
+  const { error } = await supabase
+    .from('budget_categories')
+    .upsert(payload, { onConflict: 'user_id,category' })
+
+  if (error) throw error
+  return { imported: payload.length }
+}

@@ -10,7 +10,7 @@ export const MODULES = [
   { id: 'commitments', label: 'Long-Term Commitments', short: 'Commitments', icon: '◈', section: 'modules' },
   { id: 'wealth',      label: 'Wealth Trajectory',     short: 'Wealth',      icon: '↗', section: 'modules' },
   { id: 'settings',    label: 'Settings',              short: 'Settings',    icon: '⚙', section: 'system' },
-  { id: 'mapping',     label: 'Mapping',               short: 'Mapping',     icon: '⊹', section: 'system', comingSoon: true },
+  { id: 'mapping',     label: 'Mapping',               short: 'Mapping',     icon: '⊹', section: 'system' },
 ]
 
 export const SECTION_LABELS = {

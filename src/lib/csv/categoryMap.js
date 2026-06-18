@@ -191,14 +191,23 @@ export const GROUP_TYPE_DEFAULTS = {
   'Uncategorized': 'Flexible',
 }
 
+// Built-in groups, used as defaults for a brand-new user. A user's own groups
+// (from their budget_categories) take precedence everywhere — these are just the
+// starting set, not a fixed taxonomy. Alias kept as ALL_GROUPS for back-compat.
+export const DEFAULT_GROUPS = ALL_GROUPS
+
 export function getCategoryMapping(monarchCategory) {
   return MONARCH_CATEGORY_MAP[monarchCategory] ?? null
 }
 
-// Returns array of unique category strings from parsed rows that have no mapping.
-export function findUnmappedCategories(rows) {
+// Returns unique category strings from parsed rows that have no mapping —
+// neither in the built-in map nor in the user's already-saved categories.
+// Pass knownCategories (the user's existing budget_categories names) so we
+// never re-ask for a mapping the user has already made.
+export function findUnmappedCategories(rows, knownCategories = []) {
+  const known = new Set(knownCategories)
   const unique = [...new Set(rows.map(r => r.category).filter(Boolean))]
-  return unique.filter(cat => !MONARCH_CATEGORY_MAP[cat])
+  return unique.filter(cat => !MONARCH_CATEGORY_MAP[cat] && !known.has(cat))
 }
 
 // Apply group/type from the map to each row. Rows with no mapping get group=null.

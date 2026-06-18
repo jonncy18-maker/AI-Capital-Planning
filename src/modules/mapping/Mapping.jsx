@@ -1,67 +1,240 @@
-// Mapping module — reserved navigation slot. Full build-out is Phase 2+ backlog,
-// so this is a true "Coming Soon" stub rather than a near-term phase placeholder.
+import { useState, useEffect, useMemo } from 'react'
+import { getBudgetCategories, upsertCategory } from '../../lib/db/budgetCategories.js'
+import { ALL_GROUPS } from '../../lib/csv/categoryMap.js'
+import BudgetMapImport from '../import/BudgetMapImport.jsx'
 
-export default function Mapping() {
+const TYPES = ['Fixed', 'Flexible', 'Non-Monthly']
+
+// Mapping module — the standing home for reviewing and editing how categories
+// map to budget groups, plus importing an existing budget/category map. Groups
+// are flexible: whatever the user already uses, plus the built-in defaults, plus
+// any new group typed inline.
+export default function Mapping({ userId, mobile }) {
+  const [cats, setCats] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [edits, setEdits] = useState({}) // category -> { group, type }
+  const [customNew, setCustomNew] = useState({}) // category -> typing a new group
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  function load() {
+    setLoading(true)
+    getBudgetCategories(userId)
+      .then(d => setCats(d))
+      .catch(() => setCats([]))
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => {
+    if (userId) load()
+  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const groupOptions = useMemo(() => {
+    const fromCats = cats.map(c => c.group).filter(Boolean)
+    const fromEdits = Object.values(edits).map(e => e.group).filter(Boolean)
+    return [...new Set([...fromCats, ...fromEdits, ...ALL_GROUPS])]
+  }, [cats, edits])
+
+  function effective(c) {
+    const e = edits[c.category]
+    return {
+      group: e?.group ?? c.group ?? 'Uncategorized',
+      type: e?.type ?? c.type ?? 'Flexible',
+    }
+  }
+
+  function changed(c) {
+    const e = edits[c.category]
+    if (!e) return false
+    return e.group !== (c.group ?? 'Uncategorized') || e.type !== (c.type ?? 'Flexible')
+  }
+
+  function setField(c, patch) {
+    setEdits(prev => ({ ...prev, [c.category]: { ...effective(c), ...patch } }))
+  }
+
+  const dirtyCount = cats.filter(changed).length
+
+  async function save() {
+    setSaving(true)
+    try {
+      for (const c of cats) {
+        if (!changed(c)) continue
+        const e = effective(c)
+        await upsertCategory(userId, { category: c.category, group: e.group, type: e.type })
+      }
+      setEdits({})
+      setCustomNew({})
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+      load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Sort by group, then category, for a stable grouped view.
+  const sorted = useMemo(
+    () => [...cats].sort((a, b) =>
+      (a.group ?? '').localeCompare(b.group ?? '') || a.category.localeCompare(b.category)
+    ),
+    [cats]
+  )
+
+  const card = {
+    border: '1px solid var(--bd)',
+    borderRadius: '14px',
+    background: 'var(--bg-card)',
+    padding: '22px 24px',
+    marginBottom: '20px',
+  }
+  const eyebrow = {
+    fontFamily: "'DM Mono', monospace",
+    fontSize: '10px',
+    color: 'var(--accent)',
+    letterSpacing: '0.1em',
+    marginBottom: '14px',
+  }
+  const selectStyle = {
+    background: 'var(--field)',
+    border: '1px solid var(--bd)',
+    borderRadius: '7px',
+    padding: '7px 9px',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '12.5px',
+    color: 'var(--tx-1)',
+    cursor: 'pointer',
+    outline: 'none',
+  }
+
   return (
-    <div style={{
-      maxWidth: '560px',
-      padding: '8px 0 48px',
-    }}>
+    <div style={{ maxWidth: '720px', padding: '8px 0 96px' }}>
+      <div style={eyebrow}>// mapping</div>
       <div style={{
-        fontFamily: "'DM Mono', monospace",
-        fontSize: '10px',
-        color: 'var(--accent)',
-        letterSpacing: '0.1em',
-        marginBottom: '14px',
+        fontFamily: "'DM Serif Display', serif",
+        fontSize: mobile ? 24 : 28,
+        color: 'var(--tx-1)',
+        letterSpacing: '-0.01em',
+        marginBottom: '8px',
       }}>
-        // mapping
+        Category Mapping
+      </div>
+      <div style={{ fontSize: '13px', color: 'var(--tx-2)', lineHeight: 1.6, marginBottom: '22px' }}>
+        Review and refine how your categories roll up into budget groups. Groups are
+        yours — pick an existing one, or add a new bucket. These mappings drive the
+        budget, forecasts, and AI briefings.
       </div>
 
-      <div style={{
-        border: '1px solid var(--bd)',
-        borderRadius: '14px',
-        background: 'var(--bg-card)',
-        padding: '40px 36px',
-        textAlign: 'center',
-      }}>
-        <div style={{
-          fontSize: '32px',
-          color: 'var(--tx-3)',
-          lineHeight: 1,
-          marginBottom: '18px',
-        }}>
-          ⊹
+      {/* Import existing budget / map */}
+      <div style={card}>
+        <div style={eyebrow}>// import a budget / category map</div>
+        <div style={{ fontSize: '12.5px', color: 'var(--tx-2)', lineHeight: 1.6, marginBottom: '14px' }}>
+          Maintain your buckets in a spreadsheet? Import it as the authoritative map.
         </div>
-        <div style={{
-          fontFamily: "'DM Serif Display', serif",
-          fontSize: '26px',
-          color: 'var(--tx-1)',
-          letterSpacing: '-0.01em',
-          marginBottom: '12px',
-        }}>
-          Category Mapping — Coming Soon
+        <BudgetMapImport userId={userId} compact onImported={() => load()} />
+      </div>
+
+      {/* Current mappings */}
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div style={{ ...eyebrow, marginBottom: 0 }}>// current mappings ({cats.length})</div>
+          {dirtyCount > 0 && (
+            <button
+              onClick={save}
+              disabled={saving}
+              style={{
+                border: 'none',
+                background: 'var(--accent)',
+                color: 'var(--accent-tx-on)',
+                borderRadius: '8px',
+                padding: '8px 16px',
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '12.5px',
+                fontWeight: 500,
+                cursor: saving ? 'default' : 'pointer',
+              }}
+            >
+              {saving ? 'Saving…' : `Save ${dirtyCount} change${dirtyCount === 1 ? '' : 's'}`}
+            </button>
+          )}
+          {dirtyCount === 0 && saved && (
+            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '11px', color: 'var(--accent)' }}>
+              ✓ Saved
+            </span>
+          )}
         </div>
-        <div style={{
-          fontSize: '13.5px',
-          lineHeight: '1.7',
-          color: 'var(--tx-2)',
-          maxWidth: '420px',
-          margin: '0 auto',
-        }}>
-          A dedicated workspace to review and refine how your imported categories
-          map to budget groups and types. For now, mapping happens automatically
-          on import — unmapped categories are surfaced for confirmation during the
-          CSV import flow.
-        </div>
-        <div style={{
-          fontFamily: "'DM Mono', monospace",
-          fontSize: '10px',
-          color: 'var(--tx-3)',
-          letterSpacing: '0.05em',
-          marginTop: '24px',
-        }}>
-          PHASE 2+ BACKLOG
-        </div>
+
+        {loading ? (
+          <div style={{ fontSize: '12px', color: 'var(--tx-3)' }}>Loading…</div>
+        ) : sorted.length === 0 ? (
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px', color: 'var(--tx-3)', lineHeight: 1.7 }}>
+            No categories yet. Import a budget map above, or import transactions from
+            Settings to get started.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {sorted.map(c => {
+              const e = effective(c)
+              const isNew = customNew[c.category]
+              const opts = [...new Set([...groupOptions, e.group].filter(Boolean))]
+              return (
+                <div
+                  key={c.category}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 130px',
+                    gap: '8px',
+                    alignItems: 'center',
+                    padding: '8px 0',
+                    borderBottom: '0.5px solid var(--bd-light)',
+                  }}
+                >
+                  <div style={{
+                    fontSize: '13px',
+                    color: 'var(--tx-1)',
+                    fontWeight: changed(c) ? 600 : 400,
+                  }}>
+                    {c.category}
+                    {changed(c) && <span style={{ color: 'var(--accent)' }}> •</span>}
+                  </div>
+
+                  {isNew ? (
+                    <input
+                      autoFocus
+                      value={e.group}
+                      onChange={ev => setField(c, { group: ev.target.value })}
+                      placeholder="New group name…"
+                      style={{ ...selectStyle, border: '1px solid var(--accent)', cursor: 'text' }}
+                    />
+                  ) : (
+                    <select
+                      value={e.group}
+                      onChange={ev => {
+                        if (ev.target.value === '__new__') {
+                          setCustomNew(s => ({ ...s, [c.category]: true }))
+                          setField(c, { group: '' })
+                        } else {
+                          setField(c, { group: ev.target.value })
+                        }
+                      }}
+                      style={selectStyle}
+                    >
+                      {opts.map(g => <option key={g} value={g}>{g}</option>)}
+                      <option value="__new__">+ New group…</option>
+                    </select>
+                  )}
+
+                  <select
+                    value={e.type}
+                    onChange={ev => setField(c, { type: ev.target.value })}
+                    style={selectStyle}
+                  >
+                    {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

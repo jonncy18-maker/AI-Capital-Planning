@@ -661,11 +661,13 @@ const BASELINE_CATS = [
   ['commit', 'COMMITMENTS'],
 ]
 
-function Step4({ path, baseline, setBaseline, mobile, csvFile, setCsvFile }) {
+function Step4({ path, baseline, setBaseline, mobile, csvFile, setCsvFile, budgetMap, setBudgetMap }) {
   const showDrop = path === 'import' || path === 'partial'
   const showBaseline = path === 'manual' || path === 'partial'
   const fileInputRef = useRef(null)
+  const budgetInputRef = useRef(null)
   const [dragOver, setDragOver] = useState(false)
+  const [budgetDragOver, setBudgetDragOver] = useState(false)
 
   function handleFile(file) {
     if (!file) return
@@ -677,6 +679,13 @@ function Step4({ path, baseline, setBaseline, mobile, csvFile, setCsvFile }) {
       const rowCount = lines.filter(l => l.trim()).length - 1
       setCsvFile({ name: file.name, headers, rowCount, raw })
     }
+    reader.readAsText(file)
+  }
+
+  function handleBudgetFile(file) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = e => setBudgetMap({ name: file.name, raw: e.target.result })
     reader.readAsText(file)
   }
 
@@ -893,6 +902,92 @@ function Step4({ path, baseline, setBaseline, mobile, csvFile, setCsvFile }) {
           </div>
         </>
       )}
+
+      {/* Optional: import an existing budget / category map */}
+      <div style={{ marginTop: showDrop || showBaseline ? '26px' : '0' }}>
+        <div style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: '10px',
+          color: 'var(--accent)',
+          letterSpacing: '0.1em',
+          marginBottom: '8px',
+        }}>
+          // existing budget · optional
+        </div>
+        <div style={{
+          fontSize: '12.5px',
+          color: 'var(--tx-2)',
+          marginBottom: '12px',
+          lineHeight: '1.6',
+        }}>
+          Already map your categories to buckets in a spreadsheet? Import it and the
+          engine uses your structure as the source of truth instead of guessing.
+        </div>
+        <input
+          type="file"
+          accept=".csv"
+          ref={budgetInputRef}
+          style={{ display: 'none' }}
+          onChange={e => handleBudgetFile(e.target.files[0])}
+        />
+        <div
+          onClick={() => budgetInputRef.current && budgetInputRef.current.click()}
+          onDragOver={e => { e.preventDefault(); setBudgetDragOver(true) }}
+          onDragLeave={() => setBudgetDragOver(false)}
+          onDrop={e => { e.preventDefault(); setBudgetDragOver(false); handleBudgetFile(e.dataTransfer.files[0]) }}
+          style={{
+            border: budgetDragOver ? '1.5px dashed var(--accent)' : '1.5px dashed var(--bd)',
+            borderRadius: '10px',
+            padding: '20px',
+            textAlign: 'center',
+            background: 'var(--bg-card)',
+            cursor: 'pointer',
+            transition: 'border-color .15s',
+          }}
+        >
+          {budgetMap ? (
+            <>
+              <div style={{ fontSize: '20px', color: 'var(--accent)', lineHeight: 1 }}>✓</div>
+              <div style={{ fontSize: '13px', color: 'var(--tx-1)', marginTop: '9px', fontWeight: 500 }}>
+                {budgetMap.name}
+              </div>
+              <button
+                onClick={e => { e.stopPropagation(); setBudgetMap(null) }}
+                style={{
+                  marginTop: '10px',
+                  background: 'none',
+                  border: '1px solid var(--bd)',
+                  borderRadius: '6px',
+                  padding: '4px 11px',
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: '10px',
+                  color: 'var(--tx-3)',
+                  cursor: 'pointer',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                × Remove
+              </button>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: '20px', color: 'var(--accent)', lineHeight: 1 }}>⊹</div>
+              <div style={{ fontSize: '13px', color: 'var(--tx-1)', marginTop: '9px', fontWeight: 500 }}>
+                Drop budget CSV here or click to browse
+              </div>
+              <div style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '9.5px',
+                color: 'var(--tx-3)',
+                marginTop: '6px',
+                letterSpacing: '0.04em',
+              }}>
+                COLUMNS: CATEGORY · GROUP · (OPTIONAL) MONTHLY TARGET · TYPE
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -1105,6 +1200,7 @@ export default function Onboarding({ onComplete }) {
   const [path, setPath] = useState(null)
   const [baseline, setBaseline] = useState({})
   const [csvFile, setCsvFile] = useState(null)
+  const [budgetMap, setBudgetMap] = useState(null)
 
   // AI bar
   const [aiInput, setAiInput] = useState('')
@@ -1154,6 +1250,7 @@ export default function Onboarding({ onComplete }) {
         dataPath: path,
         baseline,
         csvFile: csvFile ? { name: csvFile.name, rowCount: csvFile.rowCount, headers: csvFile.headers, raw: csvFile.raw } : null,
+        budgetMap: budgetMap ? { name: budgetMap.name, raw: budgetMap.raw } : null,
         budgetBuckets,
         periodOptions,
         periodDefault,
@@ -1339,6 +1436,8 @@ export default function Onboarding({ onComplete }) {
               mobile={mobile}
               csvFile={csvFile}
               setCsvFile={setCsvFile}
+              budgetMap={budgetMap}
+              setBudgetMap={setBudgetMap}
             />
           )}
 

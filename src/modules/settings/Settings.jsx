@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { derivePeriods } from '../../lib/periods.js'
 import { getImportHistory } from '../../lib/db/importLog.js'
+import BudgetMapImport from '../import/BudgetMapImport.jsx'
 
 // Normalize legacy scalar planningHorizon (e.g. 3) into the multi-select array form.
 function normalizeHorizon(h) {
@@ -460,6 +461,24 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
           </div>
         )}
       </div>
+
+      {/* Section 6: Category Map */}
+      {userId && (
+        <div style={card}>
+          <div style={cardTitle}>// CATEGORY MAP</div>
+          <div style={{
+            fontSize: '13px',
+            color: 'var(--tx-2, #94a3b8)',
+            marginBottom: '14px',
+            lineHeight: '1.6',
+          }}>
+            Already map your categories to budget groups in a spreadsheet? Import it
+            here — it becomes the authoritative mapping, so future imports map cleanly
+            without AI guessing.
+          </div>
+          <BudgetMapImport userId={userId} />
+        </div>
+      )}
 
       {/* Save button */}
       <button

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { parseMonarchCSV, detectMonarchFormat } from '../../lib/csv/monarchParser.js'
 import { findUnmappedCategories, applyMappings, ALL_GROUPS, GROUP_TYPE_DEFAULTS, getCategoryMapping } from '../../lib/csv/categoryMap.js'
 import { importTransactions } from '../../lib/db/transactions.js'
-import { seedDefaultCategories, upsertCategory } from '../../lib/db/budgetCategories.js'
+import { seedDefaultCategories, upsertCategory, getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { logImport } from '../../lib/db/importLog.js'
 import { buildCategoryProfile } from '../../lib/ai/categoryProfiler.js'
 import { suggestBuckets } from '../../lib/ai/suggestBuckets.js'
@@ -98,7 +98,7 @@ function ParseError({ errors, onRetry, onSkip }) {
 
 // ── Unmapped categories screen ─────────────────────────────────────────────────
 
-function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, initialMappings = {}, questions = [] }) {
+function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, initialMappings = {}, questions = [], userGroups = [] }) {
   const aiAssisted = Object.keys(initialMappings).length > 0
 
   const [mappings, setMappings] = useState(() => {
@@ -118,17 +118,37 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
     return m
   })
 
+  // Cards currently typing a brand-new group name (vs picking from the list).
+  const [customFor, setCustomFor] = useState({})
+
+  // Dropdown maps into the user's own groups first, then built-in defaults, plus
+  // any new group the AI proposed. Per-card we also include the current value so
+  // an AI-proposed group is always selectable.
+  const suggestedGroups = Object.values(initialMappings).map(s => s?.group).filter(Boolean)
+  const baseGroupOptions = [...new Set([...userGroups, ...ALL_GROUPS, ...suggestedGroups])]
+  const optionsFor = cat => [...new Set([...baseGroupOptions, mappings[cat]?.group].filter(Boolean))]
+
   function setGroup(cat, group) {
     setMappings(m => ({
       ...m,
       [cat]: {
         ...m[cat],
         group,
-        type: GROUP_TYPE_DEFAULTS[group] ?? 'Flexible',
+        type: GROUP_TYPE_DEFAULTS[group] ?? m[cat].type ?? 'Flexible',
         skip: false,
         aiSuggested: false, // user made an explicit choice
       },
     }))
+    setCustomFor(c => ({ ...c, [cat]: false }))
+  }
+
+  function startCustom(cat) {
+    setCustomFor(c => ({ ...c, [cat]: true }))
+    setMappings(m => ({ ...m, [cat]: { ...m[cat], group: '', aiSuggested: false } }))
+  }
+
+  function setCustomGroup(cat, value) {
+    setMappings(m => ({ ...m, [cat]: { ...m[cat], group: value, skip: false, aiSuggested: false } }))
   }
 
   function toggleSkip(cat) {
@@ -332,10 +352,32 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
                 </button>
               </div>
 
-              {!m.skip && (
+              {!m.skip && (customFor[cat] ? (
+                <input
+                  autoFocus
+                  value={m.group}
+                  onChange={e => setCustomGroup(cat, e.target.value)}
+                  placeholder="New group name…"
+                  style={{
+                    width: '100%',
+                    background: 'var(--field)',
+                    border: '1px solid var(--accent)',
+                    borderRadius: '7px',
+                    padding: '9px 10px',
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '13px',
+                    color: 'var(--tx-1)',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              ) : (
                 <select
                   value={m.group}
-                  onChange={e => setGroup(cat, e.target.value)}
+                  onChange={e => {
+                    if (e.target.value === '__new__') startCustom(cat)
+                    else setGroup(cat, e.target.value)
+                  }}
                   style={{
                     width: '100%',
                     background: 'var(--field)',
@@ -349,11 +391,12 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
                     outline: 'none',
                   }}
                 >
-                  {ALL_GROUPS.map(g => (
+                  {optionsFor(cat).map(g => (
                     <option key={g} value={g}>{g}</option>
                   ))}
+                  <option value="__new__">+ New group…</option>
                 </select>
-              )}
+              ))}
             </div>
           )
         })}
@@ -633,6 +676,10 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
   const [importResult, setImportResult] = useState(null)
   const [aiSuggestions, setAiSuggestions] = useState({})
   const [aiQuestions, setAiQuestions] = useState([])
+  const [userGroups, setUserGroups] = useState([])
+  // category → { group, type } for the user's already-saved mappings, so known
+  // categories still get their group applied to imported transactions.
+  const [userCatMap, setUserCatMap] = useState({})
 
   // Auto-parse on mount
   useEffect(() => {
@@ -649,32 +696,52 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
       return
     }
 
-    const unmappedCats = findUnmappedCategories(result.rows)
-    if (unmappedCats.length > 0) {
+    ;(async () => {
+      // Load the user's existing categories first: anything they've already
+      // mapped (built-in seed or their own budget) is "known" and shouldn't be
+      // re-asked, and their own groups become the buckets we map into.
+      let userCats = []
+      try {
+        userCats = await getBudgetCategories(userId)
+      } catch {
+        // Non-fatal — fall back to the built-in defaults
+      }
+      const knownNames = userCats.map(c => c.category)
+      const groups = [...new Set(userCats.map(c => c.group).filter(Boolean))].sort()
+      setUserGroups(groups)
+
+      const catMap = {}
+      for (const c of userCats) catMap[c.category] = { group: c.group, type: c.type }
+      setUserCatMap(catMap)
+
+      const unmappedCats = findUnmappedCategories(result.rows, knownNames)
+      if (unmappedCats.length === 0) {
+        // Pass catMap explicitly — state update above won't be visible yet.
+        runImport(result.rows, result.errors, {}, catMap)
+        return
+      }
+
       setUnmapped(unmappedCats)
       setScreen('suggesting')
-      // Ask Claude to pre-fill groupings; fall back to manual if it fails
-      ;(async () => {
-        try {
-          const profile = buildCategoryProfile(result.rows)
-          const aiResult = await suggestBuckets(unmappedCats, profile)
-          if (!aiResult.error) {
-            const suggMap = {}
-            for (const s of aiResult.suggestions) suggMap[s.category] = s
-            setAiSuggestions(suggMap)
-            setAiQuestions(aiResult.questions ?? [])
-          }
-        } catch {
-          // Non-fatal — user will see the manual mapping screen
+      // Ask Claude to pre-fill groupings into the user's own buckets; fall back
+      // to manual if it fails.
+      try {
+        const profile = buildCategoryProfile(result.rows)
+        const aiResult = await suggestBuckets(unmappedCats, profile, groups)
+        if (!aiResult.error) {
+          const suggMap = {}
+          for (const s of aiResult.suggestions) suggMap[s.category] = s
+          setAiSuggestions(suggMap)
+          setAiQuestions(aiResult.questions ?? [])
         }
-        setScreen('unmapped')
-      })()
-    } else {
-      runImport(result.rows, result.errors, {})
-    }
+      } catch {
+        // Non-fatal — user will see the manual mapping screen
+      }
+      setScreen('unmapped')
+    })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function runImport(rows, parseErrors, customMappings) {
+  async function runImport(rows, parseErrors, customMappings, knownMap = userCatMap) {
     setScreen('importing')
 
     try {
@@ -692,8 +759,9 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
         }
       }
 
-      // Apply all mappings to rows
-      const mappedRows = applyMappings(rows, customMappings)
+      // Apply all mappings to rows — the user's existing mappings plus any new
+      // choices made on the unmapped screen (new choices win on overlap).
+      const mappedRows = applyMappings(rows, { ...knownMap, ...customMappings })
 
       // Import to Supabase
       const { inserted, skipped } = await importTransactions(userId, mappedRows)
@@ -806,6 +874,7 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
             mobile={mobile}
             initialMappings={aiSuggestions}
             questions={aiQuestions}
+            userGroups={userGroups}
           />
         )}
 
