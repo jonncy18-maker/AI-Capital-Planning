@@ -18,7 +18,14 @@ import { readXlsx } from '../xlsx/xlsxReader.js'
 
 const CATEGORY_ALIASES = ['category', 'subcategory', 'name']
 const GROUP_ALIASES = ['group', 'bucket', 'parent', 'category group', 'parent category']
-const TARGET_ALIASES = ['monthly target', 'monthly budget', 'budget', 'target', 'amount']
+const TARGET_ALIASES = [
+  'monthly target', 'monthly budget', 'monthly amount', 'monthly', 'per month',
+  'avg monthly', 'monthly avg', 'budget', 'target', 'amount',
+]
+const ANNUAL_ALIASES = [
+  'yearly', 'annual', 'yearly total', 'annual total', 'yearly budget',
+  'annual budget', 'yearly amount', 'annual amount', 'year total',
+]
 const TYPE_ALIASES = ['type', 'expense type']
 
 // How many rows to scan looking for the header row (title/blank rows above it).
@@ -88,6 +95,7 @@ function locateHeader(grid) {
         catIdx,
         groupIdx,
         targetIdx: findCol(headers, TARGET_ALIASES),
+        annualIdx: findCol(headers, ANNUAL_ALIASES),
         typeIdx: findCol(headers, TYPE_ALIASES),
         rawHeaders: grid[r],
       }
@@ -113,6 +121,7 @@ function extractRows(grid, loc) {
       group,
       type: loc.typeIdx >= 0 ? normType(cols[loc.typeIdx]) : null,
       monthlyTarget: loc.targetIdx >= 0 ? parseAmount(cols[loc.targetIdx]) : null,
+      annual: loc.annualIdx >= 0 ? parseAmount(cols[loc.annualIdx]) : null,
     })
   }
   return rows

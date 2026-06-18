@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { getTransactionsForAnalysis } from '../../lib/db/transactions.js'
-import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import { getBudgetCategories, importCategoryMappings } from '../../lib/db/budgetCategories.js'
 import { getCommitments } from '../../lib/db/commitments.js'
+import { parseBudgetFile } from '../../lib/csv/budgetParser.js'
 import {
   getBudgetLineItems,
   getBudgetYears,
@@ -113,7 +114,7 @@ function GeneratePanel({ analysis, commitments, year, onSave, onCancel, saving }
             Draft budget for {year}
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--tx-2)' }}>
-            Built from {analysis.spanMonths} months of history · {includedRows.length} categories ·
+            {analysis.sourceLabel || `Built from ${analysis.spanMonths} months of history`} · {includedRows.length} categories ·
             planned <strong style={{ color: 'var(--tx-1)' }}>{fmtFull(plannedTotal)}</strong>
             {commitmentAnnual > 0 && <> · +{fmtFull(commitmentAnnual)} in commitments</>}
           </div>
@@ -338,7 +339,9 @@ export default function Budget({ userId, mobile }) {
   const [generating, setGenerating] = useState(false)
   const [analysis, setAnalysis] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const fileRef = useRef(null)
 
   const loadYearData = useCallback(async (yr) => {
     setLoading(true)
@@ -384,6 +387,61 @@ export default function Budget({ userId, mobile }) {
     }
   }
 
+  // Upload an existing budget file (CSV or .xlsx). We upsert its categories so
+  // they exist with the right group/type, then open the same editable preview
+  // the history flow uses — pre-filled from the file — so the user reviews and
+  // saves. Non-Monthly rows get an even spread (the file only carries a yearly
+  // and monthly figure per category, not a month-by-month breakdown).
+  async function handleUploadFile(file) {
+    if (!file) return
+    setImporting(true)
+    setError(null)
+    try {
+      const { rows, errors } = await parseBudgetFile(file)
+      if (!rows.length) {
+        setError(errors[0] || 'No budget rows found in that file.')
+        return
+      }
+
+      await importCategoryMappings(userId, rows)
+      const cats = await getBudgetCategories(userId)
+      const idByName = new Map(cats.map(c => [c.category, c.id]))
+
+      const categories = rows
+        .map(r => {
+          const monthly = r.monthlyTarget ?? (r.annual != null ? r.annual / 12 : 0)
+          const annual = r.annual ?? monthly * 12
+          return {
+            category_id: idByName.get(r.category) ?? null,
+            category: r.category,
+            group: r.group,
+            type: r.type || 'Flexible',
+            monthlyAvg: monthly,
+            annualTotal: annual,
+            monthHistogram: Array(12).fill(annual / 12), // even spread for Non-Monthly
+          }
+        })
+        .filter(c => c.category_id && c.annualTotal >= 1)
+
+      if (!categories.length) {
+        setError('Could not read any budget amounts from that file. Expected a category, group, and a monthly or yearly amount.')
+        return
+      }
+
+      setAnalysis({
+        categories,
+        spanMonths: null,
+        sourceLabel: `Imported from “${file.name}”`,
+      })
+      setGenerating(true)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setImporting(false)
+      if (fileRef.current) fileRef.current.value = '' // allow re-selecting the same file
+    }
+  }
+
   async function handleSaveBudget(items) {
     setSaving(true)
     try {
@@ -407,6 +465,13 @@ export default function Budget({ userId, mobile }) {
 
   return (
     <div style={{ maxWidth: 1100 }}>
+      <input
+        type="file"
+        accept=".csv,.xlsx,.xlsm"
+        ref={fileRef}
+        style={{ display: 'none' }}
+        onChange={e => handleUploadFile(e.target.files[0])}
+      />
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--accent)', letterSpacing: '0.1em', marginBottom: 6 }}>
@@ -414,7 +479,7 @@ export default function Budget({ userId, mobile }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
           <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 24 : 30, fontWeight: 400, color: 'var(--tx-1)', margin: 0, lineHeight: 1.1 }}>
-            {generating ? 'Generate Budget' : 'Annual Budget Builder'}
+            {generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
           </h1>
           {!generating && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -424,7 +489,10 @@ export default function Budget({ userId, mobile }) {
               }}>
                 {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
-              <button onClick={handleAnalyze} disabled={analyzing} style={{ ...primaryBtn, opacity: analyzing ? 0.6 : 1 }}>
+              <button onClick={() => fileRef.current?.click()} disabled={importing || analyzing} style={{ ...ghostBtn, opacity: importing || analyzing ? 0.6 : 1 }}>
+                {importing ? 'Importing…' : '⤓ Upload Budget'}
+              </button>
+              <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...primaryBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
                 {analyzing ? 'Analyzing…' : lineItems.length ? '↻ Regenerate' : '✦ Generate from History'}
               </button>
             </div>
@@ -455,13 +523,19 @@ export default function Budget({ userId, mobile }) {
           <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18, color: 'var(--tx-1)', marginBottom: 10 }}>
             No budget for {year} yet
           </div>
-          <div style={{ fontSize: 13.5, color: 'var(--tx-2)', lineHeight: 1.6, maxWidth: 420, margin: '0 auto 20px' }}>
-            Generate a month-by-month budget from your transaction history. The analyzer
-            classifies each category as Fixed, Flexible, or Non-Monthly and proposes targets you can adjust.
+          <div style={{ fontSize: 13.5, color: 'var(--tx-2)', lineHeight: 1.6, maxWidth: 460, margin: '0 auto 20px' }}>
+            Generate a month-by-month budget from your transaction history — the analyzer
+            classifies each category as Fixed, Flexible, or Non-Monthly and proposes targets you
+            can adjust. Or upload a budget you already maintain (CSV or Excel).
           </div>
-          <button onClick={handleAnalyze} disabled={analyzing} style={{ ...primaryBtn, opacity: analyzing ? 0.6 : 1 }}>
-            {analyzing ? 'Analyzing…' : '✦ Generate from History'}
-          </button>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...primaryBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
+              {analyzing ? 'Analyzing…' : '✦ Generate from History'}
+            </button>
+            <button onClick={() => fileRef.current?.click()} disabled={importing || analyzing} style={{ ...ghostBtn, opacity: importing || analyzing ? 0.6 : 1 }}>
+              {importing ? 'Importing…' : '⤓ Upload Budget'}
+            </button>
+          </div>
         </div>
       ) : (
         <>
