@@ -4,6 +4,8 @@ import { findUnmappedCategories, applyMappings, ALL_GROUPS, GROUP_TYPE_DEFAULTS,
 import { importTransactions } from '../../lib/db/transactions.js'
 import { seedDefaultCategories, upsertCategory } from '../../lib/db/budgetCategories.js'
 import { logImport } from '../../lib/db/importLog.js'
+import { buildCategoryProfile } from '../../lib/ai/categoryProfiler.js'
+import { suggestBuckets } from '../../lib/ai/suggestBuckets.js'
 
 // ── Screens ────────────────────────────────────────────────────────────────────
 
@@ -96,17 +98,36 @@ function ParseError({ errors, onRetry, onSkip }) {
 
 // ── Unmapped categories screen ─────────────────────────────────────────────────
 
-function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile }) {
+function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, initialMappings = {}, questions = [] }) {
+  const aiAssisted = Object.keys(initialMappings).length > 0
+
   const [mappings, setMappings] = useState(() => {
     const m = {}
-    unmapped.forEach(cat => { m[cat] = { group: 'Uncategorized', type: 'Flexible', skip: false } })
+    unmapped.forEach(cat => {
+      const ai = initialMappings[cat]
+      m[cat] = {
+        group: ai?.group ?? 'Uncategorized',
+        type: ai?.type ?? 'Flexible',
+        skip: false,
+        // Track AI origin so we can show the badge and clear it on user edit
+        aiSuggested: !!ai,
+        confidence: ai?.confidence ?? null,
+        note: ai?.note ?? null,
+      }
+    })
     return m
   })
 
   function setGroup(cat, group) {
     setMappings(m => ({
       ...m,
-      [cat]: { ...m[cat], group, type: GROUP_TYPE_DEFAULTS[group] ?? 'Flexible', skip: false },
+      [cat]: {
+        ...m[cat],
+        group,
+        type: GROUP_TYPE_DEFAULTS[group] ?? 'Flexible',
+        skip: false,
+        aiSuggested: false, // user made an explicit choice
+      },
     }))
   }
 
@@ -121,6 +142,10 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile })
     const ex = exampleRows.filter(r => r.category === cat).slice(0, 2)
     return ex.map(r => r.merchant).join(', ')
   }
+
+  // Filter questions to only those whose category is in the unmapped list
+  const unmappedSet = new Set(unmapped)
+  const relevantQuestions = questions.filter(q => unmappedSet.has(q.category))
 
   return (
     <div>
@@ -149,8 +174,67 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile })
         marginBottom: '22px',
         lineHeight: '1.6',
       }}>
-        These Monarch categories aren't in our default map. Assign each to a group, or skip to leave them uncategorized.
+        {aiAssisted
+          ? 'Claude pre-filled these groupings from your transaction history. Review and adjust, or skip any you\'d like to leave uncategorized.'
+          : 'These Monarch categories aren\'t in our default map. Assign each to a group, or skip to leave them uncategorized.'}
       </div>
+
+      {/* Targeted clarifying questions from the AI */}
+      {relevantQuestions.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{
+            fontFamily: "'DM Mono', monospace",
+            fontSize: '10px',
+            color: 'var(--accent)',
+            letterSpacing: '0.1em',
+            marginBottom: '8px',
+          }}>
+            // a few things to clarify
+          </div>
+          {relevantQuestions.map(q => (
+            <div key={q.category} style={{
+              border: '1px solid var(--accent-bd)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              background: 'var(--accent-bg)',
+              marginBottom: '8px',
+            }}>
+              <div style={{
+                fontSize: '12.5px',
+                color: 'var(--tx-1)',
+                marginBottom: '8px',
+                lineHeight: 1.5,
+              }}>
+                {q.question}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {(q.options ?? []).map(opt => {
+                  const selected = mappings[q.category]?.group === opt
+                  return (
+                    <button
+                      key={opt}
+                      onClick={() => setGroup(q.category, opt)}
+                      style={{
+                        border: selected ? '1px solid var(--accent)' : '1px solid var(--bd)',
+                        background: selected ? 'var(--accent)' : 'none',
+                        color: selected ? 'var(--accent-tx-on)' : 'var(--tx-2)',
+                        borderRadius: '6px',
+                        padding: '5px 11px',
+                        fontFamily: 'Inter, sans-serif',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        transition: 'all .12s',
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{
         display: 'flex',
@@ -180,8 +264,30 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile })
                 marginBottom: m.skip ? 0 : '10px',
               }}>
                 <div>
-                  <div style={{ fontSize: '13.5px', fontWeight: 500, color: 'var(--tx-1)' }}>
+                  <div style={{
+                    fontSize: '13.5px',
+                    fontWeight: 500,
+                    color: 'var(--tx-1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}>
                     {cat}
+                    {m.aiSuggested && (
+                      <span style={{
+                        background: 'var(--accent-bg)',
+                        color: 'var(--accent)',
+                        border: '1px solid var(--accent-bd)',
+                        borderRadius: '4px',
+                        padding: '1px 5px',
+                        fontFamily: "'DM Mono', monospace",
+                        fontSize: '9px',
+                        letterSpacing: '0.05em',
+                        lineHeight: 1,
+                      }}>
+                        AI
+                      </span>
+                    )}
                   </div>
                   {exampleFor(cat) && (
                     <div style={{
@@ -192,6 +298,17 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile })
                       letterSpacing: '0.02em',
                     }}>
                       e.g. {exampleFor(cat)}
+                    </div>
+                  )}
+                  {m.aiSuggested && m.note && m.confidence !== 'high' && (
+                    <div style={{
+                      fontFamily: "'DM Mono', monospace",
+                      fontSize: '9.5px',
+                      color: 'var(--tx-3)',
+                      marginTop: '4px',
+                      fontStyle: 'italic',
+                    }}>
+                      {m.note}
                     </div>
                   )}
                 </div>
@@ -508,17 +625,18 @@ function StatRow({ label, value, accent }) {
 
 // ── Main ImportFlow component ───────────────────────────────────────────────────
 
-// Screens: 'parsing' | 'parse_error' | 'unmapped' | 'importing' | 'summary'
+// Screens: 'parsing' | 'parse_error' | 'suggesting' | 'unmapped' | 'importing' | 'summary'
 export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile }) {
   const [screen, setScreen] = useState('parsing')
   const [parseResult, setParseResult] = useState(null)
   const [unmapped, setUnmapped] = useState([])
   const [importResult, setImportResult] = useState(null)
+  const [aiSuggestions, setAiSuggestions] = useState({})
+  const [aiQuestions, setAiQuestions] = useState([])
 
   // Auto-parse on mount
   useEffect(() => {
     if (!csvRaw) {
-      // No CSV — skip straight to done
       onComplete(null)
       return
     }
@@ -534,7 +652,23 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
     const unmappedCats = findUnmappedCategories(result.rows)
     if (unmappedCats.length > 0) {
       setUnmapped(unmappedCats)
-      setScreen('unmapped')
+      setScreen('suggesting')
+      // Ask Claude to pre-fill groupings; fall back to manual if it fails
+      ;(async () => {
+        try {
+          const profile = buildCategoryProfile(result.rows)
+          const aiResult = await suggestBuckets(unmappedCats, profile)
+          if (!aiResult.error) {
+            const suggMap = {}
+            for (const s of aiResult.suggestions) suggMap[s.category] = s
+            setAiSuggestions(suggMap)
+            setAiQuestions(aiResult.questions ?? [])
+          }
+        } catch {
+          // Non-fatal — user will see the manual mapping screen
+        }
+        setScreen('unmapped')
+      })()
     } else {
       runImport(result.rows, result.errors, {})
     }
@@ -640,6 +774,29 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
           />
         )}
 
+        {screen === 'suggesting' && (
+          <div style={{ textAlign: 'center', paddingTop: '48px' }}>
+            <Spinner />
+            <div style={{
+              fontFamily: "'DM Serif Display', serif",
+              fontSize: '22px',
+              color: 'var(--tx-1)',
+              margin: '24px 0 8px',
+              letterSpacing: '-0.01em',
+            }}>
+              Analyzing your history…
+            </div>
+            <div style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: '11px',
+              color: 'var(--tx-3)',
+              letterSpacing: '0.04em',
+            }}>
+              Claude is pre-filling category groupings
+            </div>
+          </div>
+        )}
+
         {screen === 'unmapped' && (
           <UnmappedScreen
             unmapped={unmapped}
@@ -647,6 +804,8 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
             onConfirm={handleUnmappedConfirm}
             onSkipAll={handleSkipAllUnmapped}
             mobile={mobile}
+            initialMappings={aiSuggestions}
+            questions={aiQuestions}
           />
         )}
 
