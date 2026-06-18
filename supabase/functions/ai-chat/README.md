@@ -32,9 +32,31 @@ verifies at the gateway — so only authenticated users can reach the function.
 {
   "system": "system prompt string",
   "messages": [{ "role": "user", "content": "..." }],
-  "maxTokens": 1024
+  "maxTokens": 1024,
+  "modelFamily": "haiku",
+  "cacheSystem": true
 }
 ```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `messages` | yes | Anthropic messages array |
+| `system` | no | System prompt string |
+| `maxTokens` | no | Defaults to 1024 |
+| `modelFamily` | no | `"haiku"` or `"sonnet"` — resolved to the **newest** model in that family at request time. Defaults to `sonnet`. |
+| `model` | no | Pin an exact model ID; overrides `modelFamily`. |
+| `cacheSystem` | no | When `true`, marks the system prompt for prompt caching (use when the same system/context is reused across requests in a session). |
+
+### Model resolution
+
+The function calls the Anthropic Models API and floats each family to its newest
+available model (cached ~6h per warm instance). If the Models API is unreachable
+it falls back to pinned IDs in `MODEL_FALLBACKS` (`index.ts`). When a new major
+model ships (e.g. Haiku 5) it is adopted automatically — spot-check one import
+afterward, since `suggestBuckets` parses the model's JSON output.
+
+Current routing (see `src/lib/ai/models.js`): group mapping → Haiku,
+command bar / AI briefing → Sonnet.
 
 ## Response
 

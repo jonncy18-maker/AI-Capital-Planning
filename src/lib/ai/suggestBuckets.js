@@ -10,6 +10,7 @@
 
 import { supabase } from '../supabase.js'
 import { ALL_GROUPS } from '../csv/categoryMap.js'
+import { AI_MODEL_FAMILIES } from './models.js'
 
 // Returns:
 //   { suggestions: [{ category, group, type, confidence, note }], questions: [...] }
@@ -63,6 +64,7 @@ Rules:
       system,
       messages: [{ role: 'user', content: userMessage }],
       maxTokens: 1500,
+      modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
     },
   })
 
