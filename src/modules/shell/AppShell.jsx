@@ -92,7 +92,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
       case 'budget':      return <Budget userId={user.id} mobile={mobile} />
       case 'commitments': return <Commitments userId={user.id} mobile={mobile} />
       case 'wealth':      return <Wealth userId={user.id} mobile={mobile} />
-      case 'mapping':     return <Mapping />
+      case 'mapping':     return <Mapping userId={user.id} mobile={mobile} />
       case 'settings':
         return (
           <Settings
