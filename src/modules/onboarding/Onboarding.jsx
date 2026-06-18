@@ -109,10 +109,10 @@ function Step1({ onNext }) {
       <div style={{
         fontFamily: "'DM Mono', monospace",
         fontSize: '11px',
-        color: 'var(--accent)',
-        letterSpacing: '0.1em',
+        color: 'var(--tx-3)',
+        letterSpacing: '0.08em', textTransform: 'uppercase',
       }}>
-        // welcome
+        welcome
       </div>
       <div style={{
         fontFamily: "'DM Serif Display', serif",
@@ -252,10 +252,10 @@ function Step2({
           <div style={{
             fontFamily: "'DM Mono', monospace",
             fontSize: '10px',
-            color: 'var(--accent)',
-            letterSpacing: '0.1em',
+            color: 'var(--tx-3)',
+            letterSpacing: '0.08em', textTransform: 'uppercase',
           }}>
-            // priorities · 1 of 3
+            priorities · 1 of 3
           </div>
           <div style={{
             fontFamily: "'DM Serif Display', serif",
@@ -299,10 +299,10 @@ function Step2({
           <div style={{
             fontFamily: "'DM Mono', monospace",
             fontSize: '10px',
-            color: 'var(--accent)',
-            letterSpacing: '0.1em',
+            color: 'var(--tx-3)',
+            letterSpacing: '0.08em', textTransform: 'uppercase',
           }}>
-            // priorities · 2 of 3
+            priorities · 2 of 3
           </div>
           <div style={{
             fontFamily: "'DM Serif Display', serif",
@@ -455,10 +455,10 @@ function Step2({
           <div style={{
             fontFamily: "'DM Mono', monospace",
             fontSize: '10px',
-            color: 'var(--accent)',
-            letterSpacing: '0.1em',
+            color: 'var(--tx-3)',
+            letterSpacing: '0.08em', textTransform: 'uppercase',
           }}>
-            // priorities · 3 of 3
+            priorities · 3 of 3
           </div>
           <div style={{
             fontFamily: "'DM Serif Display', serif",
@@ -563,10 +563,10 @@ function Step3({ path, setPath }) {
       <div style={{
         fontFamily: "'DM Mono', monospace",
         fontSize: '10px',
-        color: 'var(--accent)',
-        letterSpacing: '0.1em',
+        color: 'var(--tx-3)',
+        letterSpacing: '0.08em', textTransform: 'uppercase',
       }}>
-        // data path
+        data path
       </div>
       <div style={{
         fontFamily: "'DM Serif Display', serif",
@@ -908,11 +908,11 @@ function Step4({ path, baseline, setBaseline, mobile, csvFile, setCsvFile, budge
         <div style={{
           fontFamily: "'DM Mono', monospace",
           fontSize: '10px',
-          color: 'var(--accent)',
-          letterSpacing: '0.1em',
+          color: 'var(--tx-3)',
+          letterSpacing: '0.08em', textTransform: 'uppercase',
           marginBottom: '8px',
         }}>
-          // existing budget · optional
+          existing budget · optional
         </div>
         <div style={{
           fontSize: '12.5px',
@@ -1034,10 +1034,10 @@ function Step5() {
       <div style={{
         fontFamily: "'DM Mono', monospace",
         fontSize: '10px',
-        color: 'var(--accent)',
-        letterSpacing: '0.1em',
+        color: 'var(--tx-3)',
+        letterSpacing: '0.08em', textTransform: 'uppercase',
       }}>
-        // ready
+        ready
       </div>
       <div style={{
         fontFamily: "'DM Serif Display', serif",
@@ -1060,10 +1060,10 @@ function Step5() {
         <div style={{
           fontFamily: "'DM Mono', monospace",
           fontSize: '9.5px',
-          color: 'var(--accent)',
-          letterSpacing: '0.1em',
+          color: 'var(--tx-3)',
+          letterSpacing: '0.08em', textTransform: 'uppercase',
         }}>
-          // RECOMMENDED NEXT STEP
+          RECOMMENDED NEXT STEP
         </div>
         <div style={{
           fontFamily: "'DM Serif Display', serif",

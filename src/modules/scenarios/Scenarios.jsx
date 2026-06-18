@@ -860,11 +860,9 @@ export default function Scenarios({ userId, mobile }) {
         gap: 12,
         flexWrap: 'wrap',
       }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--tx-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
-            // scenario planner
-          </div>
-          <h1 style={{ margin: 0, fontSize: mobile ? 18 : 22, fontWeight: 700, color: 'var(--tx-1)' }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 18, color: 'var(--accent)' }}>◑</span>
+          <h1 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 20 : 24, fontWeight: 400, color: 'var(--tx-1)' }}>
             Scenario Planner
           </h1>
         </div>

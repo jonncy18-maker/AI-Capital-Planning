@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { derivePeriods } from '../../lib/periods.js'
 import { getImportHistory } from '../../lib/db/importLog.js'
 import BudgetMapImport from '../import/BudgetMapImport.jsx'
+import MonarchConnect from './MonarchConnect.jsx'
 
 // Normalize legacy scalar planningHorizon (e.g. 3) into the multi-select array form.
 function normalizeHorizon(h) {
@@ -114,8 +115,9 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
   const cardTitle = {
     fontFamily: "'DM Mono', monospace",
     fontSize: '10px',
-    color: 'var(--accent, #00C2A8)',
-    letterSpacing: '0.1em',
+    color: 'var(--tx-3)',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
     marginBottom: '14px',
   }
 
@@ -204,7 +206,7 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
 
       {/* Section 1: Financial Focuses */}
       <div style={card}>
-        <div style={cardTitle}>// FINANCIAL FOCUSES</div>
+        <div style={cardTitle}>FINANCIAL FOCUSES</div>
         {Q1_OPTS.map(label => {
           const sel = label === 'All of the above' ? allAboveSel : focuses.includes(label)
           return (
@@ -224,7 +226,7 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
 
       {/* Section 2: Long-Term Commitments */}
       <div style={card}>
-        <div style={cardTitle}>// LONG-TERM COMMITMENTS</div>
+        <div style={cardTitle}>LONG-TERM COMMITMENTS</div>
         {Q2_OPTS.map(label => {
           const sel = commitments.includes(label)
           return (
@@ -244,7 +246,7 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
 
       {/* Section 3: Planning Horizon */}
       <div style={card}>
-        <div style={cardTitle}>// PLANNING HORIZON</div>
+        <div style={cardTitle}>PLANNING HORIZON</div>
         <div style={{
           fontSize: '12px',
           color: 'var(--tx-3, #475569)',
@@ -304,7 +306,7 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
 
       {/* Section 4: Data Path */}
       <div style={card}>
-        <div style={cardTitle}>// DATA PATH</div>
+        <div style={cardTitle}>DATA PATH</div>
         <div style={{
           fontSize: '13px',
           color: 'var(--tx-1, #e2e8f0)',
@@ -326,9 +328,17 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
         </div>
       </div>
 
-      {/* Section 5: Data Management */}
+      {/* Section 5: Connections */}
+      {onImport && (
+        <div style={card}>
+          <div style={cardTitle}>CONNECTIONS</div>
+          <MonarchConnect onImport={onImport} />
+        </div>
+      )}
+
+      {/* Section 6: Data Management */}
       <div style={card}>
-        <div style={cardTitle}>// DATA MANAGEMENT</div>
+        <div style={cardTitle}>DATA MANAGEMENT</div>
 
         {/* CSV Re-import drop zone */}
         {onImport && (
@@ -465,7 +475,7 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
       {/* Section 6: Category Map */}
       {userId && (
         <div style={card}>
-          <div style={cardTitle}>// CATEGORY MAP</div>
+          <div style={cardTitle}>CATEGORY MAP</div>
           <div style={{
             fontSize: '13px',
             color: 'var(--tx-2, #94a3b8)',

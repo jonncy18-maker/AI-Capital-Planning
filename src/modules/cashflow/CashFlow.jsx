@@ -258,9 +258,10 @@ export default function CashFlow({ userId, mobile }) {
           fontSize: '11px',
           color: 'var(--warn)',
           letterSpacing: '0.08em',
+          textTransform: 'uppercase',
           marginBottom: '10px',
         }}>
-          // error
+          Error
         </div>
         <div style={{ fontSize: '14px', color: 'var(--tx-2)', marginBottom: '18px' }}>{error}</div>
         <button
@@ -465,11 +466,12 @@ export default function CashFlow({ userId, mobile }) {
             <div style={{
               fontFamily: "'DM Mono', monospace",
               fontSize: '10px',
-              color: 'var(--accent)',
-              letterSpacing: '0.1em',
+              color: 'var(--tx-3)',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
               marginBottom: '14px',
             }}>
-              // {m.label.toLowerCase()} {planned ? 'planned demand' : 'breakdown'}
+              {m.label} · {planned ? 'planned demand' : 'breakdown'}
             </div>
 
             {planned ? (
@@ -499,11 +501,12 @@ export default function CashFlow({ userId, mobile }) {
         <div style={{
           fontFamily: "'DM Mono', monospace",
           fontSize: '10px',
-          color: 'var(--accent)',
-          letterSpacing: '0.1em',
+          color: 'var(--tx-3)',
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
           marginBottom: '16px',
         }}>
-          // {planned ? 'next 4 quarters' : 'trailing 4 quarters'}
+          {planned ? 'Next 4 quarters' : 'Trailing 4 quarters'}
         </div>
         <div style={{
           display: 'grid',

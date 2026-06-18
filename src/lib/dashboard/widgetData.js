@@ -75,6 +75,80 @@ export function commitmentsSummary(ctx) {
   return { activeCount: active.length, totalCount: commitments.length, yearTotal }
 }
 
+// Month-by-month budget vs. actuals for the year. Budget comes from the saved
+// line items (summed per month); actuals come from the supplied full-year
+// transactions (expenses only, summed per month). Past months show real actuals;
+// the current and future months fall back to budget as a forecast so the chart
+// reads as a continuous plan-vs-reality picture.
+//
+// status per month:  'under' | 'on' (±10% of budget) | 'over' | 'none' (no budget)
+export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
+  const lineItems = ctx?.budgetLineItems ?? []
+  const year = ctx?.thisYear ?? new Date().getFullYear()
+
+  const budget = Array(12).fill(0)
+  for (const li of lineItems) {
+    const m = (li.month ?? 1) - 1
+    if (m >= 0 && m < 12) budget[m] += Number(li.amount || 0)
+  }
+
+  const actual = Array(12).fill(0)
+  const seen = Array(12).fill(false)
+  for (const t of yearTransactions) {
+    const amt = Number(t.amount) || 0
+    if (amt >= 0) continue // expenses only
+    const d = new Date(t.date)
+    if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
+    const m = d.getMonth()
+    actual[m] += Math.abs(amt)
+    seen[m] = true
+  }
+
+  const now = new Date()
+  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+
+  const months = MONTHS.map((label, m) => {
+    const b = budget[m]
+    const isPast = m < currentMonth
+    const isCurrent = m === currentMonth
+    const isFuture = m > currentMonth
+    // A month has real actuals if it's not in the future and we saw spend for it.
+    const hasActual = !isFuture && seen[m]
+    const a = hasActual ? actual[m] : null
+    let status = 'none'
+    if (b > 0 && a != null) {
+      if (a > b * 1.1) status = 'over'
+      else if (a < b * 0.9) status = 'under'
+      else status = 'on'
+    }
+    return { month: m, label, budget: b, actual: a, hasActual, isPast, isCurrent, isFuture, status }
+  })
+
+  // YTD roll-up across months that have actuals — drives the "on track" pill.
+  let ytdBudget = 0
+  let ytdActual = 0
+  for (const mo of months) {
+    if (mo.actual == null) continue
+    ytdBudget += mo.budget
+    ytdActual += mo.actual
+  }
+  const ytdPct = ytdBudget > 0 ? (ytdActual / ytdBudget) * 100 : null
+  const onTrack = ytdPct == null ? true : ytdPct <= 105
+
+  return {
+    year,
+    currentMonth,
+    months,
+    hasBudget: lineItems.length > 0,
+    hasActuals: seen.some(Boolean),
+    annualBudget: budget.reduce((a, b) => a + b, 0),
+    ytdBudget,
+    ytdActual,
+    ytdPct,
+    onTrack,
+  }
+}
+
 // Wealth snapshot summary.
 export function wealthSummary(ctx) {
   const w = ctx?.wealth

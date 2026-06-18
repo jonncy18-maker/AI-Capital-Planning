@@ -190,7 +190,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
         {/* Canvas + command bar */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <main style={{ flex: 1, overflowY: 'auto', padding: mobile ? '22px 18px 90px' : '34px 28px' }}>
-            <div style={{ maxWidth: '960px', margin: '0 auto' }}>
+            <div style={{ maxWidth: '1240px', margin: '0 auto' }}>
               {pendingImport ? (
                 <ImportFlow
                   csvRaw={pendingImport.csvRaw}

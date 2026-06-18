@@ -9,6 +9,7 @@ import {
   commitmentTotalProjected,
   describeCostStructure,
 } from '../../lib/commitments/schedule.js'
+import ModuleHeader from '../common/ModuleHeader.jsx'
 
 const CUR_YEAR = new Date().getFullYear()
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -405,19 +406,14 @@ export default function Commitments({ userId, mobile }) {
   return (
     <div style={{ maxWidth: 1000 }}>
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--accent)', letterSpacing: '0.1em', marginBottom: 6 }}>
-          // long-term commitments
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 24 : 30, fontWeight: 400, color: 'var(--tx-1)', margin: 0, lineHeight: 1.1 }}>
-            Long-Term Commitments
-          </h1>
-          {view === 'list' && (
-            <button onClick={() => { setEditing(null); setView('form') }} style={primaryBtn}>+ New Commitment</button>
-          )}
-        </div>
-      </div>
+      <ModuleHeader
+        mobile={mobile}
+        icon="◈"
+        title="Long-Term Commitments"
+        actions={view === 'list' && (
+          <button onClick={() => { setEditing(null); setView('form') }} style={primaryBtn}>+ New Commitment</button>
+        )}
+      />
 
       {error && (
         <div style={{ padding: '12px 16px', background: 'var(--warn-bg)', border: '1px solid var(--warn)', borderRadius: 8, color: 'var(--tx-1)', fontSize: 13, marginBottom: 18 }}>{error}</div>
