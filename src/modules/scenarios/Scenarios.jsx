@@ -9,7 +9,9 @@ import {
   deleteAdjustment,
 } from '../../lib/db/scenarios.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import { runScenarioAgent } from '../../lib/ai/scenarioAgent.js'
 import { headerStyles } from '../common/headerStyles.js'
+import Markdown from '../common/Markdown.jsx'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CUR_YEAR = new Date().getFullYear()
@@ -722,7 +724,103 @@ function EmptyState({ viewMode, committedCount, modeledCount }) {
   )
 }
 
-export default function Scenarios({ userId, mobile }) {
+// Natural-language scenario builder — type a scenario in plain English and the
+// AI computes the month-by-month adjustments and writes the scenario for you.
+const COMPOSER_EXAMPLE =
+  "In Oct 2026 my car lease expires. I'll keep the budgeted $3k down payment, but " +
+  "instead of the $467/mo I budgeted I'm leasing a Tesla Model Y Premium at ~$550/mo " +
+  "plus $99/mo for FSD. Run this scenario."
+
+function AiScenarioComposer({ userId, context, onCreated, mobile }) {
+  const [prompt, setPrompt] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+  const [result, setResult] = useState(null) // { text, created, error }
+
+  async function run() {
+    const text = prompt.trim()
+    if (!text || busy) return
+    setBusy(true); setStatus('Thinking…'); setResult(null)
+    try {
+      const res = await runScenarioAgent({ userId, prompt: text, context, onStatus: setStatus })
+      setResult({ text: res.text, created: res.created, error: res.status !== 'ok' })
+      if (res.created?.length) { setPrompt(''); onCreated?.(res.created) }
+    } catch (e) {
+      setResult({ text: e.message, error: true })
+    } finally {
+      setBusy(false); setStatus('')
+    }
+  }
+
+  return (
+    <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 14, background: 'var(--bg-card)', padding: mobile ? 16 : 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ color: 'var(--accent)', fontSize: 14 }}>✦</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-1)' }}>Describe a scenario</span>
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--tx-2)', lineHeight: 1.55, marginBottom: 12 }}>
+        Write it in plain English — the AI works out the month-by-month changes and builds the scenario for you.
+      </div>
+
+      <textarea
+        value={prompt}
+        onChange={e => setPrompt(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run() }}
+        placeholder={COMPOSER_EXAMPLE}
+        rows={mobile ? 5 : 4}
+        disabled={busy}
+        style={{
+          width: '100%', resize: 'vertical', background: 'var(--field)',
+          border: '1px solid var(--bd)', borderRadius: 10, padding: '11px 13px',
+          color: 'var(--tx-1)', fontFamily: 'Inter, sans-serif', fontSize: 13.5, lineHeight: 1.55,
+          outline: 'none', boxSizing: 'border-box',
+        }}
+      />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
+        <button onClick={run} disabled={busy || !prompt.trim()} style={{
+          background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none', borderRadius: 8,
+          padding: '9px 18px', fontSize: 13, fontWeight: 600,
+          cursor: busy || !prompt.trim() ? 'not-allowed' : 'pointer', opacity: busy || !prompt.trim() ? 0.6 : 1,
+        }}>
+          {busy ? 'Building…' : '✦ Build scenario'}
+        </button>
+        {!prompt && !busy && !result && (
+          <button onClick={() => setPrompt(COMPOSER_EXAMPLE)} style={{
+            background: 'none', border: 'none', color: 'var(--tx-3)', fontSize: 12, cursor: 'pointer', textDecoration: 'underline',
+          }}>
+            Try an example
+          </button>
+        )}
+        {busy && status && (
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)', letterSpacing: '0.03em' }}>{status}</span>
+        )}
+      </div>
+
+      {result && (
+        <div style={{
+          marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--bd-light)',
+        }}>
+          {result.error ? (
+            <div style={{ fontSize: 13, color: 'var(--warn)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{result.text}</div>
+          ) : (
+            <Markdown text={result.text} />
+          )}
+          {result.created?.length > 0 && (
+            <div style={{
+              marginTop: 12, fontFamily: "'DM Mono', monospace", fontSize: 11,
+              color: 'var(--accent)', letterSpacing: '0.03em',
+            }}>
+              ✓ Built {result.created.length} scenario{result.created.length === 1 ? '' : 's'} — opening it now.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange }) {
   const [scenarios, setScenarios] = useState([])
   const [adjustments, setAdjustments] = useState({}) // { [scenarioId]: adj[] }
   const [adjLoading, setAdjLoading] = useState({})  // { [scenarioId]: bool }
@@ -755,6 +853,27 @@ export default function Scenarios({ userId, mobile }) {
       .then(setCategories)
       .catch(() => {})
   }, [userId, loadScenarios])
+
+  // Reload when the AI writes a scenario from elsewhere (e.g. the command bar).
+  useEffect(() => {
+    if (!reloadSignal) return
+    getScenarios(userId).then(setScenarios).catch(() => {})
+    getBudgetCategories(userId).then(setCategories).catch(() => {})
+  }, [reloadSignal]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After the in-module AI composer builds a scenario, refresh and open it.
+  async function handleAiCreated(created) {
+    const list = await getScenarios(userId).catch(() => null)
+    if (list) setScenarios(list)
+    getBudgetCategories(userId).then(setCategories).catch(() => {})
+    const first = created?.[0]
+    if (first?.scenarioId) {
+      setAdjustments(prev => { const n = { ...prev }; delete n[first.scenarioId]; return n })
+      setSelectedId(first.scenarioId)
+      loadAdjustments(first.scenarioId)
+    }
+    onDataChange?.()
+  }
 
   async function loadAdjustments(scenarioId) {
     if (adjustments[scenarioId] || adjLoading[scenarioId]) return
@@ -1006,6 +1125,17 @@ export default function Scenarios({ userId, mobile }) {
                 onDeleteAdj={handleDeleteAdj}
                 loading={viewMode === 'actual-plan' ? (adjLoading[visibleSelected?.id] ?? false) : isAdjLoading}
               />
+            ) : viewMode === 'scenario' ? (
+              <div style={{ flex: 1, overflow: 'auto', padding: mobile ? 16 : 24 }}>
+                <div style={{ maxWidth: 720, margin: '0 auto' }}>
+                  <AiScenarioComposer userId={userId} context={context} onCreated={handleAiCreated} mobile={mobile} />
+                  <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--tx-3)', lineHeight: 1.6, marginTop: 18 }}>
+                    {scenarios.length === 0
+                      ? 'Or build one by hand with “+ New Scenario”.'
+                      : 'Pick a scenario on the left to view and edit its adjustments, or describe a new one above.'}
+                  </div>
+                </div>
+              </div>
             ) : (
               <EmptyState
                 viewMode={viewMode}

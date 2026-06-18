@@ -46,6 +46,12 @@ verifies at the gateway — so only authenticated users can reach the function.
 | `modelFamily` | no | `"haiku"` or `"sonnet"` — resolved to the **newest** model in that family at request time. Defaults to `sonnet`. |
 | `model` | no | Pin an exact model ID; overrides `modelFamily`. |
 | `cacheSystem` | no | When `true`, marks the system prompt for prompt caching (use when the same system/context is reused across requests in a session). |
+| `tools` | no | Anthropic tool definitions. When provided, the assistant can request a tool call; the **client** runs the tool loop (see `src/lib/ai/scenarioAgent.js`) and sends `tool_result` turns back. |
+
+> **Redeploy required for AI scenario creation.** The tool-use response fields
+> (`content`, `stop_reason`) and `tools` passthrough were added in this version —
+> run `supabase functions deploy ai-chat` so the AI can actually build scenarios.
+> Until redeployed, the assistant still answers but only *describes* the steps.
 
 ### Model resolution
 
@@ -61,10 +67,12 @@ command bar / AI briefing → Sonnet.
 ## Response
 
 ```json
-{ "text": "model response" }
+{ "text": "model response", "content": [ /* raw Anthropic content blocks */ ], "stop_reason": "end_turn" }
 ```
 
-On failure: `{ "error": "message" }` with a non-200 status.
+`text` is the concatenated text blocks (simple callers use just this). `content`
+and `stop_reason` let the client drive multi-step tool use (e.g. `stop_reason:
+"tool_use"`). On failure: `{ "error": "message" }` with a non-200 status.
 
 ## Security note
 
