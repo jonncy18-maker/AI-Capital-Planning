@@ -6,6 +6,7 @@
 
 import { supabase } from '../supabase.js'
 import { buildContextBrief } from './contextLoader.js'
+import { AI_MODEL_FAMILIES } from './models.js'
 
 const SYSTEM_PROMPT = `You are the assistant inside the AI Capital Planning OS — a forward-looking personal capital planning and scenario decision engine (not a budgeting or reporting app).
 
@@ -24,6 +25,8 @@ export async function sendAIMessage({ prompt, context }) {
       system,
       messages: [{ role: 'user', content: prompt }],
       maxTokens: 1024,
+      modelFamily: AI_MODEL_FAMILIES.assistant, // reasoning → newest Sonnet
+      cacheSystem: true, // context brief is reused across queries in a session
     },
   })
 
