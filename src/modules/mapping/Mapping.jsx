@@ -39,13 +39,16 @@ export default function Mapping({ userId, mobile }) {
     return {
       group: e?.group ?? c.group ?? 'Uncategorized',
       type: e?.type ?? c.type ?? 'Flexible',
+      exclude: e?.exclude ?? !!c.exclude_from_totals,
     }
   }
 
   function changed(c) {
     const e = edits[c.category]
     if (!e) return false
-    return e.group !== (c.group ?? 'Uncategorized') || e.type !== (c.type ?? 'Flexible')
+    return e.group !== (c.group ?? 'Uncategorized')
+      || e.type !== (c.type ?? 'Flexible')
+      || e.exclude !== !!c.exclude_from_totals
   }
 
   function setField(c, patch) {
@@ -60,7 +63,7 @@ export default function Mapping({ userId, mobile }) {
       for (const c of cats) {
         if (!changed(c)) continue
         const e = effective(c)
-        await upsertCategory(userId, { category: c.category, group: e.group, type: e.type })
+        await upsertCategory(userId, { category: c.category, group: e.group, type: e.type, excludeFromTotals: e.exclude })
       }
       setEdits({})
       setCustomNew({})
@@ -121,7 +124,8 @@ export default function Mapping({ userId, mobile }) {
       <div style={{ fontSize: '13px', color: 'var(--tx-2)', lineHeight: 1.6, marginBottom: '22px' }}>
         Review and refine how your categories roll up into budget groups. Groups are
         yours — pick an existing one, or add a new bucket. These mappings drive the
-        budget, forecasts, and AI briefings.
+        budget, forecasts, and AI briefings. Mark transfers or credit-card payments
+        as <em>exclude</em> so they don't overstate your spend and income.
       </div>
 
       {/* Import existing budget / map */}
@@ -181,11 +185,12 @@ export default function Mapping({ userId, mobile }) {
                   key={c.category}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 130px',
+                    gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 130px 96px',
                     gap: '8px',
                     alignItems: 'center',
                     padding: '8px 0',
                     borderBottom: '0.5px solid var(--bd-light)',
+                    opacity: e.exclude ? 0.6 : 1,
                   }}
                 >
                   <div style={{
@@ -230,6 +235,23 @@ export default function Mapping({ userId, mobile }) {
                   >
                     {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
+
+                  <label
+                    title="Exclude from spend & income totals (e.g. transfers, credit-card payments)"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                      fontFamily: "'DM Mono', monospace", fontSize: '10px',
+                      letterSpacing: '0.04em', color: e.exclude ? 'var(--accent)' : 'var(--tx-3)',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={e.exclude}
+                      onChange={ev => setField(c, { exclude: ev.target.checked })}
+                      style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                    />
+                    exclude
+                  </label>
                 </div>
               )
             })}

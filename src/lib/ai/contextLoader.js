@@ -34,8 +34,14 @@ export async function loadAIContext(userId) {
     ),
   ])
 
+  // Drop transfers / credit-card payments so spend and income aren't overstated.
+  const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
+  const realTransactions = excluded.size
+    ? transactions.filter(t => !excluded.has(t.category))
+    : transactions
+
   return {
-    transactions,
+    transactions: realTransactions,
     categories,
     commitments,
     wealth,

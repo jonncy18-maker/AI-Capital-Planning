@@ -21,12 +21,14 @@ function stddev(nums) {
 
 // Group expense transactions by category → month-key → summed outflow (positive $).
 // Income (amount > 0) is ignored; budgets here track planned outflows.
-function buildCategoryMonthlyTotals(transactions) {
+// `excluded` is a Set of category names to drop entirely (transfers / payments).
+function buildCategoryMonthlyTotals(transactions, excluded) {
   const byCategory = {}
   for (const t of transactions) {
     const amount = Number(t.amount) || 0
     if (amount >= 0) continue // outflow only
     const category = t.category || 'Uncategorized'
+    if (excluded && excluded.has(category)) continue // not a real expense
     const d = new Date(t.date)
     if (isNaN(d)) continue
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -94,7 +96,10 @@ function classifyCategory(monthlyTotalsMap, spanMonths) {
 // Full analysis: returns a per-category breakdown joined to budget_categories.
 export function analyzeTransactions(transactions, categories = []) {
   const spanMonths = countSpanMonths(transactions)
-  const totals = buildCategoryMonthlyTotals(transactions)
+  // Categories flagged exclude_from_totals (transfers, CC payments) never seed a
+  // budget line — they aren't real spend.
+  const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
+  const totals = buildCategoryMonthlyTotals(transactions, excluded)
 
   // Map category name → budget_categories row (for id, group, configured type).
   const catLookup = {}

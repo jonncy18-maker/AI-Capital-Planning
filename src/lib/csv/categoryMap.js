@@ -148,9 +148,11 @@ export const MONARCH_CATEGORY_MAP = {
   'Other Income': { group: 'Income', type: 'Flexible' },
 
   // ── Transfers ──────────────────────────────────────────────────────────────
-  'Transfer': { group: 'Transfers', type: 'Flexible' },
-  'Transfers': { group: 'Transfers', type: 'Flexible' },
-  'Credit Card Payment': { group: 'Transfers', type: 'Flexible' },
+  // Account transfers and credit-card payments move money around; they are not
+  // real income or expense, so they default to excluded from totals.
+  'Transfer': { group: 'Transfers', type: 'Flexible', exclude: true },
+  'Transfers': { group: 'Transfers', type: 'Flexible', exclude: true },
+  'Credit Card Payment': { group: 'Transfers', type: 'Flexible', exclude: true },
   'Loan Payment': { group: 'Transfers', type: 'Fixed' },
 
   // ── Catch-all ──────────────────────────────────────────────────────────────
@@ -223,5 +225,16 @@ export function applyMappings(rows, customMappings = {}) {
 
 // Seed data for budget_categories — all known categories from the map.
 export const CATEGORY_SEED_DATA = Object.entries(MONARCH_CATEGORY_MAP).map(
-  ([category, { group, type }]) => ({ category, group, type })
+  ([category, { group, type, exclude }]) => ({ category, group, type, exclude: !!exclude })
 )
+
+// Category names that are transfers/payments, not real income or expense.
+export const DEFAULT_EXCLUDED_CATEGORIES = new Set(
+  Object.entries(MONARCH_CATEGORY_MAP).filter(([, v]) => v.exclude).map(([k]) => k)
+)
+
+// True when a set of transactions should be dropped from spend/income totals.
+// `excludedNames` is the set of category names flagged exclude_from_totals.
+export function isExcludedFromTotals(category, excludedNames) {
+  return !!category && excludedNames instanceof Set && excludedNames.has(category)
+}

@@ -9,6 +9,7 @@ export async function seedDefaultCategories(userId) {
     category: c.category,
     group: c.group,
     type: c.type,
+    exclude_from_totals: !!c.exclude,
     is_active: true,
   }))
 
@@ -19,16 +20,31 @@ export async function seedDefaultCategories(userId) {
   if (error) throw error
 }
 
-// Upsert a single custom category mapping (e.g. from the unmapped-categories dialog).
-export async function upsertCategory(userId, { category, group, type }) {
+// Upsert a single custom category mapping (e.g. from the unmapped-categories
+// dialog or the Mapping editor). `excludeFromTotals` is only written when the
+// caller passes it, so callers that don't manage it leave the flag untouched.
+export async function upsertCategory(userId, { category, group, type, excludeFromTotals }) {
+  const row = { user_id: userId, category, group, type, is_active: true }
+  if (excludeFromTotals !== undefined) row.exclude_from_totals = !!excludeFromTotals
+
   const { error } = await supabase
     .from('budget_categories')
-    .upsert(
-      { user_id: userId, category, group, type, is_active: true },
-      { onConflict: 'user_id,category' }
-    )
+    .upsert(row, { onConflict: 'user_id,category' })
 
   if (error) throw error
+}
+
+// Set of category names this user has flagged exclude_from_totals — used to
+// drop transfers / credit-card payments from spend & income aggregations.
+export async function getExcludedCategoryNames(userId) {
+  const { data, error } = await supabase
+    .from('budget_categories')
+    .select('category')
+    .eq('user_id', userId)
+    .eq('exclude_from_totals', true)
+
+  if (error) throw error
+  return new Set((data ?? []).map(r => r.category).filter(Boolean))
 }
 
 // Fetch all budget_categories for this user.
