@@ -16,7 +16,12 @@ import { AI_MODEL_FAMILIES } from './models.js'
 //   { suggestions: [{ category, group, type, confidence, note }], questions: [...] }
 // or on failure:
 //   { error: string }
-export async function suggestBuckets(unmappedCats, profile) {
+//
+// `groups` is the user's own budget groups (their flexible buckets). The AI maps
+// into these and may propose a new one only when nothing fits. Falls back to the
+// built-in defaults for a brand-new user with no groups yet.
+export async function suggestBuckets(unmappedCats, profile, groups) {
+  const groupList = groups && groups.length ? groups : ALL_GROUPS
   const unmappedSet = new Set(unmappedCats)
   const profiled = profile.categories.filter(c => unmappedSet.has(c.category))
 
@@ -31,7 +36,8 @@ export async function suggestBuckets(unmappedCats, profile) {
 
   const system = `You are a financial data assistant. Assign each spending category to a budget group and expense type.
 
-Valid groups (use EXACTLY as written): ${ALL_GROUPS.join(', ')}
+The user's existing budget groups (strongly prefer these — use EXACTLY as written): ${groupList.join(', ')}
+You MAY propose a new concise Title Case group only when a category genuinely fits none of the above.
 Valid types: Fixed, Flexible, Non-Monthly
 
 Definitions:
