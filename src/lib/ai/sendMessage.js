@@ -16,14 +16,21 @@ You can help the user think through scenario planning questions such as "what if
 
 Be concise and direct. Assume a sophisticated user — no beginner hand-holding. When you reference numbers, ground them in the financial context provided below. If the context is empty or insufficient to answer precisely, say so and state what data would be needed.`
 
-export async function sendAIMessage({ prompt, context }) {
+// Accepts either a single `prompt` (one-shot) or a full `messages` history
+// ([{ role: 'user' | 'assistant', content }]) for a multi-turn conversation, so
+// the user can answer the assistant's follow-up questions and it keeps context.
+export async function sendAIMessage({ prompt, messages, context }) {
   const brief = buildContextBrief(context)
   const system = `${SYSTEM_PROMPT}\n\n${brief}`
+
+  const convo = Array.isArray(messages) && messages.length
+    ? messages.map(m => ({ role: m.role, content: m.content }))
+    : [{ role: 'user', content: prompt }]
 
   const { data, error } = await supabase.functions.invoke('ai-chat', {
     body: {
       system,
-      messages: [{ role: 'user', content: prompt }],
+      messages: convo,
       maxTokens: 1024,
       modelFamily: AI_MODEL_FAMILIES.assistant, // reasoning → newest Sonnet
       cacheSystem: true, // context brief is reused across queries in a session

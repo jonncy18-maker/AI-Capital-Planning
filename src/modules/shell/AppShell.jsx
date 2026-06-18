@@ -38,9 +38,11 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
   const [collapsed, setCollapsed] = useState(tablet)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // AI context + command bar state
+  // AI context + command bar state. `conversation` is the running multi-turn
+  // thread ([{ role, content, status }]); the assistant can ask a follow-up and
+  // the user answers in the same command bar without losing context.
   const [aiContext, setAiContext] = useState(null)
-  const [aiResponse, setAiResponse] = useState(null) // { prompt, status, text }
+  const [conversation, setConversation] = useState([]) // { role, content, status }
   const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => {
@@ -55,13 +57,24 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
   const summary = useMemo(() => summarizeContext(aiContext), [aiContext])
 
   async function handleAiSubmit(prompt) {
+    // Build the API history from completed turns, then append the new question.
+    const history = conversation
+      .filter(m => m.content && m.status !== 'loading')
+      .map(m => ({ role: m.role, content: m.content }))
+    const apiMessages = [...history, { role: 'user', content: prompt }]
+
     setAiLoading(true)
-    setAiResponse({ prompt, status: 'loading', text: '' })
+    setConversation(prev => [
+      ...prev,
+      { role: 'user', content: prompt },
+      { role: 'assistant', content: '', status: 'loading' },
+    ])
+
     try {
-      const res = await sendAIMessage({ prompt, context: aiContext })
-      setAiResponse({ prompt, status: res.status, text: res.text })
+      const res = await sendAIMessage({ messages: apiMessages, context: aiContext })
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status }))
     } catch (e) {
-      setAiResponse({ prompt, status: 'error', text: e.message })
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
     } finally {
       setAiLoading(false)
     }
@@ -201,10 +214,10 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
                 />
               ) : (
                 <>
-                  {aiResponse && (
-                    <AiResponseCard
-                      response={aiResponse}
-                      onDismiss={() => setAiResponse(null)}
+                  {conversation.length > 0 && (
+                    <ConversationCard
+                      messages={conversation}
+                      onClear={() => setConversation([])}
                     />
                   )}
                   {renderModule()}
@@ -225,69 +238,82 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
   )
 }
 
-function AiResponseCard({ response, onDismiss }) {
-  const { prompt, status, text } = response
-  const accentByStatus = {
-    loading: 'var(--accent)',
-    ok: 'var(--accent)',
-    error: 'var(--warn)',
-    gated: 'var(--warn)',
-  }
+// Replace the last message in the thread (the loading assistant placeholder)
+// with the resolved assistant turn.
+function replaceLast(messages, next) {
+  if (!messages.length) return [next]
+  return [...messages.slice(0, -1), next]
+}
+
+// Running conversation thread. Renders each turn; the user can keep answering in
+// the command bar and the assistant retains context across turns.
+function ConversationCard({ messages, onClear }) {
   return (
     <div style={{
-      border: `1px solid ${status === 'error' || status === 'gated' ? 'var(--warn)' : 'var(--accent-bd)'}`,
+      border: '1px solid var(--accent-bd)',
       borderRadius: '12px',
       background: 'var(--bg-card)',
-      padding: '18px 20px',
+      padding: '16px 20px',
       marginBottom: '24px',
     }}>
       <div style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: '14px',
-        marginBottom: '12px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: '14px', marginBottom: '14px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0 }}>
-          <span style={{ color: accentByStatus[status] ?? 'var(--accent)', fontSize: '14px' }}>✦</span>
-          <span style={{
-            fontSize: '13px',
-            color: 'var(--tx-2)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {prompt}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ color: 'var(--accent)', fontSize: '14px' }}>✦</span>
+          <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--tx-1)' }}>Assistant</span>
         </div>
         <button
-          onClick={onDismiss}
+          onClick={onClear}
+          title="Start a new conversation"
           style={{
-            flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--tx-3)', fontSize: '15px', lineHeight: 1,
+            flexShrink: 0, background: 'none', border: '1px solid var(--bd)', cursor: 'pointer',
+            color: 'var(--tx-2)', fontFamily: "'DM Mono', monospace", fontSize: '10px',
+            letterSpacing: '0.04em', borderRadius: '7px', padding: '5px 10px',
           }}
         >
-          ×
+          ↺ NEW
         </button>
       </div>
 
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {messages.map((m, i) => (
+          <Turn key={i} message={m} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Turn({ message }) {
+  const { role, content, status } = message
+
+  if (role === 'user') {
+    return (
+      <div style={{ display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
+        <span style={{
+          flexShrink: 0, fontFamily: "'DM Mono', monospace", fontSize: '9.5px',
+          color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: '3px', width: '34px',
+        }}>YOU</span>
+        <div style={{ fontSize: '13.5px', lineHeight: 1.6, color: 'var(--tx-2)', whiteSpace: 'pre-wrap', minWidth: 0 }}>
+          {content}
+        </div>
+      </div>
+    )
+  }
+
+  const isError = status === 'error' || status === 'gated'
+  return (
+    <div style={{ display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
+      <span style={{ flexShrink: 0, color: isError ? 'var(--warn)' : 'var(--accent)', fontSize: '13px', marginTop: '2px', width: '34px' }}>✦</span>
       {status === 'loading' ? (
-        <div style={{
-          fontFamily: "'DM Mono', monospace",
-          fontSize: '12px',
-          color: 'var(--tx-3)',
-          letterSpacing: '0.04em',
-        }}>
+        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px', color: 'var(--tx-3)', letterSpacing: '0.04em', marginTop: '2px' }}>
           Thinking…
         </div>
       ) : (
-        <div style={{
-          fontSize: '13.5px',
-          lineHeight: '1.65',
-          color: 'var(--tx-1)',
-          whiteSpace: 'pre-wrap',
-        }}>
-          {text}
+        <div style={{ fontSize: '13.5px', lineHeight: 1.65, color: isError ? 'var(--warn)' : 'var(--tx-1)', whiteSpace: 'pre-wrap', minWidth: 0 }}>
+          {content}
         </div>
       )}
     </div>
