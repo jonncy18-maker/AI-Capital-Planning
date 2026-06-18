@@ -3,6 +3,7 @@ import { getTransactionsForAnalysis } from '../../lib/db/transactions.js'
 import { getBudgetCategories, importCategoryMappings } from '../../lib/db/budgetCategories.js'
 import { getCommitments } from '../../lib/db/commitments.js'
 import { parseBudgetFile } from '../../lib/csv/budgetParser.js'
+import { suggestTabMatches } from '../../lib/ai/suggestTabMatches.js'
 import {
   getBudgetLineItems,
   getBudgetYears,
@@ -199,6 +200,143 @@ function GeneratePanel({ analysis, commitments, year, onSave, onCancel, saving }
   )
 }
 
+// ── Detail-tab match review (budget upload) ──────────────────────────────────
+// After parsing an uploaded workbook, let the user confirm which detail tab
+// feeds each Non-Monthly category's month-by-month amounts — auto-matched by
+// name (exact or fuzzy), adjustable manually, or filled in by the AI.
+
+function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
+  const { rows, detailTabs } = pending
+  const nonMonthly = useMemo(() => rows.filter(r => r.type === 'Non-Monthly'), [rows])
+  const tabNames = useMemo(() => detailTabs.map(t => t.name), [detailTabs])
+  const monthsByTab = useMemo(() => {
+    const m = new Map()
+    for (const t of detailTabs) m.set(t.name, t.months)
+    return m
+  }, [detailTabs])
+
+  const [sel, setSel] = useState(() => {
+    const init = {}
+    for (const r of nonMonthly) init[r.category] = r.matchedTab || ''
+    return init
+  })
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState(null)
+
+  async function runAI() {
+    setAiBusy(true)
+    setAiError(null)
+    try {
+      const res = await suggestTabMatches(nonMonthly.map(r => r.category), tabNames)
+      if (res.error) { setAiError(res.error); return }
+      setSel(prev => {
+        const next = { ...prev }
+        for (const m of res.matches || []) {
+          if (m && m.tab && tabNames.includes(m.tab)) next[m.category] = m.tab
+        }
+        return next
+      })
+    } catch (e) {
+      setAiError(e.message)
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  function confirm() {
+    const map = new Map()
+    for (const r of nonMonthly) {
+      const t = sel[r.category]
+      map.set(r.category, t ? (monthsByTab.get(t) || null) : null)
+    }
+    onConfirm(map)
+  }
+
+  function activeMonthsLabel(tab) {
+    const months = monthsByTab.get(tab)
+    if (!months) return null
+    const active = months.map((v, i) => (v > 0 ? MONTHS[i] : null)).filter(Boolean)
+    if (!active.length) return null
+    return `${active.length} mo · ${active.slice(0, 4).join(', ')}${active.length > 4 ? '…' : ''}`
+  }
+
+  const matchedCount = nonMonthly.filter(r => sel[r.category]).length
+  const selectStyle = {
+    background: 'var(--field)', border: '1px solid var(--bd)', borderRadius: 6,
+    padding: '6px 8px', color: 'var(--tx-1)', fontSize: 12.5, outline: 'none', cursor: 'pointer', width: '100%',
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-1)', marginBottom: 4 }}>
+            Match Non-Monthly categories to their detail tabs
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--tx-2)', maxWidth: 560 }}>
+            {nonMonthly.length} Non-Monthly {nonMonthly.length === 1 ? 'category' : 'categories'} · {detailTabs.length} detail tabs ·{' '}
+            <strong style={{ color: 'var(--tx-1)' }}>{matchedCount} matched</strong>. Confirm or adjust —
+            anything left on “Even spread” distributes its yearly total evenly.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={runAI} disabled={aiBusy} style={{ ...ghostBtn, opacity: aiBusy ? 0.6 : 1 }}>
+            {aiBusy ? 'Matching…' : '✦ AI suggest matches'}
+          </button>
+          <button onClick={onCancel} style={ghostBtn}>Cancel</button>
+          <button onClick={confirm} style={primaryBtn}>Continue →</button>
+        </div>
+      </div>
+
+      {aiError && (
+        <div style={{ padding: '10px 14px', background: 'var(--warn-bg)', border: '1px solid var(--warn)', borderRadius: 8, color: 'var(--tx-1)', fontSize: 12.5, marginBottom: 14 }}>
+          {aiError}
+        </div>
+      )}
+
+      <div style={{ border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
+        {nonMonthly.map((r, i) => {
+          const conf = sel[r.category] === r.matchedTab ? r.matchConfidence : (sel[r.category] ? 'manual' : null)
+          const label = sel[r.category] ? activeMonthsLabel(sel[r.category]) : 'Even spread'
+          return (
+            <div key={r.category} style={{
+              display: 'grid',
+              gridTemplateColumns: mobile ? '1fr' : '1fr 220px 160px',
+              gap: mobile ? 6 : 12,
+              alignItems: 'center',
+              padding: '10px 14px',
+              borderTop: i ? '1px solid var(--bd-light)' : 'none',
+              background: 'var(--bg-card)',
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.category}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--tx-3)' }}>
+                  {r.group}{r.annual != null ? ` · ${fmtFull(r.annual)}/yr` : ''}
+                </div>
+              </div>
+              <select value={sel[r.category]} onChange={e => setSel(prev => ({ ...prev, [r.category]: e.target.value }))} style={selectStyle}>
+                <option value="">Even spread (no tab)</option>
+                {tabNames.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <div style={{
+                fontSize: 11, fontFamily: "'DM Mono', monospace", textAlign: mobile ? 'left' : 'right',
+                color: conf === 'exact' ? 'var(--accent)' : conf === 'fuzzy' ? 'var(--warn)' : 'var(--tx-3)',
+              }}>
+                {conf === 'exact' && '✓ auto · '}
+                {conf === 'fuzzy' && '≈ fuzzy · '}
+                {conf === 'manual' && '✎ manual · '}
+                {label}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Schedule grid (annual drill-down) ────────────────────────────────────────
 
 function ScheduleGrid({ lineItems, commitments, year, mobile }) {
@@ -341,6 +479,8 @@ export default function Budget({ userId, mobile }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
+  const [pendingUpload, setPendingUpload] = useState(null)
   const fileRef = useRef(null)
 
   const loadYearData = useCallback(async (yr) => {
@@ -387,17 +527,44 @@ export default function Budget({ userId, mobile }) {
     }
   }
 
+  // Build the editable-preview analysis from parsed upload rows.
+  // `chosenMonthsByCat` (optional) is the reviewed category → 12-month array map;
+  // when absent we use each row's auto-matched detail, else an even spread.
+  function buildUploadAnalysis(rows, idByName, fileName, chosenMonthsByCat) {
+    const categories = rows
+      .map(r => {
+        let detail = null
+        if (chosenMonthsByCat && chosenMonthsByCat.has(r.category)) {
+          detail = chosenMonthsByCat.get(r.category)
+        } else if (r.monthly12 && r.monthly12.length === 12) {
+          detail = r.monthly12
+        }
+        const monthly = r.monthlyTarget ?? (r.annual != null ? r.annual / 12 : 0)
+        const annual = detail ? detail.reduce((a, b) => a + b, 0) : (r.annual ?? monthly * 12)
+        return {
+          category_id: idByName.get(r.category) ?? null,
+          category: r.category,
+          group: r.group,
+          type: r.type || 'Flexible',
+          monthlyAvg: monthly,
+          annualTotal: annual,
+          monthHistogram: detail ?? Array(12).fill(annual / 12),
+        }
+      })
+      .filter(c => c.category_id && c.annualTotal >= 1)
+    return { categories, spanMonths: null, sourceLabel: `Imported from “${fileName}”` }
+  }
+
   // Upload an existing budget file (CSV or .xlsx). We upsert its categories so
-  // they exist with the right group/type, then open the same editable preview
-  // the history flow uses — pre-filled from the file — so the user reviews and
-  // saves. Non-Monthly rows get an even spread (the file only carries a yearly
-  // and monthly figure per category, not a month-by-month breakdown).
+  // they exist with the right group/type. If the workbook has Non-Monthly detail
+  // tabs, we route through a review step to confirm category → tab matches first;
+  // otherwise we go straight to the editable preview the history flow uses.
   async function handleUploadFile(file) {
     if (!file) return
     setImporting(true)
     setError(null)
     try {
-      const { rows, errors } = await parseBudgetFile(file)
+      const { rows, errors, detailTabs } = await parseBudgetFile(file)
       if (!rows.length) {
         setError(errors[0] || 'No budget rows found in that file.')
         return
@@ -407,35 +574,20 @@ export default function Budget({ userId, mobile }) {
       const cats = await getBudgetCategories(userId)
       const idByName = new Map(cats.map(c => [c.category, c.id]))
 
-      const categories = rows
-        .map(r => {
-          // A detail tab (e.g. a "Cruise" sheet) gives the real month-by-month
-          // amounts; otherwise spread the yearly total evenly across 12 months.
-          const detail = r.monthly12 && r.monthly12.length === 12 ? r.monthly12 : null
-          const monthly = r.monthlyTarget ?? (r.annual != null ? r.annual / 12 : 0)
-          const annual = detail ? detail.reduce((a, b) => a + b, 0) : (r.annual ?? monthly * 12)
-          return {
-            category_id: idByName.get(r.category) ?? null,
-            category: r.category,
-            group: r.group,
-            type: r.type || 'Flexible',
-            monthlyAvg: monthly,
-            annualTotal: annual,
-            monthHistogram: detail ?? Array(12).fill(annual / 12),
-          }
-        })
-        .filter(c => c.category_id && c.annualTotal >= 1)
-
-      if (!categories.length) {
-        setError('Could not read any budget amounts from that file. Expected a category, group, and a monthly or yearly amount.')
+      const tabs = detailTabs || []
+      const hasNonMonthly = rows.some(r => r.type === 'Non-Monthly')
+      if (tabs.length && hasNonMonthly) {
+        setPendingUpload({ rows, detailTabs: tabs, idByName, fileName: file.name })
+        setReviewing(true)
         return
       }
 
-      setAnalysis({
-        categories,
-        spanMonths: null,
-        sourceLabel: `Imported from “${file.name}”`,
-      })
+      const analysis = buildUploadAnalysis(rows, idByName, file.name, null)
+      if (!analysis.categories.length) {
+        setError('Could not read any budget amounts from that file. Expected a category, group, and a monthly or yearly amount.')
+        return
+      }
+      setAnalysis(analysis)
       setGenerating(true)
     } catch (e) {
       setError(e.message)
@@ -443,6 +595,19 @@ export default function Budget({ userId, mobile }) {
       setImporting(false)
       if (fileRef.current) fileRef.current.value = '' // allow re-selecting the same file
     }
+  }
+
+  function handleReviewConfirm(chosenMonthsByCat) {
+    const { rows, idByName, fileName } = pendingUpload
+    const analysis = buildUploadAnalysis(rows, idByName, fileName, chosenMonthsByCat)
+    setReviewing(false)
+    setPendingUpload(null)
+    if (!analysis.categories.length) {
+      setError('Could not read any budget amounts from that file.')
+      return
+    }
+    setAnalysis(analysis)
+    setGenerating(true)
   }
 
   async function handleSaveBudget(items) {
@@ -482,9 +647,9 @@ export default function Budget({ userId, mobile }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
           <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 24 : 30, fontWeight: 400, color: 'var(--tx-1)', margin: 0, lineHeight: 1.1 }}>
-            {generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
+            {reviewing ? 'Match Detail Tabs' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
           </h1>
-          {!generating && (
+          {!generating && !reviewing && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <select value={year} onChange={e => setYear(Number(e.target.value))} style={{
                 padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--bd)',
@@ -511,6 +676,13 @@ export default function Budget({ userId, mobile }) {
 
       {loading ? (
         <div style={{ color: 'var(--tx-3)', fontSize: 14, padding: 32 }}>Loading budget…</div>
+      ) : reviewing && pendingUpload ? (
+        <TabMatchReview
+          pending={pendingUpload}
+          mobile={mobile}
+          onConfirm={handleReviewConfirm}
+          onCancel={() => { setReviewing(false); setPendingUpload(null) }}
+        />
       ) : generating && analysis ? (
         <GeneratePanel
           key={`${year}-${analysis.spanMonths}-${analysis.categories.length}`}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getTransactionsByMonth } from '../../lib/db/transactions.js'
+import { getExcludedCategoryNames } from '../../lib/db/budgetCategories.js'
 import { getCommitments } from '../../lib/db/commitments.js'
 import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
 import { commitmentMonthlyDemand, describeCostStructure } from '../../lib/commitments/schedule.js'
@@ -46,9 +47,12 @@ function buildForwardRange() {
 }
 
 // Aggregate raw transactions into monthly buckets (Actuals view).
-function aggregateByMonth(transactions, monthRange) {
+// `excluded` is a Set of category names (transfers / payments) to drop so they
+// don't overstate money in or out.
+function aggregateByMonth(transactions, monthRange, excluded) {
   return monthRange.map(({ year, month, label }) => {
     const rows = transactions.filter(t => {
+      if (excluded && excluded.has(t.category)) return false
       const d = new Date(t.date)
       return d.getFullYear() === year && d.getMonth() + 1 === month
     })
@@ -150,6 +154,7 @@ export default function CashFlow({ userId, mobile }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [transactions, setTransactions] = useState([])
+  const [excluded, setExcluded] = useState(() => new Set())
   const [commitments, setCommitments] = useState([])
   const [lineItems, setLineItems] = useState([])
   const [view, setView] = useState('actuals') // 'actuals' | 'planned'
@@ -171,14 +176,16 @@ export default function CashFlow({ userId, mobile }) {
       const lastDay = new Date(newest.year, newest.month, 0).getDate()
       const toDate = `${newest.year}-${String(newest.month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-      const [txns, comms, items] = await Promise.all([
+      const [txns, comms, items, excludedSet] = await Promise.all([
         getTransactionsByMonth(userId, fromDate, toDate),
         getCommitments(userId, { status: 'active' }),
         getBudgetLineItems(userId),
+        getExcludedCategoryNames(userId).catch(() => new Set()),
       ])
       setTransactions(txns)
       setCommitments(comms)
       setLineItems(items)
+      setExcluded(excludedSet)
     } catch (e) {
       setError(e.message || 'Failed to load cash flow data.')
     } finally {
@@ -213,7 +220,7 @@ export default function CashFlow({ userId, mobile }) {
   const planned = view === 'planned'
   const monthData = planned
     ? aggregatePlannedByMonth(commitments, lineItems, forwardRange)
-    : aggregateByMonth(transactions, trailingRange)
+    : aggregateByMonth(transactions, trailingRange, excluded)
   const quarters = buildQuarters(monthData)
   const hasPlannedData = commitments.length > 0 || lineItems.length > 0
 

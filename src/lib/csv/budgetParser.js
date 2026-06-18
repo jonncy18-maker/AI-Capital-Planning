@@ -156,6 +156,53 @@ function normName(s) {
   return String(s ?? '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '')
 }
 
+function levenshtein(a, b) {
+  const m = a.length
+  const n = b.length
+  if (!m) return n
+  if (!n) return m
+  let prev = Array.from({ length: n + 1 }, (_, j) => j)
+  for (let i = 1; i <= m; i++) {
+    const curr = [i]
+    for (let j = 1; j <= n; j++) {
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      )
+    }
+    prev = curr
+  }
+  return prev[n]
+}
+
+// 0..1 name similarity on normalized strings (1 = identical).
+function similarity(a, b) {
+  if (!a || !b) return 0
+  if (a === b) return 1
+  return 1 - levenshtein(a, b) / Math.max(a.length, b.length)
+}
+
+// Best detail tab for a category: exact normalized name wins; otherwise the
+// closest name above a similarity floor is offered as a fuzzy guess.
+function bestTabMatch(category, detailTabs) {
+  const cn = normName(category)
+  for (const t of detailTabs) {
+    if (normName(t.name) === cn) return { tab: t.name, confidence: 'exact', months: t.months }
+  }
+  let best = null
+  let bestScore = 0
+  for (const t of detailTabs) {
+    const score = similarity(cn, normName(t.name))
+    if (score > bestScore) { bestScore = score; best = t }
+  }
+  // High floor: a confident near-match only (plurals, "&"/"and", spacing).
+  // Looser synonyms/abbreviations are left for the AI button or manual pick to
+  // avoid auto-proposing a wrong tab the user might accept without checking.
+  if (best && bestScore >= 0.8) return { tab: best.name, confidence: 'fuzzy', months: best.months }
+  return { tab: null, confidence: null, months: null }
+}
+
 // A detail tab lays out a single category month-by-month: a "Period" row of
 // 1..12 marks the month columns, then each line item carries an amount per
 // month. Sum every line item's month columns to get the category's true 12-month
@@ -226,21 +273,25 @@ export async function parseBudgetWorkbook(arrayBuffer) {
     }
   }
 
-  // Pull true month-by-month detail for Non-Monthly categories backed by a tab.
-  const detailByName = new Map()
+  // Every sibling sheet that parses as a month-by-month detail tab.
+  const detailTabs = []
   for (const sheet of wb.sheets) {
     if (sheet.name === best.sheet) continue
-    detailByName.set(normName(sheet.name), sheet.rows)
-  }
-  for (const row of best.rows) {
-    if (row.type !== 'Non-Monthly') continue
-    const sheetRows = detailByName.get(normName(row.category))
-    if (!sheetRows) continue
-    const months = extractMonthlyDetail(sheetRows)
-    if (months) row.monthly12 = months
+    const months = extractMonthlyDetail(sheet.rows)
+    if (months) detailTabs.push({ name: sheet.name, months })
   }
 
-  return { rows: best.rows, errors: [], headers: best.headers, sheet: best.sheet }
+  // Propose a detail tab for each Non-Monthly category (exact or fuzzy). The
+  // confident matches also pre-fill `monthly12`; callers may let the user review.
+  for (const row of best.rows) {
+    if (row.type !== 'Non-Monthly') continue
+    const m = bestTabMatch(row.category, detailTabs)
+    row.matchedTab = m.tab
+    row.matchConfidence = m.confidence
+    if (m.months) row.monthly12 = m.months
+  }
+
+  return { rows: best.rows, errors: [], headers: best.headers, sheet: best.sheet, detailTabs }
 }
 
 // Routes a dropped/selected File to the right parser. Handles .xlsx workbooks,
