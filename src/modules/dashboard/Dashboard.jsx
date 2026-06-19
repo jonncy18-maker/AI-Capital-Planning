@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   spendByGroupYear,
-  runRateEOY,
+  yearProjection,
   budgetVsActual,
   cashFlowSpike,
   commitmentsSummary,
@@ -256,8 +256,8 @@ function ScenarioPlanWidget({ si }) {
 
 function buildWidgets(ctx, summary, yearTxns = []) {
   const sgy = spendByGroupYear(ctx, yearTxns)
-  const rr = runRateEOY(ctx)
-  const bva = budgetVsActual(ctx)
+  const rr = yearProjection(ctx, yearTxns)
+  const bva = budgetVsActual(ctx, yearTxns)
   const spike = cashFlowSpike(ctx)
   const cs = commitmentsSummary(ctx)
   const ws = wealthSummary(ctx)
@@ -290,8 +290,8 @@ function buildWidgets(ctx, summary, yearTxns = []) {
     },
     {
       id: 'budget',
-      title: 'Spend Pace vs. Budget',
-      subtitle: '90-day run-rate annualized vs. annual plan',
+      title: 'Spend vs. Budget',
+      subtitle: 'Full-year actual + forecast vs. annual plan',
       render: () => bva.hasBudget ? (() => {
         const pct = bva.pct
         const over = pct != null && pct > 105
@@ -304,16 +304,16 @@ function buildWidgets(ctx, summary, yearTxns = []) {
               accent={!over}
             />
             <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
-              <MiniStat value={fmtK(bva.projected)} label="run-rate" />
+              <MiniStat value={fmtK(bva.projected)} label="projected" />
               <MiniStat value={fmtK(bva.planned)} label="budget" />
             </div>
             {pct != null && (
               <div style={{ marginTop: 8, fontSize: 11, color: over ? 'var(--warn)' : under ? 'var(--accent)' : 'var(--tx-3)' }}>
                 {over
-                  ? `${Math.round(pct - 100)}% above plan at current pace`
+                  ? `${Math.round(pct - 100)}% above plan, full-year projected`
                   : under
-                    ? `${Math.round(100 - pct)}% below plan at current pace`
-                    : 'On pace with annual budget'}
+                    ? `${Math.round(100 - pct)}% below plan, full-year projected`
+                    : 'On track with annual budget'}
               </div>
             )}
           </>
@@ -323,13 +323,13 @@ function buildWidgets(ctx, summary, yearTxns = []) {
     {
       id: 'runrate',
       title: 'Year-End Projection',
-      subtitle: 'At current 90-day spending pace through Dec 31',
+      subtitle: 'Actuals so far + forecast through Dec 31',
       render: () => summary.transactionCount ? (
         <>
-          <Stat value={fmtK(rr.projectedRemaining)} label={`REMAINING · ${rr.daysLeft} DAYS LEFT`} />
+          <Stat value={fmtK(rr.forecastRemaining)} label={`FORECAST REMAINING · ${rr.daysLeft} DAYS LEFT`} />
           <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
-            <MiniStat value={fmtK(rr.annualized)} label="annualized" />
-            <MiniStat value={fmtMoney(Math.round(rr.dailyRate))} label="per day" />
+            <MiniStat value={fmtK(rr.projectedTotal)} label="full-year projected" />
+            <MiniStat value={fmtK(rr.actualToDate)} label="actual YTD" />
           </div>
         </>
       ) : <Empty text="Import transactions to see your year-end projection." />,
@@ -364,15 +364,15 @@ function buildWidgets(ctx, summary, yearTxns = []) {
     },
     {
       id: 'activity',
-      title: '90-Day Activity',
-      subtitle: 'Transactions, spend & income · last 90 days',
+      title: 'Last 12 Months',
+      subtitle: 'Transactions, spend & income · trailing 12 months',
       optional: true,
       render: () => (
         <>
           <Stat value={summary.transactionCount.toLocaleString()} label="TRANSACTIONS" />
           <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
-            <MiniStat value={fmtMoney(summary.spend90d)} label="spend" />
-            <MiniStat value={fmtMoney(summary.income90d)} label="income" />
+            <MiniStat value={fmtMoney(summary.spendTrailing)} label="spend" />
+            <MiniStat value={fmtMoney(summary.incomeTrailing)} label="income" />
           </div>
         </>
       ),

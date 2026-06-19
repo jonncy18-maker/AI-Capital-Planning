@@ -57,7 +57,7 @@ function Field({ value, onChange, onSubmit, loading, placeholder, autoFocus }) {
   )
 }
 
-export default function CommandBar({ mobile, loading, onSubmit, placeholder }) {
+export default function CommandBar({ mobile, loading, onSubmit, placeholder, accessory }) {
   const [input, setInput] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const ph = placeholder || 'Ask anything about your finances…'
@@ -79,14 +79,17 @@ export default function CommandBar({ mobile, loading, onSubmit, placeholder }) {
         background: 'var(--bg-card)',
         padding: '12px 28px',
       }}>
-        <div style={{ maxWidth: '960px', margin: '0 auto' }}>
-          <Field
-            value={input}
-            onChange={setInput}
-            onSubmit={submit}
-            loading={loading}
-            placeholder={ph}
-          />
+        <div style={{ maxWidth: '960px', margin: '0 auto', display: 'flex', alignItems: 'stretch', gap: '10px' }}>
+          {accessory}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Field
+              value={input}
+              onChange={setInput}
+              onSubmit={submit}
+              loading={loading}
+              placeholder={ph}
+            />
+          </div>
         </div>
       </div>
     )
@@ -147,6 +150,11 @@ export default function CommandBar({ mobile, loading, onSubmit, placeholder }) {
               background: 'var(--bd)',
               margin: '0 auto 16px',
             }} />
+            {accessory && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                {accessory}
+              </div>
+            )}
             <Field
               value={input}
               onChange={setInput}

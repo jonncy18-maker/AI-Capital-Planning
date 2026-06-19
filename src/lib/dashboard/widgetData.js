@@ -5,23 +5,6 @@ import { aggregateCommitmentsForYear } from '../commitments/schedule.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-// Monthly spend by group (last 90 days of transactions).
-export function spendByGroup(ctx, topN = 6) {
-  const txns = ctx?.transactions ?? []
-  const byGroup = {}
-  for (const t of txns) {
-    const amt = Number(t.amount) || 0
-    if (amt >= 0) continue
-    const g = t.group || 'Uncategorized'
-    byGroup[g] = (byGroup[g] || 0) + Math.abs(amt)
-  }
-  const rows = Object.entries(byGroup)
-    .map(([group, total]) => ({ group, total }))
-    .sort((a, b) => b.total - a.total)
-  const max = rows.length ? rows[0].total : 0
-  return { rows: rows.slice(0, topN), max, totalGroups: rows.length }
-}
-
 // Spend by group for the full year: actual (YTD, real transactions) + forecast
 // (budget/override for the remaining months) compared against the annual budget.
 // Past months contribute their real actuals; the current and future months
@@ -117,28 +100,33 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
   return { rows: top, max, totalGroups: rows.length, hasBudget: lineItems.length > 0 }
 }
 
-// Run-rate end-of-year projection from the trailing 90-day spend.
-export function runRateEOY(ctx) {
-  const txns = ctx?.transactions ?? []
-  const spend90 = txns.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0)
-  const dailyRate = spend90 / 90
-  const annualized = dailyRate * 365
-  // Remaining spend this calendar year
+// Full-year spend projection: real actuals for elapsed months + budget/override
+// forecast for the remaining months. Replaces the old trailing-run-rate model so
+// the projection reflects the user's actual plan, not an annualized recent pace.
+export function yearProjection(ctx, yearTxns = []) {
+  const mbva = monthlyBudgetVsActual(ctx, yearTxns)
+  let actualToDate = 0
+  let forecastRemaining = 0
+  for (const mo of mbva.months) {
+    if (mo.actual != null) actualToDate += mo.actual
+    else forecastRemaining += mo.forecast
+  }
+  const projectedTotal = actualToDate + forecastRemaining
   const now = new Date()
   const endOfYear = new Date(now.getFullYear(), 11, 31)
   const daysLeft = Math.max(Math.round((endOfYear - now) / 86400000), 0)
-  const projectedRemaining = dailyRate * daysLeft
-  return { annualized, dailyRate, daysLeft, projectedRemaining }
+  return { projectedTotal, actualToDate, forecastRemaining, daysLeft, hasActuals: mbva.hasActuals }
 }
 
-// Budget vs. actual: planned annual (from line items) vs. projected (run-rate).
-export function budgetVsActual(ctx) {
+// Budget vs. actual: planned annual (from line items) vs. full-year projection
+// (actuals-to-date + forecast-for-the-rest).
+export function budgetVsActual(ctx, yearTxns = []) {
   const lineItems = ctx?.budgetLineItems ?? []
   const planned = lineItems.reduce((s, li) => s + Number(li.amount || 0), 0)
-  const { annualized } = runRateEOY(ctx)
-  const variance = annualized - planned
-  const pct = planned > 0 ? (annualized / planned) * 100 : null
-  return { planned, projected: annualized, variance, pct, hasBudget: lineItems.length > 0 }
+  const { projectedTotal } = yearProjection(ctx, yearTxns)
+  const variance = projectedTotal - planned
+  const pct = planned > 0 ? (projectedTotal / planned) * 100 : null
+  return { planned, projected: projectedTotal, variance, pct, hasBudget: lineItems.length > 0 }
 }
 
 // Cash-flow spike: largest upcoming month from commitments in the current year.
@@ -180,7 +168,7 @@ export function commitmentsSummary(ctx) {
 //
 // Transfers and credit-card payments (categories flagged exclude_from_totals)
 // are dropped so actuals aren't overstated — the same rule loadAIContext applies
-// to the 90-day context. The full-year transactions are fetched raw, so we must
+// to the trailing context. The full-year transactions are fetched raw, so we must
 // re-apply the exclusion here against ctx.categories.
 export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   const lineItems = ctx?.budgetLineItems ?? []
@@ -333,7 +321,8 @@ export function scenarioImpact(ctx) {
   }
 }
 
-// Income vs. expenses — YTD from full-year transactions, run-rate projection from 90d.
+// Income vs. expenses — YTD from full-year transactions plus a full-year
+// actual-so-far + forecast-for-the-rest projection.
 export function incomeVsExpenses(ctx, yearTxns = []) {
   const excluded = new Set(
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
@@ -350,11 +339,6 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
   const ytdExpenses = ytd.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
   const ytdNet = ytdIncome - ytdExpenses
   const savingsRate = ytdIncome > 0 ? (ytdNet / ytdIncome) * 100 : null
-
-  // 90d run-rate for projected annual
-  const ctx90 = ctx?.transactions ?? []
-  const income90 = ctx90.filter(t => Number(t.amount) > 0 && !excluded.has(t.category)).reduce((s, t) => s + Number(t.amount), 0)
-  const expense90 = ctx90.filter(t => Number(t.amount) < 0 && !excluded.has(t.category)).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
 
   // ── Full-year = actual-so-far + forecast-for-the-rest ───────────────────────
   // Expenses: blend per-month actuals with the budget/override forecast (reuse
@@ -397,8 +381,6 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
     fullYearExpenses,
     fullYearNet,
     fullYearSavingsRate,
-    projectedAnnualIncome: (income90 / 90) * 365,
-    projectedAnnualExpenses: (expense90 / 90) * 365,
   }
 }
 

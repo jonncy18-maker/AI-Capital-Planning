@@ -4,6 +4,7 @@ import { getImportHistory } from '../../lib/db/importLog.js'
 import { estimateNet } from '../../lib/db/taxBrackets.js'
 import BudgetMapImport from '../import/BudgetMapImport.jsx'
 import MonarchConnect from './MonarchConnect.jsx'
+import AIPersonalization from './AIPersonalization.jsx'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { FORM_MAX } from '../common/layout.js'
 
@@ -108,7 +109,7 @@ function SettingsField({ label, prefix, suffix, value, onChange, placeholder, st
   )
 }
 
-export default function Settings({ profile, onSave, onBack, onImport, userId }) {
+export default function Settings({ profile, onSave, onBack, onImport, userId, context, onAIPrefsChange }) {
   // Accept both camelCase (onboarding) and snake_case (DB row) profile shapes.
   const [focuses, setFocuses] = useState(profile?.focuses || [])
   const [commitments, setCommitments] = useState(profile?.commitments || [])
@@ -408,6 +409,15 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
 
       {/* ───────── PLANNING TAB ───────── */}
       <div style={{ display: tab === 'planning' ? 'block' : 'none' }}>
+
+      {/* Section: AI Personalization */}
+      {userId && (
+        <div style={card}>
+          <div style={cardTitle}>AI PERSONALIZATION</div>
+          <AIPersonalization userId={userId} context={context} onChange={onAIPrefsChange} />
+        </div>
+      )}
+
       {/* Section 1: Financial Focuses */}
       <div style={card}>
         <div style={cardTitle}>FINANCIAL FOCUSES</div>

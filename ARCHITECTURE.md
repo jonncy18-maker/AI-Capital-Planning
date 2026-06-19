@@ -289,13 +289,14 @@ is_cached       boolean
 
 At session start, the app automatically loads the following from Supabase into the AI's context window:
 
-- Last 90 days of transactions (summary level, not full row detail)
+- Trailing 12 months of transactions (summary level, not full row detail) — a full annual cycle so the AI captures seasonality and annual bills rather than anchoring to a rolling quarter
 - Full budget_categories table (targets and types)
 - Current year budget_line_items (month-by-month schedule)
 - All active commitments with cost structures
 - Current committed scenario (if any)
 - Most recent wealth snapshot
 - Any open modeled scenarios
+- AI personalization preferences (from `ai_preferences`) — rendered into the brief as explicit "how to brief this user" guidance the AI honors
 
 This gives the AI enough context to answer any decision question without requiring the user to re-explain their financial situation each session. The context is structured, not a raw data dump — it's formatted as a financial brief the AI can reason against immediately.
 

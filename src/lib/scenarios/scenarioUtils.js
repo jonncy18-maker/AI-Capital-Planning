@@ -6,20 +6,12 @@ function parsePeriodLabel(year, month) {
   return `${MONTHS[month - 1]} ${year}`
 }
 
-// Annualized income from the last 90 days of transactions (90 days ≈ 3 months).
+// Average monthly income from the trailing 12 months of context transactions.
 function monthlyIncomeRunRate(ctx) {
-  const income90 = (ctx?.transactions ?? [])
+  const incomeYear = (ctx?.transactions ?? [])
     .filter(t => Number(t.amount) > 0)
     .reduce((s, t) => s + Number(t.amount), 0)
-  return income90 / 3
-}
-
-// Annualized spend run-rate from trailing 90 days.
-function annualizedSpend(ctx) {
-  const spend90 = (ctx?.transactions ?? [])
-    .filter(t => Number(t.amount) < 0)
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
-  return (spend90 / 90) * 365
+  return incomeYear / 12
 }
 
 // Derive key impact metrics for a set of adjustments.
