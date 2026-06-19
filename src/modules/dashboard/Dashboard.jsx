@@ -7,6 +7,7 @@ import {
   commitmentsSummary,
   wealthSummary,
   monthlyBudgetVsActual,
+  scenarioImpact,
 } from '../../lib/dashboard/widgetData.js'
 import { getLatestBriefing, saveBriefing } from '../../lib/db/aiBriefings.js'
 import { getTransactionsByMonth } from '../../lib/db/transactions.js'
@@ -47,6 +48,57 @@ function Empty({ text }) {
   return <div style={{ fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.5 }}>{text}</div>
 }
 
+// ── Scenario Plan widget ─────────────────────────────────────────────────────
+
+function ScenarioPlanWidget({ si }) {
+  if (!si.hasData) {
+    return <Empty text="No scenarios yet. Use the Scenario Planner to model decisions." />
+  }
+
+  const sign = (n) => (n >= 0 ? '+' : '−') + fmtK(Math.abs(n))
+  const deltaColor = (n) => n > 0 ? 'var(--red)' : n < 0 ? 'var(--green)' : 'var(--tx-2)'
+
+  if (!si.hasCommitted) {
+    return (
+      <>
+        <Stat value={si.modeled.length.toString()} label="MODELED SCENARIOS" accent={false} />
+        <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--tx-3)', lineHeight: 1.5 }}>
+          Promote a scenario to committed to lock it into your plan.
+        </div>
+      </>
+    )
+  }
+
+  const displayCommitted = si.committed.slice(0, 3)
+  const overflowCount = si.committed.length - displayCommitted.length
+
+  return (
+    <>
+      <Stat value={sign(si.committedAnnualNet)} label="COMMITTED ANNUAL NET" accent={si.committedAnnualNet <= 0} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 12 }}>
+        {displayCommitted.map((c, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--tx-1)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+              {c.name}
+            </span>
+            <span style={{ fontSize: 11, color: deltaColor(c.netTotal), fontVariantNumeric: 'tabular-nums', fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>
+              {sign(c.netTotal)}
+            </span>
+          </div>
+        ))}
+        {overflowCount > 0 && (
+          <div style={{ fontSize: 11, color: 'var(--tx-3)' }}>+{overflowCount} more</div>
+        )}
+        {si.modeled.length > 0 && (
+          <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 2 }}>
+            {si.modeled.length} modeled (not committed)
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 // ── widget definitions ───────────────────────────────────────────────────────
 
 function buildWidgets(ctx, summary) {
@@ -56,6 +108,7 @@ function buildWidgets(ctx, summary) {
   const spike = cashFlowSpike(ctx)
   const cs = commitmentsSummary(ctx)
   const ws = wealthSummary(ctx)
+  const si = scenarioImpact(ctx)
 
   return [
     {
@@ -135,6 +188,10 @@ function buildWidgets(ctx, summary) {
           <div style={{ marginTop: 14 }}><MiniStat value={fmtK(ws.investable)} label="investable" /></div>
         </>
       ) : <Empty text="Add a net worth snapshot to track your trajectory." />,
+    },
+    {
+      id: 'scenarioPlan', title: 'Scenario Plan',
+      render: () => <ScenarioPlanWidget si={si} />,
     },
   ]
 }
