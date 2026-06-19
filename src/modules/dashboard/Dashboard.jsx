@@ -75,53 +75,19 @@ function WideCard({ title, subtitle, children }) {
 
 // ── Income vs. Expenses widget ───────────────────────────────────────────────
 
-function IveTooltip({ visible, children }) {
-  if (!visible) return null
-  return (
-    <div style={{
-      position: 'absolute',
-      bottom: 'calc(100% + 8px)',
-      left: 0,
-      background: 'var(--bg-app)',
-      border: '1px solid var(--accent-bd)',
-      borderRadius: 7,
-      padding: '10px 12px',
-      minWidth: 175,
-      zIndex: 200,
-      boxShadow: '0 6px 20px rgba(0,0,0,0.5)',
-      pointerEvents: 'none',
-      whiteSpace: 'nowrap',
-    }}>
-      {children}
-    </div>
-  )
-}
-
 function IveDivider() {
-  return <div style={{ height: 1, background: 'var(--accent-bd)', margin: '14px 0' }} />
+  return <div style={{ height: 1, background: 'var(--bd)', margin: '16px 0' }} />
 }
 
-function TooltipHeader({ text }) {
-  return (
-    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.07em', color: 'var(--tx-3)', marginBottom: 6 }}>
-      {text}
-    </div>
-  )
-}
-
-function TooltipRow({ label, value, highlight, border }) {
+function IveTooltipRow({ label, value, highlight, border }) {
   return (
     <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      gap: 16,
-      fontFamily: "'DM Mono', monospace",
-      fontSize: 10,
+      display: 'flex', justifyContent: 'space-between', gap: 16,
+      fontFamily: "'DM Mono', monospace", fontSize: 10,
       color: highlight === 'accent' ? 'var(--accent)' : highlight === 'warn' ? 'var(--warn)' : 'var(--tx-2)',
       lineHeight: 1.9,
-      borderTop: border ? '1px solid var(--accent-bd)' : 'none',
-      marginTop: border ? 4 : 0,
-      paddingTop: border ? 4 : 0,
+      borderTop: border ? '1px solid var(--bd)' : 'none',
+      marginTop: border ? 4 : 0, paddingTop: border ? 4 : 0,
     }}>
       <span style={{ color: 'var(--tx-3)' }}>{label}</span>
       <span>{value}</span>
@@ -129,265 +95,277 @@ function TooltipRow({ label, value, highlight, border }) {
   )
 }
 
-function IveFlowRow({ income, expenses, net, hasIncome, primary = false }) {
-  const valueSize = primary ? 20 : 14
-  const labelSize = primary ? 8.5 : 7.5
-
-  const items = []
-  if (hasIncome) {
-    items.push({ val: fmtK(income), lbl: 'INCOME', color: 'var(--tx-1)' })
-    items.push('sep')
-  }
-  items.push({ val: fmtK(expenses), lbl: 'EXPENSES', color: 'var(--tx-1)' })
-  if (net !== 0) {
-    items.push('sep')
-    items.push({ val: (net > 0 ? '+' : '') + fmtK(net), lbl: 'NET', color: net > 0 ? 'var(--accent)' : 'var(--warn)' })
-  }
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-      {items.map((item, i) => item === 'sep' ? (
-        <div key={i} style={{ width: 1, background: 'var(--accent-bd)', margin: '0 10px', alignSelf: 'stretch', minHeight: 28 }} />
-      ) : (
-        <div key={i} style={{ flex: 1 }}>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: valueSize, color: item.color, lineHeight: 1 }}>{item.val}</div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: labelSize, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 4 }}>{item.lbl}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function IveSavingsRateStat({ rate, label, primary = false, tooltipLines, priorRate }) {
-  const [hovered, setHovered] = useState(false)
-
-  let yoyEl = null
-  if (priorRate != null && rate != null) {
-    const delta = Math.round(rate) - Math.round(priorRate)
-    const color = delta > 0 ? 'var(--accent)' : delta < 0 ? 'var(--warn)' : 'var(--tx-3)'
-    const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→'
-    yoyEl = (
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color, marginTop: 5, lineHeight: 1 }}>
-        {arrow}{Math.abs(delta)}pp vs. {Math.round(priorRate)}% last yr
-      </div>
-    )
-  }
-
-  return (
-    <div
-      style={{ position: 'relative', flex: 1 }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 5 }}>
-        {label}
-      </div>
-      <div style={{
-        fontFamily: "'DM Serif Display', serif",
-        fontSize: primary ? 30 : 22,
-        color: rate > 0 ? 'var(--accent)' : rate < 0 ? 'var(--warn)' : 'var(--tx-2)',
-        lineHeight: 1,
-        cursor: 'default',
-      }}>
-        {rate != null ? Math.round(rate) + '%' : '—'}
-      </div>
-      {yoyEl}
-      <IveTooltip visible={hovered}>
-        {tooltipLines}
-      </IveTooltip>
-    </div>
-  )
-}
-
-const IVE_MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const IVE_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function IncomeVsExpensesWidget({ ive, mobile }) {
-  const [chartHover, setChartHover] = useState(null)
+  const [hover, setHover] = useState(null)
 
-  if (!ive.hasData) {
+  const hasForecastIncome = !!ive.monthlyIncomeForecast
+  const hasActualIncome = ive.ytdIncome > 0
+  const cm = ive.currentMonth ?? 11
+  const chartH = mobile ? 130 : 180
+
+  // Per-month chart data: all 12 months
+  const chartData = IVE_MONTHS.map((label, m) => {
+    const isPast = m <= cm
+    const income = isPast ? (ive.monthlyIncome?.[m] ?? 0) : 0
+    const incForecast = !isPast ? (ive.monthlyIncomeForecast?.[m] ?? 0) : 0
+    const expenses = isPast ? (ive.monthlyExpenses?.[m] ?? 0) : 0
+    const expForecast = !isPast ? (ive.monthlyExpenseForecast?.[m] ?? 0) : 0
+    return { m, label, income, incForecast, expenses, expForecast, isPast }
+  })
+
+  const chartMax = Math.max(
+    ...chartData.map(d => Math.max(d.income, d.incForecast, d.expenses, d.expForecast)),
+    1
+  )
+
+  if (!ive.hasData && !hasForecastIncome) {
     return (
-      <WideCard title="Income vs. Expenses" subtitle="Year-to-date flow · savings rate">
-        <Empty text="Import transactions to see your income vs. expense breakdown." />
+      <WideCard title="Income vs. Expenses" subtitle="Full year · actuals + forecast">
+        <Empty text="Import transactions or set annual income in Settings to see your income vs. expense breakdown." />
       </WideCard>
     )
   }
 
-  const hasIncome = ive.ytdIncome > 0
-  const cm = ive.currentMonth ?? 11
-
-  const chartData = IVE_MONTH_LABELS.slice(0, cm + 1).map((label, m) => ({
-    m, label,
-    income: ive.monthlyIncome?.[m] ?? 0,
-    expenses: ive.monthlyExpenses?.[m] ?? 0,
-  }))
-  const chartMax = Math.max(...chartData.map(d => Math.max(d.income, d.expenses)), 1)
-  const chartH = 160
-
-  const fullYearTooltip = (
-    <>
-      <TooltipHeader text="FULL YEAR BREAKDOWN" />
-      {hasIncome && <TooltipRow label="Income" value={fmtK(ive.fullYearIncome)} />}
-      <TooltipRow label="Expenses" value={fmtK(ive.fullYearExpenses)} />
-      <TooltipRow
-        label="Net"
-        value={(ive.fullYearNet > 0 ? '+' : '') + fmtK(ive.fullYearNet)}
-        highlight={ive.fullYearNet > 0 ? 'accent' : 'warn'}
-        border
-      />
-      {ive.fullYearActualExpenses != null && (
-        <>
-          <TooltipRow label="Act. Expenses" value={fmtK(ive.fullYearActualExpenses)} border />
-          <TooltipRow label="Fcst. Expenses" value={fmtK(ive.fullYearForecastExpenses)} />
-        </>
-      )}
-    </>
-  )
-
-  const ytdTooltip = (
-    <>
-      <TooltipHeader text="YEAR TO DATE" />
-      {hasIncome && <TooltipRow label="Income" value={fmtK(ive.ytdIncome)} />}
-      <TooltipRow label="Expenses" value={fmtK(ive.ytdExpenses)} />
-      <TooltipRow
-        label="Net"
-        value={(ive.ytdNet > 0 ? '+' : '') + fmtK(ive.ytdNet)}
-        highlight={ive.ytdNet > 0 ? 'accent' : 'warn'}
-        border
-      />
-    </>
-  )
-
-  const statsPanel = (
-    <div style={{ flexShrink: 0, width: mobile ? '100%' : 230, overflow: 'visible' }}>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 10 }}>
-        FULL YEAR · ACT+FCST
-      </div>
-      <IveFlowRow income={ive.fullYearIncome} expenses={ive.fullYearExpenses} net={ive.fullYearNet} hasIncome={hasIncome} primary />
-      <IveDivider />
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 10 }}>
-        SAVINGS RATE
-      </div>
-      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-        <IveSavingsRateStat rate={ive.fullYearSavingsRate} label="FULL YEAR" primary tooltipLines={fullYearTooltip} priorRate={ive.priorYearSavingsRate} />
-        <div style={{ width: 1, background: 'var(--accent-bd)', margin: '0 14px', alignSelf: 'stretch', minHeight: 36 }} />
-        <IveSavingsRateStat rate={ive.savingsRate} label="YEAR TO DATE" tooltipLines={ytdTooltip} />
-      </div>
-      <IveDivider />
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
-        YEAR TO DATE
-      </div>
-      <IveFlowRow income={ive.ytdIncome} expenses={ive.ytdExpenses} net={ive.ytdNet} hasIncome={hasIncome} />
-      {ive.topYtdGroup && (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10, padding: '3px 8px', background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 4 }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>TOP SPEND</span>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-2)' }}>{ive.topYtdGroup.name} · {fmtK(ive.topYtdGroup.amount)}</span>
-        </div>
-      )}
-      <IveDivider />
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
-        PACE · AT CURRENT RATE
-      </div>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: ive.fullYearNet > 0 ? 'var(--accent)' : 'var(--warn)', lineHeight: 1.4, marginBottom: hasIncome ? 10 : 0 }}>
-        {ive.fullYearNet > 0
-          ? `On pace to save ${fmtK(ive.fullYearNet)} this year`
-          : ive.fullYearNet < 0
-            ? `On pace for a ${fmtK(Math.abs(ive.fullYearNet))} deficit this year`
-            : 'On pace to break even this year'}
-      </div>
-      {hasIncome && ive.avgMonthlyIncome > 0 && (
-        <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--tx-1)', lineHeight: 1 }}>{fmtK1(ive.avgMonthlyExpenses)}</div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 4 }}>AVG/MO SPEND</div>
-          </div>
-          <div style={{ width: 1, background: 'var(--accent-bd)', margin: '0 10px', alignSelf: 'stretch', minHeight: 24 }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--tx-1)', lineHeight: 1 }}>{fmtK1(ive.avgMonthlyIncome)}</div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 4 }}>AVG/MO EARN</div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
+  const netColor = ive.fullYearNet >= 0 ? 'var(--accent)' : 'var(--warn)'
+  const paceText = ive.fullYearNet > 0
+    ? `On pace to save ${fmtK(ive.fullYearNet)} this year`
+    : ive.fullYearNet < 0
+      ? `On pace for a ${fmtK(Math.abs(ive.fullYearNet))} deficit this year`
+      : 'On pace to break even this year'
 
   return (
-    <WideCard title="Income vs. Expenses" subtitle="Year-to-date flow · savings rate">
-      <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: mobile ? 'wrap' : 'nowrap' }}>
-        {statsPanel}
-        {!mobile && <div style={{ width: 1, background: 'var(--bd)', alignSelf: 'stretch', flexShrink: 0 }} />}
-        {!mobile && (
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 12 }}>
-              MONTHLY · INCOME VS. EXPENSES
-            </div>
-            <div style={{ position: 'relative' }}>
-              {chartHover !== null && (() => {
-                const d = chartData[chartHover]
-                if (!d) return null
-                const net = d.income - d.expenses
-                return (
-                  <div style={{
-                    position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
-                    zIndex: 5, background: 'var(--bg-app)', border: '1px solid var(--bd)',
-                    borderRadius: 9, padding: '10px 13px', minWidth: 160,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none', whiteSpace: 'nowrap',
-                  }}>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 8 }}>
-                      {d.label}
-                    </div>
-                    {hasIncome && <TooltipRow label="Income" value={fmtMoney(d.income)} highlight="accent" />}
-                    <TooltipRow label="Expenses" value={fmtMoney(d.expenses)} highlight="warn" />
-                    {hasIncome && (
-                      <TooltipRow
-                        label="Net"
-                        value={(net >= 0 ? '+' : '') + fmtMoney(Math.abs(net))}
-                        highlight={net >= 0 ? 'accent' : 'warn'}
-                        border
-                      />
-                    )}
-                  </div>
-                )
-              })()}
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: chartH }}>
-                {chartData.map((d, i) => {
-                  const incH = hasIncome ? (d.income / chartMax) * chartH : 0
-                  const expH = (d.expenses / chartMax) * chartH
-                  const isHov = chartHover === i
-                  return (
-                    <div
-                      key={d.m}
-                      style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 2, height: '100%', background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 4, cursor: 'default' }}
-                      onMouseEnter={() => setChartHover(i)}
-                      onMouseLeave={() => setChartHover(null)}
-                    >
-                      {hasIncome && <div style={{ flex: 1, maxWidth: 28, height: Math.max(incH, 2), background: 'var(--accent)', borderRadius: '3px 3px 0 0', opacity: isHov ? 1 : 0.85 }} />}
-                      <div style={{ flex: 1, maxWidth: 28, height: Math.max(expH, 2), background: 'var(--warn)', borderRadius: '3px 3px 0 0', opacity: isHov ? 1 : 0.75 }} />
-                    </div>
-                  )
-                })}
+    <WideCard title="Income vs. Expenses" subtitle="Full year · actuals + forecast">
+      {/* ── Chart ── */}
+      <div style={{ position: 'relative', marginTop: 4 }}>
+        {/* Tooltip */}
+        {hover !== null && (() => {
+          const d = chartData[hover]
+          if (!d) return null
+          const inc = d.isPast ? d.income : d.incForecast
+          const exp = d.isPast ? d.expenses : d.expForecast
+          const net = inc - exp
+          const isFcst = !d.isPast
+          return (
+            <div style={{
+              position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 5, background: 'var(--bg-app)', border: '1px solid var(--bd)',
+              borderRadius: 9, padding: '10px 13px', minWidth: 170,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none', whiteSpace: 'nowrap',
+            }}>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 8 }}>
+                {d.label}{isFcst ? ' · forecast' : ''}
               </div>
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              {chartData.map(d => (
-                <div key={d.m} style={{ flex: 1, textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.02em' }}>
-                  {d.label}
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 14, marginTop: 10 }}>
-              {hasIncome && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-4)', letterSpacing: '0.03em' }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} />income
-                </span>
+              {(hasActualIncome || hasForecastIncome) && (
+                <IveTooltipRow label={isFcst ? 'Income (fcst)' : 'Income'} value={fmtMoney(inc)} highlight="accent" />
               )}
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-4)', letterSpacing: '0.03em' }}>
-                <span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--warn)', display: 'inline-block' }} />expenses
-              </span>
+              <IveTooltipRow label={isFcst ? 'Expenses (fcst)' : 'Expenses'} value={fmtMoney(exp)} highlight="warn" />
+              {(hasActualIncome || hasForecastIncome) && (
+                <IveTooltipRow
+                  label="Net"
+                  value={(net >= 0 ? '+' : '') + fmtMoney(Math.abs(net))}
+                  highlight={net >= 0 ? 'accent' : 'warn'}
+                  border
+                />
+              )}
+            </div>
+          )
+        })()}
+
+        {/* Bars */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 3 : 8, height: chartH }}>
+          {chartData.map((d) => {
+            const showInc = hasActualIncome || hasForecastIncome
+            const incVal = d.isPast ? d.income : d.incForecast
+            const expVal = d.isPast ? d.expenses : d.expForecast
+            const incH = showInc ? (incVal / chartMax) * chartH : 0
+            const expH = (expVal / chartMax) * chartH
+            const isHov = hover === d.m
+            const isFcst = !d.isPast
+            return (
+              <div
+                key={d.m}
+                onMouseEnter={() => setHover(d.m)}
+                onMouseLeave={() => setHover(null)}
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                  gap: mobile ? 1 : 2, height: '100%', position: 'relative', cursor: 'default',
+                  background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
+                }}
+              >
+                {/* Income bar */}
+                {showInc && (
+                  <div style={{
+                    width: mobile ? 8 : '48%', maxWidth: 28,
+                    height: Math.max(incH, 2),
+                    background: isFcst ? 'var(--forecast-fill)' : 'var(--accent)',
+                    border: isFcst ? '1px dashed var(--accent)' : 'none',
+                    borderRadius: '3px 3px 0 0',
+                    opacity: isHov ? 1 : isFcst ? 0.9 : 0.88,
+                    boxSizing: 'border-box',
+                  }} />
+                )}
+                {/* Expense bar */}
+                <div style={{
+                  width: mobile ? 8 : '48%', maxWidth: 28,
+                  height: Math.max(expH, 2),
+                  background: isFcst ? 'var(--forecast-fill)' : 'var(--warn)',
+                  border: isFcst ? '1px dashed var(--warn)' : 'none',
+                  borderRadius: '3px 3px 0 0',
+                  opacity: isHov ? 1 : isFcst ? 0.9 : 0.8,
+                  boxSizing: 'border-box',
+                }} />
+
+                {/* TODAY marker */}
+                {d.m === cm && (
+                  <div style={{ position: 'absolute', right: -3, top: -14, bottom: 0, borderRight: '1px dashed var(--forecast-bd)' }}>
+                    <span style={{
+                      position: 'absolute', top: -2, right: 4, whiteSpace: 'nowrap',
+                      fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.08em', color: 'var(--tx-3)',
+                    }}>TODAY</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Month labels */}
+        <div style={{ display: 'flex', gap: mobile ? 3 : 8, marginTop: 8 }}>
+          {IVE_MONTHS.map((label, m) => (
+            <div key={m} style={{
+              flex: 1, textAlign: 'center',
+              fontFamily: "'DM Mono', monospace", fontSize: mobile ? 8.5 : 10,
+              color: m === cm ? 'var(--accent)' : 'var(--tx-3)', letterSpacing: '0.02em',
+            }}>
+              {mobile ? label[0] : label}
+            </div>
+          ))}
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: mobile ? 10 : 18, marginTop: 10, flexWrap: 'wrap' }}>
+          {(hasActualIncome || hasForecastIncome) && (
+            <IveLegendDot solid color="var(--accent)" label="Income" />
+          )}
+          <IveLegendDot solid color="var(--warn)" label="Expenses" />
+          {(hasActualIncome || hasForecastIncome) && (
+            <IveLegendDot dashed borderColor="var(--accent)" label="Income fcst" />
+          )}
+          <IveLegendDot dashed borderColor="var(--warn)" label="Expense fcst" />
+        </div>
+      </div>
+
+      {/* ── KPIs below chart ── */}
+      <IveDivider />
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: mobile ? 14 : 20 }}>
+        {/* Full-year savings rate */}
+        <div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
+            FULL YEAR SAVINGS RATE
+          </div>
+          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, color: ive.fullYearSavingsRate != null ? (ive.fullYearSavingsRate >= 0 ? 'var(--accent)' : 'var(--warn)') : 'var(--tx-3)', lineHeight: 1 }}>
+            {ive.fullYearSavingsRate != null ? Math.round(ive.fullYearSavingsRate) + '%' : '—'}
+          </div>
+          {ive.priorYearSavingsRate != null && ive.fullYearSavingsRate != null && (() => {
+            const delta = Math.round(ive.fullYearSavingsRate) - Math.round(ive.priorYearSavingsRate)
+            const c = delta > 0 ? 'var(--accent)' : delta < 0 ? 'var(--warn)' : 'var(--tx-3)'
+            const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→'
+            return (
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: c, marginTop: 4 }}>
+                {arrow}{Math.abs(delta)}pp vs. last yr
+              </div>
+            )
+          })()}
+        </div>
+
+        {/* Full-year income */}
+        {(hasActualIncome || hasForecastIncome) && (
+          <div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
+              FULL YEAR INCOME
+            </div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, color: 'var(--tx-1)', lineHeight: 1 }}>
+              {fmtK(ive.fullYearIncome)}
+            </div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-3)', marginTop: 4 }}>
+              {hasForecastIncome ? 'act + salary fcst' : 'act + avg fcst'}
             </div>
           </div>
         )}
+
+        {/* Full-year expenses */}
+        <div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
+            FULL YEAR EXPENSES
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, color: 'var(--tx-1)', lineHeight: 1 }}>
+            {fmtK(ive.fullYearExpenses)}
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-3)', marginTop: 4 }}>
+            act + budget fcst
+          </div>
+        </div>
+
+        {/* Full-year net */}
+        <div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
+            FULL YEAR NET
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, color: netColor, lineHeight: 1 }}>
+            {(ive.fullYearNet >= 0 ? '+' : '') + fmtK(ive.fullYearNet)}
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: netColor, marginTop: 4, lineHeight: 1.3 }}>
+            {paceText}
+          </div>
+        </div>
       </div>
+
+      {/* YTD row + top spend */}
+      {ive.hasData && (
+        <>
+          <IveDivider />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+              <IveKpi label="YTD SAVINGS RATE" value={ive.savingsRate != null ? Math.round(ive.savingsRate) + '%' : '—'} color={ive.savingsRate != null ? (ive.savingsRate >= 0 ? 'var(--accent)' : 'var(--warn)') : 'var(--tx-3)'} />
+              {hasActualIncome && <IveKpi label="YTD INCOME" value={fmtK(ive.ytdIncome)} color="var(--tx-1)" />}
+              <IveKpi label="YTD EXPENSES" value={fmtK(ive.ytdExpenses)} color="var(--tx-1)" />
+              <IveKpi label="YTD NET" value={(ive.ytdNet >= 0 ? '+' : '') + fmtK(ive.ytdNet)} color={ive.ytdNet >= 0 ? 'var(--accent)' : 'var(--warn)'} />
+            </div>
+            {ive.topYtdGroup && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 9px', background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 5, alignSelf: 'flex-start', marginTop: 2 }}>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>TOP SPEND</span>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-2)' }}>{ive.topYtdGroup.name} · {fmtK(ive.topYtdGroup.amount)}</span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </WideCard>
+  )
+}
+
+function IveLegendDot({ solid, dashed, color, borderColor, label }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-4)', letterSpacing: '0.03em' }}>
+      <span style={{
+        width: 9, height: 9, borderRadius: 2, display: 'inline-block', flexShrink: 0,
+        background: solid ? color : 'var(--forecast-fill)',
+        border: dashed ? `1px dashed ${borderColor}` : 'none',
+        boxSizing: 'border-box',
+      }} />
+      {label}
+    </span>
+  )
+}
+
+function IveKpi({ label, value, color }) {
+  return (
+    <div>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color, lineHeight: 1 }}>{value}</div>
+    </div>
   )
 }
 

@@ -41,6 +41,8 @@ const Q2_OPTS = [
 const CUR_YEAR = new Date().getFullYear()
 const TAX_YEARS = [CUR_YEAR - 1, CUR_YEAR, CUR_YEAR + 1, CUR_YEAR + 2, CUR_YEAR + 3]
 
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
 const FILING_OPTS = [
   { id: 'single', label: 'Single' },
   { id: 'mfj', label: 'Married — joint' },
@@ -134,6 +136,30 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
   // Variance threshold
   const [varianceThreshold, setVarianceThreshold] = useState(
     profile?.variance_threshold ?? 10
+  )
+  // Bonus month (1-12, null = no bonus)
+  const [bonusMonth, setBonusMonth] = useState(
+    profile?.bonus_month != null ? Number(profile.bonus_month) : ''
+  )
+  // Benefits deduction
+  const [benefitsType, setBenefitsType] = useState(
+    profile?.benefits_pct != null && profile.benefits_amount == null ? 'pct' : 'amount'
+  )
+  const [benefitsAmount, setBenefitsAmount] = useState(
+    profile?.benefits_amount != null ? String(Math.round(profile.benefits_amount)) : ''
+  )
+  const [benefitsPct, setBenefitsPct] = useState(
+    profile?.benefits_pct != null ? String(profile.benefits_pct) : ''
+  )
+  // 401k
+  const [has401k, setHas401k] = useState(
+    profile?.four01k_pct != null && Number(profile.four01k_pct) > 0
+  )
+  const [four01kPct, setFour01kPct] = useState(
+    profile?.four01k_pct != null ? String(profile.four01k_pct) : ''
+  )
+  const [four01kOnBonus, setFour01kOnBonus] = useState(
+    profile?.four01k_on_bonus ?? false
   )
   // Tax profile (gross→net estimator inputs)
   const tp = profile?.tax_profile || {}
@@ -251,6 +277,11 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
       savingsGoalPct: parseFloat(goalPct) || null,
       savingsGoalType: goalType,
       varianceThreshold,
+      bonusMonth: bonusMonth !== '' ? Number(bonusMonth) : null,
+      benefitsAmount: benefitsType === 'amount' ? (parseFloat(benefitsAmount) || null) : null,
+      benefitsPct: benefitsType === 'pct' ? (parseFloat(benefitsPct) || null) : null,
+      four01kPct: has401k ? (parseFloat(four01kPct) || null) : null,
+      four01kOnBonus: has401k ? four01kOnBonus : false,
       taxProfile: {
         filingStatus,
         state: taxState || null,
@@ -781,6 +812,116 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
           style={{ marginTop: 12 }}
         />
 
+        {/* Bonus month */}
+        <div style={{ marginTop: 16 }}>
+          <div style={fieldLabel}>Bonus month</div>
+          <select
+            value={bonusMonth}
+            onChange={e => setBonusMonth(e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">No bonus / Not applicable</option>
+            {MONTH_NAMES.map((name, i) => (
+              <option key={i + 1} value={i + 1}>{name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Benefits deduction */}
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--bd)' }}>
+          <div style={{ ...fieldLabel, marginBottom: 6 }}>Benefits deduction</div>
+          <div style={{ fontSize: 12, color: 'var(--tx-3)', marginBottom: 10, lineHeight: 1.5 }}>
+            Health insurance, dental, vision, etc. deducted post-tax from your paychecks.
+          </div>
+          <div style={{ display: 'flex', gap: 0, border: '1px solid var(--bd)', borderRadius: 8, overflow: 'hidden', width: 'fit-content', marginBottom: 10 }}>
+            {[{ id: 'amount', label: '$' }, { id: 'pct', label: '%' }].map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setBenefitsType(id)}
+                style={{
+                  padding: '7px 18px',
+                  background: benefitsType === id ? 'var(--accent)' : 'transparent',
+                  color: benefitsType === id ? '#fff' : 'var(--tx-2)',
+                  border: 'none', borderRight: id === 'amount' ? '1px solid var(--bd)' : 'none',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {benefitsType === 'amount' ? (
+            <SettingsField
+              label="Annual benefits cost"
+              prefix="$"
+              value={benefitsAmount}
+              onChange={setBenefitsAmount}
+              placeholder="e.g. 4800"
+            />
+          ) : (
+            <SettingsField
+              label="Benefits as % of gross income"
+              suffix="%"
+              value={benefitsPct}
+              onChange={setBenefitsPct}
+              placeholder="e.g. 3.5"
+            />
+          )}
+        </div>
+
+        {/* 401(k) contribution */}
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--bd)' }}>
+          <div style={{ ...fieldLabel, marginBottom: 6 }}>401(k) contribution</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            {[{ val: true, label: 'Yes' }, { val: false, label: 'No' }].map(({ val, label }) => (
+              <button
+                key={label}
+                onClick={() => setHas401k(val)}
+                style={{
+                  padding: '7px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13,
+                  border: has401k === val ? '1px solid var(--accent)' : '1px solid var(--bd)',
+                  background: has401k === val ? 'var(--accent-bg)' : 'transparent',
+                  color: has401k === val ? 'var(--accent)' : 'var(--tx-2)',
+                  fontWeight: has401k === val ? 600 : 400,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {has401k && (
+            <>
+              <SettingsField
+                label="Contribution rate"
+                suffix="%"
+                value={four01kPct}
+                onChange={setFour01kPct}
+                placeholder="e.g. 6"
+              />
+              <div style={{ marginTop: 12 }}>
+                <div style={{ ...fieldLabel, marginBottom: 6 }}>Applies to bonus?</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[{ val: true, label: 'Yes' }, { val: false, label: 'No' }].map(({ val, label }) => (
+                    <button
+                      key={label}
+                      onClick={() => setFour01kOnBonus(val)}
+                      style={{
+                        padding: '7px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13,
+                        border: four01kOnBonus === val ? '1px solid var(--accent)' : '1px solid var(--bd)',
+                        background: four01kOnBonus === val ? 'var(--accent-bg)' : 'transparent',
+                        color: four01kOnBonus === val ? 'var(--accent)' : 'var(--tx-2)',
+                        fontWeight: four01kOnBonus === val ? 600 : 400,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
         {/* Filing status */}
         <div style={{ marginTop: 16 }}>
           <div style={fieldLabel}>Filing status</div>
@@ -853,39 +994,53 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
         />
 
         {/* Estimate read-out */}
-        {estimate && estimate.grossWages > 0 && (
-          <div style={{
-            marginTop: 18, padding: '14px 16px', borderRadius: 10,
-            border: '1px solid var(--bd)', background: 'var(--bg-app, #12141f)',
-          }}>
-            <div style={{ ...fieldLabel, marginBottom: 10 }}>
-              Estimated take-home · {estimate.year}
-            </div>
-            {[
-              ['Gross wages', estimate.grossWages],
-              ['Federal income tax', -estimate.federalTax],
-              ['FICA (SS + Medicare)', -estimate.ficaTax],
-              ['State income tax', -estimate.stateTax],
-            ].map(([label, val]) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--tx-2)', padding: '3px 0' }}>
-                <span>{label}</span>
-                <span style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
-                  {val < 0 ? '−' : ''}{fmtUSD(Math.abs(val))}
+        {estimate && estimate.grossWages > 0 && (() => {
+          const grossNum2 = estimate.grossWages
+          const bonusNum = parseFloat(annualBonus) || 0
+          const benefitsAnnual = benefitsType === 'amount'
+            ? (parseFloat(benefitsAmount) || 0)
+            : grossNum2 * (parseFloat(benefitsPct) || 0) / 100
+          const four01kAnnual = has401k
+            ? (parseFloat(annualIncome) || 0) * (parseFloat(four01kPct) || 0) / 100
+              + (four01kOnBonus ? bonusNum * (parseFloat(four01kPct) || 0) / 100 : 0)
+            : 0
+          const adjustedNet = estimate.netIncome - benefitsAnnual - four01kAnnual
+          return (
+            <div style={{
+              marginTop: 18, padding: '14px 16px', borderRadius: 10,
+              border: '1px solid var(--bd)', background: 'var(--bg-app, #12141f)',
+            }}>
+              <div style={{ ...fieldLabel, marginBottom: 10 }}>
+                Estimated take-home · {estimate.year}
+              </div>
+              {[
+                ['Gross wages', estimate.grossWages],
+                ['Federal income tax', -estimate.federalTax],
+                ['FICA (SS + Medicare)', -estimate.ficaTax],
+                ['State income tax', -estimate.stateTax],
+                ...(benefitsAnnual > 0 ? [['Benefits deduction', -benefitsAnnual]] : []),
+                ...(four01kAnnual > 0 ? [['401(k) contribution', -four01kAnnual]] : []),
+              ].map(([label, val]) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--tx-2)', padding: '3px 0' }}>
+                  <span>{label}</span>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
+                    {val < 0 ? '−' : ''}{fmtUSD(Math.abs(val))}
+                  </span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, padding: '8px 0 0', marginTop: 6, borderTop: '1px solid var(--bd)' }}>
+                <span>Net take-home</span>
+                <span style={{ fontFamily: "'DM Mono', monospace", color: 'var(--accent, #00C2A8)', fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtUSD(adjustedNet)}
                 </span>
               </div>
-            ))}
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, padding: '8px 0 0', marginTop: 6, borderTop: '1px solid var(--bd)' }}>
-              <span>Net take-home</span>
-              <span style={{ fontFamily: "'DM Mono', monospace", color: 'var(--accent, #00C2A8)', fontVariantNumeric: 'tabular-nums' }}>
-                {fmtUSD(estimate.netIncome)}
-              </span>
+              <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 6 }}>
+                Effective tax rate {(estimate.effectiveRate * 100).toFixed(1)}%
+                {estimate.estimated && ` · brackets projected from ${estimate.effYear} (estimate)`}
+              </div>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 6 }}>
-              Effective rate {(estimate.effectiveRate * 100).toFixed(1)}%
-              {estimate.estimated && ` · brackets projected from ${estimate.effYear} (estimate)`}
-            </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
 
       {/* Section: Goals */}

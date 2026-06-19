@@ -336,7 +336,9 @@ export function scenarioImpact(ctx) {
 }
 
 // Income vs. expenses — YTD from full-year transactions plus a full-year
-// actual-so-far + forecast-for-the-rest projection.
+// actual-so-far + forecast-for-the-rest projection. When a salary profile exists,
+// future months use post-tax income forecast (salary/12 + bonus in bonus_month,
+// minus taxes/benefits/401k) instead of a rolling average.
 export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const excluded = new Set(
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
@@ -354,10 +356,7 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const ytdNet = ytdIncome - ytdExpenses
   const savingsRate = ytdIncome > 0 ? (ytdNet / ytdIncome) * 100 : null
 
-  // ── Full-year = actual-so-far + forecast-for-the-rest ───────────────────────
-  // Expenses: blend per-month actuals with the budget/override forecast (reuse
-  // monthlyBudgetVsActual's month model). Income: actuals to date plus the
-  // average of completed months projected across the remaining months.
+  // ── Expense forecast (budget/override per month) ─────────────────────────────
   const mbva = monthlyBudgetVsActual(ctx, yearTxns)
   const currentMonth = mbva.currentMonth
   let fullYearActualExpenses = 0
@@ -371,30 +370,82 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   }
   const fullYearExpenses = fullYearActualExpenses + fullYearForecastExpenses
 
+  // Month-by-month actuals from transactions
   const incomeByMonth = Array(12).fill(0)
   const expensesByMonth = Array(12).fill(0)
   for (const t of yearTxns) {
     const amt = Number(t.amount) || 0
+    if (amt === 0) continue
     if (excluded.has(t.category)) continue
     const d = new Date(t.date)
-    if (Number.isNaN(d.getTime())) continue
-    const m = d.getMonth()
-    if (amt > 0) incomeByMonth[m] += amt
-    else expensesByMonth[m] += Math.abs(amt)
+    if (Number.isNaN(d.getTime()) || d.getFullYear() !== now.getFullYear()) continue
+    if (amt > 0) incomeByMonth[d.getMonth()] += amt
+    else expensesByMonth[d.getMonth()] += Math.abs(amt)
   }
-  // Average over completed months (everything before the current one) so a
-  // partially-elapsed current month doesn't drag the projection down.
-  let completedIncome = 0
-  for (let m = 0; m < currentMonth; m++) completedIncome += incomeByMonth[m]
-  const avgMonthlyIncome = currentMonth > 0 ? completedIncome / currentMonth
-    : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
-  const remainingMonths = Math.max(11 - currentMonth, 0)
-  const fullYearIncome = ytdIncome + avgMonthlyIncome * remainingMonths
+
+  // ── Post-tax income forecast from profile ────────────────────────────────────
+  // Uses salary/12 as base; adds annual bonus in bonus_month only; subtracts
+  // estimated taxes (pro-rated at the effective rate on salary + bonus), benefits,
+  // and 401k contributions. Falls back to transaction-average when no salary set.
+  const profile = ctx?.profile
+  const salary = Number(profile?.annual_income) || 0
+  const annualBonus = Number(profile?.annual_bonus) || 0
+  const rawBonusMonth = profile?.bonus_month  // stored 1-12; null if no bonus month
+  const bonusMonthIdx = rawBonusMonth != null ? Number(rawBonusMonth) - 1 : null  // 0-11
+
+  let monthlyIncomeForecast = null
+  if (salary > 0) {
+    const totalGross = salary + annualBonus
+    const benefitsAmount = Number(profile?.benefits_amount) || 0
+    const benefitsPct = Number(profile?.benefits_pct) || 0
+    const annualBenefits = benefitsAmount > 0 ? benefitsAmount
+      : (benefitsPct > 0 ? totalGross * benefitsPct / 100 : 0)
+    const monthlyBenefits = annualBenefits / 12
+
+    const est = ctx?.incomeEstimate
+    const totalTax = Number(est?.totalTax) || 0
+    const effectiveTaxRate = totalGross > 0 ? totalTax / totalGross : 0
+
+    const four01kPct = Number(profile?.four01k_pct) || 0
+    const four01kOnBonus = profile?.four01k_on_bonus ?? false
+    const monthly401kSalary = salary / 12 * four01kPct / 100
+
+    monthlyIncomeForecast = Array(12).fill(0).map((_, m) => {
+      const isBonus = bonusMonthIdx !== null && m === bonusMonthIdx
+      const grossMonth = salary / 12 + (isBonus ? annualBonus : 0)
+      const taxMonth = grossMonth * effectiveTaxRate
+      const month401k = monthly401kSalary + (isBonus && four01kOnBonus ? annualBonus * four01kPct / 100 : 0)
+      return Math.max(0, grossMonth - taxMonth - month401k - monthlyBenefits)
+    })
+  }
+
+  // ── Full-year income: actuals for elapsed months, forecast for the rest ──────
+  let fullYearIncome = 0
+  if (monthlyIncomeForecast) {
+    for (let m = 0; m < 12; m++) {
+      fullYearIncome += m <= currentMonth ? incomeByMonth[m] : monthlyIncomeForecast[m]
+    }
+  } else {
+    // Fallback: rolling average of completed months
+    let completedIncome = 0
+    for (let m = 0; m < currentMonth; m++) completedIncome += incomeByMonth[m]
+    const avgMonthlyIncome = currentMonth > 0 ? completedIncome / currentMonth
+      : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
+    fullYearIncome = ytdIncome + avgMonthlyIncome * Math.max(11 - currentMonth, 0)
+  }
 
   const fullYearNet = fullYearIncome - fullYearExpenses
   const fullYearSavingsRate = fullYearIncome > 0 ? (fullYearNet / fullYearIncome) * 100 : null
 
+  // Rolling averages for display
+  let completedIncome = 0
+  for (let m = 0; m < currentMonth; m++) completedIncome += incomeByMonth[m]
+  const avgMonthlyIncome = currentMonth > 0 ? completedIncome / currentMonth
+    : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
   const avgMonthlyExpenses = currentMonth > 0 ? ytdExpenses / currentMonth : ytdExpenses
+
+  // Expense forecast per month (budget/override for future months)
+  const monthlyExpenseForecast = mbva.months.map(mo => mo.forecast ?? 0)
 
   // Top YTD spending group
   const ytdSpendByGroup = {}
@@ -407,7 +458,7 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const topGroupEntry = Object.entries(ytdSpendByGroup).sort((a, b) => b[1] - a[1])[0]
   const topYtdGroup = topGroupEntry ? { name: topGroupEntry[0], amount: topGroupEntry[1] } : null
 
-  // Prior-year full savings rate (all 12 months completed, no forecasting needed)
+  // Prior-year full savings rate
   let priorYearSavingsRate = null
   if (priorYearTxns.length > 0) {
     const pyFiltered = priorYearTxns.filter(t => !excluded.has(t.category))
@@ -435,6 +486,8 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     priorYearSavingsRate,
     monthlyIncome: incomeByMonth,
     monthlyExpenses: expensesByMonth,
+    monthlyIncomeForecast,
+    monthlyExpenseForecast,
     currentMonth,
   }
 }
