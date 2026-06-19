@@ -3,6 +3,7 @@ import { getBudgetLineItems, getBudgetYears } from '../../lib/db/budgetLineItems
 import { getForecastOverrides, upsertForecastOverride, deleteForecastOverride } from '../../lib/db/forecastOverrides.js'
 import { getTransactionsForYear } from '../../lib/db/transactions.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import { getScenarios, getAdjustments } from '../../lib/db/scenarios.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -103,9 +104,19 @@ function CellEditor({ value, note, budgetValue, onSave, onReset, onCancel, hasOv
   )
 }
 
+// Resolve the display value for a single cell based on the active layer.
+function getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap) {
+  const key = `${r.catId}::${m + 1}`
+  const budgetV = r.budget[m] ?? 0
+  if (layer === 'budget') return budgetV
+  const forecastV = overrideMap[key] ?? budgetV
+  if (layer === 'forecast') return forecastV
+  return forecastV + (scenarioDeltaMap?.[key] ?? 0)
+}
+
 // ── Forecast grid ────────────────────────────────────────────────────────────
 
-function ForecastGrid({ catRows, overrideMap, actualMap, year, mobile, onEdit, onReset, saving, editKey }) {
+function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year, mobile, layer, onEdit, onReset, saving, editKey }) {
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1 // highlight current month
 
   // Group rows
@@ -117,13 +128,12 @@ function ForecastGrid({ catRows, overrideMap, actualMap, year, mobile, onEdit, o
   }
   const groupNames = Object.keys(grouped).sort()
 
-  // Column totals
+  // Column totals (layer-aware)
   const forecastTotals = Array(12).fill(0)
   const actualTotals = Array(12).fill(0)
   for (const r of catRows) {
     for (let m = 0; m < 12; m++) {
-      const key = `${r.catId}::${m + 1}`
-      forecastTotals[m] += overrideMap[key] ?? r.budget[m] ?? 0
+      forecastTotals[m] += getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)
       actualTotals[m] += actualMap[r.name]?.[m] ?? 0
     }
   }
@@ -152,14 +162,19 @@ function ForecastGrid({ catRows, overrideMap, actualMap, year, mobile, onEdit, o
                   )}
                 </div>
               </div>
-              {catRows.filter(r => (overrideMap[`${r.catId}::${m + 1}`] ?? r.budget[m]) > 0).map((r, i) => {
+              {catRows.filter(r => getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap) > 0).map((r, i) => {
                 const key = `${r.catId}::${m + 1}`
-                const fv = overrideMap[key] ?? r.budget[m] ?? 0
-                const hasOv = overrideMap[key] != null
+                const displayV = getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)
+                const hasOv = layer !== 'budget' && overrideMap[key] != null
+                const hasDelta = layer === 'scenarios' && (scenarioDeltaMap?.[key] ?? 0) !== 0
                 return (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '3px 0', color: 'var(--tx-2)' }}>
-                    <span>{r.name}{hasOv && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 4 }}>●</span>}</span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtFull(fv)}</span>
+                    <span>
+                      {r.name}
+                      {hasOv && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 4 }}>●</span>}
+                      {hasDelta && <span style={{ fontSize: 9, color: 'rgba(168,100,255,0.9)', marginLeft: 2 }}>◆</span>}
+                    </span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtFull(displayV)}</span>
                   </div>
                 )
               })}
@@ -209,8 +224,7 @@ function ForecastGrid({ catRows, overrideMap, actualMap, year, mobile, onEdit, o
             const gForecast = Array(12).fill(0)
             for (const r of gRows) {
               for (let m = 0; m < 12; m++) {
-                const key = `${r.catId}::${m + 1}`
-                gForecast[m] += overrideMap[key] ?? r.budget[m] ?? 0
+                gForecast[m] += getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)
               }
             }
             const gTotal = gForecast.reduce((a, b) => a + b, 0)
@@ -222,7 +236,7 @@ function ForecastGrid({ catRows, overrideMap, actualMap, year, mobile, onEdit, o
                   <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(gTotal)}</td>
                 </tr>
                 {gRows.map((r, ri) => {
-                  const rTotal = Array.from({ length: 12 }, (_, m) => overrideMap[`${r.catId}::${m + 1}`] ?? r.budget[m] ?? 0).reduce((a, b) => a + b, 0)
+                  const rTotal = Array.from({ length: 12 }, (_, m) => getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)).reduce((a, b) => a + b, 0)
                   return (
                     <tr key={`${g}-${ri}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
                       <td style={{ fontSize: 12.5, color: 'var(--tx-1)', padding: '8px 14px 8px 26px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap' }}>
@@ -230,26 +244,30 @@ function ForecastGrid({ catRows, overrideMap, actualMap, year, mobile, onEdit, o
                       </td>
                       {Array.from({ length: 12 }, (_, m) => {
                         const key = `${r.catId}::${m + 1}`
-                        const hasOv = overrideMap[key] != null
-                        const fv = overrideMap[key] ?? r.budget[m] ?? 0
-                        const budgetV = r.budget[m] ?? 0
+                        const hasOv = layer !== 'budget' && overrideMap[key] != null
+                        const hasDelta = layer === 'scenarios' && (scenarioDeltaMap?.[key] ?? 0) !== 0
+                        const displayV = getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)
                         const isPast = curMonth >= 0 ? m < curMonth : false
                         const isEditing = editKey === key && saving !== true
+                        const canEdit = layer === 'forecast' && !isPast
+                        const bg = hasOv ? 'var(--accent-bg)' : hasDelta ? 'rgba(168,100,255,0.08)' : colBg(m)
+                        const col = hasOv ? 'var(--accent)' : hasDelta ? 'var(--tx-1)' : displayV > 0 ? 'var(--tx-1)' : 'var(--tx-4)'
                         return (
                           <td
                             key={m}
                             style={{
                               ...cellStyle,
-                              background: hasOv ? 'var(--accent-bg)' : colBg(m),
-                              color: hasOv ? 'var(--accent)' : fv > 0 ? 'var(--tx-1)' : 'var(--tx-4)',
-                              cursor: isPast ? 'default' : 'pointer',
+                              background: bg,
+                              color: col,
+                              cursor: canEdit ? 'pointer' : 'default',
                               outline: isEditing ? '2px solid var(--accent)' : 'none',
                               outlineOffset: -2,
                             }}
-                            onClick={() => !isPast && !isEditing && onEdit(r, m + 1)}
+                            onClick={() => canEdit && !isEditing && onEdit(r, m + 1)}
                           >
-                            {fv > 0 ? fmt(fv) : '·'}
+                            {displayV > 0 ? fmt(displayV) : '·'}
                             {hasOv && <span style={{ fontSize: 7, verticalAlign: 'super', color: 'var(--accent)', marginLeft: 1 }}>●</span>}
+                            {hasDelta && <span style={{ fontSize: 7, verticalAlign: 'super', color: 'rgba(168,100,255,0.9)', marginLeft: 1 }}>◆</span>}
                           </td>
                         )
                       })}
@@ -263,7 +281,9 @@ function ForecastGrid({ catRows, overrideMap, actualMap, year, mobile, onEdit, o
         </tbody>
         <tfoot>
           <tr style={{ background: 'var(--bg-card)' }}>
-            <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-1)', padding: '11px 14px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', borderTop: '2px solid var(--bd)' }}>Forecast Total</td>
+            <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-1)', padding: '11px 14px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', borderTop: '2px solid var(--bd)' }}>
+              {layer === 'budget' ? 'Budget Total' : layer === 'scenarios' ? 'With Scenarios' : 'Forecast Total'}
+            </td>
             {forecastTotals.map((v, m) => <td key={m} style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', background: colBg(m), borderTop: '2px solid var(--bd)' }}>{fmt(v)}</td>)}
             <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', borderTop: '2px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(forecastTotals.reduce((a, b) => a + b, 0))}</td>
           </tr>
@@ -281,9 +301,11 @@ export default function Forecast({ userId, mobile }) {
   const [budgetItems, setBudgetItems] = useState([])
   const [overrides, setOverrides] = useState([])
   const [yearTxns, setYearTxns] = useState([])
+  const [committedScenarios, setCommittedScenarios] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [layer, setLayer] = useState('forecast') // 'budget' | 'forecast' | 'scenarios'
 
   // Editing state: { catId, catName, month, budgetValue, currentValue, currentNote }
   const [editCell, setEditCell] = useState(null)
@@ -292,16 +314,26 @@ export default function Forecast({ userId, mobile }) {
     setLoading(true)
     setError(null)
     try {
-      const [items, ovs, txns, budgetYears] = await Promise.all([
+      const [items, ovs, txns, budgetYears, allScenarios] = await Promise.all([
         getBudgetLineItems(userId, { year: yr }),
         getForecastOverrides(userId, yr),
         getTransactionsForYear(userId, yr),
         getBudgetYears(userId),
+        getScenarios(userId).catch(() => []),
       ])
       setBudgetItems(items)
       setOverrides(ovs)
       setYearTxns(txns)
       setYears(budgetYears)
+      // Load adjustments for committed scenarios only
+      const committed = allScenarios.filter(s => s.state === 'committed')
+      const commWithAdjs = await Promise.all(
+        committed.map(async s => {
+          const adjs = await getAdjustments(userId, s.id).catch(() => [])
+          return { ...s, adjustments: adjs }
+        })
+      )
+      setCommittedScenarios(commWithAdjs)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -364,19 +396,36 @@ export default function Forecast({ userId, mobile }) {
     return m
   }, [yearTxns])
 
+  // Scenario delta map: "catId::month" → net delta from committed scenarios
+  const scenarioDeltaMap = useMemo(() => {
+    const m = {}
+    for (const s of committedScenarios) {
+      for (const adj of (s.adjustments ?? [])) {
+        if (Number(adj.year) !== year) continue
+        const key = `${adj.category_id}::${adj.month}`
+        m[key] = (m[key] || 0) + Number(adj.delta_amount)
+      }
+    }
+    return m
+  }, [committedScenarios, year])
+
   // Summary stats
-  const { annualBudget, annualForecast, overrideCount } = useMemo(() => {
-    let ab = 0, af = 0, oc = 0
+  const { annualBudget, annualForecast, annualWithScenarios, overrideCount } = useMemo(() => {
+    let ab = 0, af = 0, aws = 0, oc = 0
     for (const r of catRows) {
       for (let m = 0; m < 12; m++) {
         const key = `${r.catId}::${m + 1}`
-        ab += r.budget[m] ?? 0
-        af += overrideMap[key] ?? r.budget[m] ?? 0
+        const budgetV = r.budget[m] ?? 0
+        const forecastV = overrideMap[key] ?? budgetV
+        const delta = scenarioDeltaMap[key] ?? 0
+        ab += budgetV
+        af += forecastV
+        aws += forecastV + delta
         if (overrideMap[key] != null) oc++
       }
     }
-    return { annualBudget: ab, annualForecast: af, overrideCount: oc }
-  }, [catRows, overrideMap])
+    return { annualBudget: ab, annualForecast: af, annualWithScenarios: aws, overrideCount: oc }
+  }, [catRows, overrideMap, scenarioDeltaMap])
 
   const yearOptions = useMemo(() => {
     const s = new Set([...years, CUR_YEAR, CUR_YEAR + 1])
@@ -482,11 +531,52 @@ export default function Forecast({ userId, mobile }) {
         <div style={{ color: 'var(--tx-3)', fontSize: 14, padding: 32 }}>Loading forecast…</div>
       ) : (
         <>
+          {/* Layer toggle */}
+          <div style={{ display: 'flex', gap: 0, border: '1px solid var(--bd)', borderRadius: 8, overflow: 'hidden', width: 'fit-content', marginBottom: 20 }}>
+            {[
+              { id: 'budget', label: 'Budget' },
+              { id: 'forecast', label: '+ Overrides' },
+              { id: 'scenarios', label: '+ Scenarios' },
+            ].map(({ id, label }, i, arr) => (
+              <button
+                key={id}
+                onClick={() => setLayer(id)}
+                style={{
+                  padding: '7px 16px',
+                  background: layer === id ? 'var(--accent)' : 'transparent',
+                  color: layer === id ? '#fff' : 'var(--tx-2)',
+                  border: 'none',
+                  borderRight: i < arr.length - 1 ? '1px solid var(--bd)' : 'none',
+                  fontSize: 12.5, cursor: 'pointer',
+                  fontWeight: layer === id ? 600 : 400,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Summary strip */}
           <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
             <SummaryStat label={`${year} budget`} value={fmtFull(annualBudget)} />
-            <SummaryStat label={`${year} forecast`} value={fmtFull(annualForecast)} accent />
-            {overrideCount > 0 && (
+            <SummaryStat label={`${year} forecast`} value={fmtFull(annualForecast)} accent={layer !== 'budget'} />
+            {layer === 'scenarios' && committedScenarios.length > 0 && (
+              <SummaryStat
+                label="with scenarios"
+                value={fmtFull(annualWithScenarios)}
+                accent
+                note={annualWithScenarios !== annualForecast
+                  ? `${annualWithScenarios > annualForecast ? '+' : ''}${Math.round(((annualWithScenarios - annualForecast) / annualForecast) * 100)}% vs forecast`
+                  : null}
+                noteColor={annualWithScenarios > annualForecast ? 'var(--warn)' : 'var(--accent)'}
+              />
+            )}
+            {layer === 'scenarios' && committedScenarios.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--tx-3)', alignSelf: 'center' }}>
+                No committed scenarios — promote one in the Scenario Planner to layer it here.
+              </div>
+            )}
+            {layer !== 'scenarios' && overrideCount > 0 && (
               <SummaryStat
                 label="overrides"
                 value={overrideCount.toString()}
@@ -498,14 +588,22 @@ export default function Forecast({ userId, mobile }) {
 
           {/* Legend */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 11, color: 'var(--tx-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: 'var(--accent-bg)', border: '1px solid var(--accent)', opacity: 0.7 }} />
-              Override (click to edit)
-            </span>
+            {layer === 'forecast' && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: 'var(--accent-bg)', border: '1px solid var(--accent)', opacity: 0.7 }} />
+                Override — click future cell to edit
+              </span>
+            )}
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, border: '1px solid var(--bd)', background: 'var(--bg-card)' }} />
-              Budget baseline
+              {layer === 'budget' ? 'Budget baseline (read-only)' : 'Budget baseline'}
             </span>
+            {layer === 'scenarios' && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: 'rgba(168,100,255,0.12)', border: '1px solid rgba(168,100,255,0.4)' }} />
+                Scenario delta (◆)
+              </span>
+            )}
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: 'var(--hover)' }} />
               Actual (past months)
@@ -517,15 +615,17 @@ export default function Forecast({ userId, mobile }) {
             <ForecastGrid
               catRows={catRows}
               overrideMap={overrideMap}
+              scenarioDeltaMap={scenarioDeltaMap}
               actualMap={actualMap}
               year={year}
               mobile={mobile}
+              layer={layer}
               onEdit={handleEdit}
               onReset={() => editCell && handleReset()}
               saving={saving}
               editKey={editCell?.key ?? null}
             />
-            {editCell && (
+            {editCell && layer === 'forecast' && (
               <div
                 style={{ position: 'absolute', inset: 0, zIndex: 40 }}
                 onClick={() => setEditCell(null)}
@@ -545,9 +645,9 @@ export default function Forecast({ userId, mobile }) {
             )}
           </div>
 
-          {overrideCount > 0 && (
+          {layer === 'forecast' && overrideCount > 0 && (
             <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--tx-3)' }}>
-              {overrideCount} {overrideCount === 1 ? 'cell' : 'cells'} overridden · orange dot (●) marks overrides · ↺ in editor resets to budget
+              {overrideCount} {overrideCount === 1 ? 'cell' : 'cells'} overridden · ● marks overrides · ↺ in editor resets to budget
             </div>
           )}
         </>

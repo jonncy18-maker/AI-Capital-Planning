@@ -37,12 +37,64 @@ const Q2_OPTS = [
 
 // ── Settings Component ────────────────────────────────────────────────────────
 
+function SettingsField({ label, prefix, suffix, value, onChange, placeholder, style }) {
+  return (
+    <div style={style}>
+      <div style={{
+        fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--tx-3)',
+        letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '6px',
+      }}>
+        {label}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {prefix && (
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--tx-3)' }}>
+            {prefix}
+          </span>
+        )}
+        <input
+          type="number"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          style={{
+            background: 'var(--bg-app, #12141f)', border: '1px solid var(--bd, #2d3148)',
+            borderRadius: 8, padding: '9px 12px', color: 'var(--tx-1, #e2e8f0)',
+            fontSize: 14, fontFamily: "'DM Mono', monospace", outline: 'none',
+            width: '100%', boxSizing: 'border-box', fontVariantNumeric: 'tabular-nums',
+          }}
+        />
+        {suffix && (
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--tx-3)' }}>
+            {suffix}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Settings({ profile, onSave, onBack, onImport, userId }) {
   // Accept both camelCase (onboarding) and snake_case (DB row) profile shapes.
   const [focuses, setFocuses] = useState(profile?.focuses || [])
   const [commitments, setCommitments] = useState(profile?.commitments || [])
   const [planningHorizon, setPlanningHorizon] = useState(
     normalizeHorizon(profile?.planningHorizon ?? profile?.planning_horizon)
+  )
+  // Income assumptions
+  const [annualIncome, setAnnualIncome] = useState(
+    profile?.annual_income != null ? String(Math.round(profile.annual_income)) : ''
+  )
+  const [annualBonus, setAnnualBonus] = useState(
+    profile?.annual_bonus != null ? String(Math.round(profile.annual_bonus)) : ''
+  )
+  // Savings goal
+  const [goalType, setGoalType] = useState(profile?.savings_goal_type ?? 'pct')
+  const [goalAmount, setGoalAmount] = useState(
+    profile?.savings_goal_amount != null ? String(Math.round(profile.savings_goal_amount)) : ''
+  )
+  const [goalPct, setGoalPct] = useState(
+    profile?.savings_goal_pct != null ? String(profile.savings_goal_pct) : ''
   )
   const [saved, setSaved] = useState(false)
   const [importHistory, setImportHistory] = useState([])
@@ -99,10 +151,44 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
       planningHorizon,
       periodOptions,
       periodDefault,
+      annualIncome: parseFloat(annualIncome) || null,
+      annualBonus: parseFloat(annualBonus) || null,
+      savingsGoalAmount: parseFloat(goalAmount) || null,
+      savingsGoalPct: parseFloat(goalPct) || null,
+      savingsGoalType: goalType,
     }
     onSave(updated)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  function handleGoalAmountChange(val) {
+    setGoalAmount(val)
+    const income = parseFloat(annualIncome) || 0
+    if (income > 0) {
+      const pct = (parseFloat(val) || 0) / income * 100
+      setGoalPct(pct > 0 ? pct.toFixed(1) : '')
+    }
+  }
+
+  function handleGoalPctChange(val) {
+    setGoalPct(val)
+    const income = parseFloat(annualIncome) || 0
+    const amount = income * (parseFloat(val) || 0) / 100
+    setGoalAmount(amount > 0 ? String(Math.round(amount)) : '')
+  }
+
+  function handleIncomeChange(val) {
+    setAnnualIncome(val)
+    // Re-derive the goal's secondary value when income changes
+    const income = parseFloat(val) || 0
+    if (goalType === 'pct' && goalPct && income > 0) {
+      const amount = income * (parseFloat(goalPct) || 0) / 100
+      setGoalAmount(amount > 0 ? String(Math.round(amount)) : '')
+    } else if (goalType === 'amount' && goalAmount && income > 0) {
+      const pct = (parseFloat(goalAmount) || 0) / income * 100
+      setGoalPct(pct > 0 ? pct.toFixed(1) : '')
+    }
   }
 
   const card = {
@@ -485,6 +571,86 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
           <BudgetMapImport userId={userId} />
         </div>
       )}
+
+      {/* Section: Income Assumptions */}
+      <div style={card}>
+        <div style={cardTitle}>INCOME ASSUMPTIONS</div>
+        <div style={{ fontSize: '12.5px', color: 'var(--tx-3)', marginBottom: '16px', lineHeight: 1.5 }}>
+          Used to calculate savings rate goals and inform AI analysis.
+        </div>
+        <SettingsField
+          label="Total expected annual income"
+          prefix="$"
+          value={annualIncome}
+          onChange={handleIncomeChange}
+          placeholder="e.g. 120000"
+        />
+        <SettingsField
+          label="Expected annual bonus"
+          prefix="$"
+          value={annualBonus}
+          onChange={setAnnualBonus}
+          placeholder="e.g. 15000"
+          style={{ marginTop: 12 }}
+        />
+      </div>
+
+      {/* Section: Goals */}
+      <div style={card}>
+        <div style={cardTitle}>SAVINGS GOAL</div>
+        <div style={{ fontSize: '12.5px', color: 'var(--tx-3)', marginBottom: '16px', lineHeight: 1.5 }}>
+          Set a savings target — enter either the dollar amount or percentage; the other auto-calculates from your income.
+        </div>
+        {/* $ / % toggle */}
+        <div style={{ display: 'flex', gap: 0, border: '1px solid var(--bd)', borderRadius: 8, overflow: 'hidden', width: 'fit-content', marginBottom: 16 }}>
+          {[{ id: 'amount', label: '$' }, { id: 'pct', label: '%' }].map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => setGoalType(id)}
+              style={{
+                padding: '7px 20px', background: goalType === id ? 'var(--accent)' : 'transparent',
+                color: goalType === id ? '#fff' : 'var(--tx-2)',
+                border: 'none', borderRight: id === 'amount' ? '1px solid var(--bd)' : 'none',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {goalType === 'amount' ? (
+          <>
+            <SettingsField
+              label="Annual savings target"
+              prefix="$"
+              value={goalAmount}
+              onChange={handleGoalAmountChange}
+              placeholder="e.g. 30000"
+            />
+            {goalPct && annualIncome && (
+              <div style={{ fontSize: 12, color: 'var(--tx-3)', marginTop: 8 }}>
+                = {goalPct}% of annual income
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <SettingsField
+              label="Savings rate goal"
+              suffix="%"
+              value={goalPct}
+              onChange={handleGoalPctChange}
+              placeholder="e.g. 25"
+            />
+            {goalAmount && annualIncome && (
+              <div style={{ fontSize: 12, color: 'var(--tx-3)', marginTop: 8 }}>
+                = ${Math.round(parseFloat(goalAmount) || 0).toLocaleString()} saved annually
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Save button */}
       <button
