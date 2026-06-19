@@ -490,6 +490,47 @@ function SgLegend({ color, label }) {
   )
 }
 
+// ── Tooltip primitives used by BvaWidget ────────────────────────────────────
+
+function IveTooltip({ visible, children }) {
+  if (!visible) return null
+  return (
+    <div style={{
+      position: 'absolute', top: 'calc(100% + 6px)', left: 0,
+      background: 'var(--bg-app)', border: '1px solid var(--bd)',
+      borderRadius: 9, padding: '10px 13px', minWidth: 200, zIndex: 40,
+      boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none', whiteSpace: 'nowrap',
+    }}>
+      {children}
+    </div>
+  )
+}
+
+function TooltipHeader({ text }) {
+  return (
+    <div style={{
+      fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em',
+      color: 'var(--tx-3)', marginBottom: 8, textTransform: 'uppercase',
+    }}>
+      {text}
+    </div>
+  )
+}
+
+function TooltipRow({ label, value, border }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', gap: 16,
+      fontSize: 12, padding: '2px 0',
+      borderTop: border ? '1px solid var(--bd)' : 'none',
+      marginTop: border ? 4 : 0, paddingTop: border ? 4 : 0,
+    }}>
+      <span style={{ color: 'var(--tx-3)' }}>{label}</span>
+      <span style={{ color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>{value}</span>
+    </div>
+  )
+}
+
 // ── Spend vs. Budget widget ──────────────────────────────────────────────────
 
 function BvaWidget({ bva, rr, varThreshold = 10 }) {
