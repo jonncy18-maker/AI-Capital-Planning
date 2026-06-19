@@ -59,6 +59,20 @@ function Empty({ text }) {
   return <div style={{ fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.5 }}>{text}</div>
 }
 
+// ── Shared full-width card wrapper ───────────────────────────────────────────
+
+function WideCard({ title, subtitle, children }) {
+  return (
+    <div style={{ border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)', padding: '20px 22px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-1)' }}>{title}</span>
+        {subtitle && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: 'var(--tx-3)' }}>{subtitle}</span>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
 // ── Income vs. Expenses widget ───────────────────────────────────────────────
 
 function IveTooltip({ visible, children }) {
@@ -185,12 +199,29 @@ function IveSavingsRateStat({ rate, label, primary = false, tooltipLines, priorR
   )
 }
 
-function IncomeVsExpensesWidget({ ive }) {
+const IVE_MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function IncomeVsExpensesWidget({ ive, mobile }) {
+  const [chartHover, setChartHover] = useState(null)
+
   if (!ive.hasData) {
-    return <Empty text="Import transactions to see your income vs. expense breakdown." />
+    return (
+      <WideCard title="Income vs. Expenses" subtitle="Year-to-date flow · savings rate">
+        <Empty text="Import transactions to see your income vs. expense breakdown." />
+      </WideCard>
+    )
   }
 
   const hasIncome = ive.ytdIncome > 0
+  const cm = ive.currentMonth ?? 11
+
+  const chartData = IVE_MONTH_LABELS.slice(0, cm + 1).map((label, m) => ({
+    m, label,
+    income: ive.monthlyIncome?.[m] ?? 0,
+    expenses: ive.monthlyExpenses?.[m] ?? 0,
+  }))
+  const chartMax = Math.max(...chartData.map(d => Math.max(d.income, d.expenses)), 1)
+  const chartH = 160
 
   const fullYearTooltip = (
     <>
@@ -226,21 +257,13 @@ function IncomeVsExpensesWidget({ ive }) {
     </>
   )
 
-  return (
-    <div style={{ overflow: 'visible' }}>
+  const statsPanel = (
+    <div style={{ flexShrink: 0, width: mobile ? '100%' : 230, overflow: 'visible' }}>
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 10 }}>
         FULL YEAR · ACT+FCST
       </div>
-      <IveFlowRow
-        income={ive.fullYearIncome}
-        expenses={ive.fullYearExpenses}
-        net={ive.fullYearNet}
-        hasIncome={hasIncome}
-        primary
-      />
-
+      <IveFlowRow income={ive.fullYearIncome} expenses={ive.fullYearExpenses} net={ive.fullYearNet} hasIncome={hasIncome} primary />
       <IveDivider />
-
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 10 }}>
         SAVINGS RATE
       </div>
@@ -249,48 +272,22 @@ function IncomeVsExpensesWidget({ ive }) {
         <div style={{ width: 1, background: 'var(--accent-bd)', margin: '0 14px', alignSelf: 'stretch', minHeight: 36 }} />
         <IveSavingsRateStat rate={ive.savingsRate} label="YEAR TO DATE" tooltipLines={ytdTooltip} />
       </div>
-
       <IveDivider />
-
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
         YEAR TO DATE
       </div>
-      <IveFlowRow
-        income={ive.ytdIncome}
-        expenses={ive.ytdExpenses}
-        net={ive.ytdNet}
-        hasIncome={hasIncome}
-      />
+      <IveFlowRow income={ive.ytdIncome} expenses={ive.ytdExpenses} net={ive.ytdNet} hasIncome={hasIncome} />
       {ive.topYtdGroup && (
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          marginTop: 10,
-          padding: '3px 8px',
-          background: 'var(--accent-bg)',
-          border: '1px solid var(--accent-bd)',
-          borderRadius: 4,
-        }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10, padding: '3px 8px', background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 4 }}>
           <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>TOP SPEND</span>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-2)' }}>
-            {ive.topYtdGroup.name} · {fmtK(ive.topYtdGroup.amount)}
-          </span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-2)' }}>{ive.topYtdGroup.name} · {fmtK(ive.topYtdGroup.amount)}</span>
         </div>
       )}
-
       <IveDivider />
-
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
         PACE · AT CURRENT RATE
       </div>
-      <div style={{
-        fontFamily: "'DM Mono', monospace",
-        fontSize: 11,
-        color: ive.fullYearNet > 0 ? 'var(--accent)' : 'var(--warn)',
-        lineHeight: 1.4,
-        marginBottom: hasIncome ? 10 : 0,
-      }}>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: ive.fullYearNet > 0 ? 'var(--accent)' : 'var(--warn)', lineHeight: 1.4, marginBottom: hasIncome ? 10 : 0 }}>
         {ive.fullYearNet > 0
           ? `On pace to save ${fmtK(ive.fullYearNet)} this year`
           : ive.fullYearNet < 0
@@ -312,34 +309,118 @@ function IncomeVsExpensesWidget({ ive }) {
       )}
     </div>
   )
+
+  return (
+    <WideCard title="Income vs. Expenses" subtitle="Year-to-date flow · savings rate">
+      <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: mobile ? 'wrap' : 'nowrap' }}>
+        {statsPanel}
+        {!mobile && <div style={{ width: 1, background: 'var(--bd)', alignSelf: 'stretch', flexShrink: 0 }} />}
+        {!mobile && (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 12 }}>
+              MONTHLY · INCOME VS. EXPENSES
+            </div>
+            <div style={{ position: 'relative' }}>
+              {chartHover !== null && (() => {
+                const d = chartData[chartHover]
+                if (!d) return null
+                const net = d.income - d.expenses
+                return (
+                  <div style={{
+                    position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
+                    zIndex: 5, background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                    borderRadius: 9, padding: '10px 13px', minWidth: 160,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none', whiteSpace: 'nowrap',
+                  }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 8 }}>
+                      {d.label}
+                    </div>
+                    {hasIncome && <TooltipRow label="Income" value={fmtMoney(d.income)} highlight="accent" />}
+                    <TooltipRow label="Expenses" value={fmtMoney(d.expenses)} highlight="warn" />
+                    {hasIncome && (
+                      <TooltipRow
+                        label="Net"
+                        value={(net >= 0 ? '+' : '') + fmtMoney(Math.abs(net))}
+                        highlight={net >= 0 ? 'accent' : 'warn'}
+                        border
+                      />
+                    )}
+                  </div>
+                )
+              })()}
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: chartH }}>
+                {chartData.map((d, i) => {
+                  const incH = hasIncome ? (d.income / chartMax) * chartH : 0
+                  const expH = (d.expenses / chartMax) * chartH
+                  const isHov = chartHover === i
+                  return (
+                    <div
+                      key={d.m}
+                      style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 2, height: '100%', background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 4, cursor: 'default' }}
+                      onMouseEnter={() => setChartHover(i)}
+                      onMouseLeave={() => setChartHover(null)}
+                    >
+                      {hasIncome && <div style={{ flex: 1, maxWidth: 28, height: Math.max(incH, 2), background: 'var(--accent)', borderRadius: '3px 3px 0 0', opacity: isHov ? 1 : 0.85 }} />}
+                      <div style={{ flex: 1, maxWidth: 28, height: Math.max(expH, 2), background: 'var(--warn)', borderRadius: '3px 3px 0 0', opacity: isHov ? 1 : 0.75 }} />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              {chartData.map(d => (
+                <div key={d.m} style={{ flex: 1, textAlign: 'center', fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.02em' }}>
+                  {d.label}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 14, marginTop: 10 }}>
+              {hasIncome && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-4)', letterSpacing: '0.03em' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} />income
+                </span>
+              )}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-4)', letterSpacing: '0.03em' }}>
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--warn)', display: 'inline-block' }} />expenses
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </WideCard>
+  )
 }
 
 // ── Spend by Group widget ────────────────────────────────────────────────────
 // Full-year actual + forecast (one bar, two tones) vs. the blue budget bar,
 // with per-group data labels on hover.
 
-function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns }) {
+function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns, mobile }) {
   const [hover, setHover] = useState(null)
   const [selectedGroup, setSelectedGroup] = useState(null)
 
   if (!sgy.rows.length) {
-    return <Empty text="No budget or spending data for this year yet." />
+    return (
+      <WideCard title="Spend by Group" subtitle="Full-year actual + forecast vs. budget">
+        <Empty text="No budget or spending data for this year yet." />
+      </WideCard>
+    )
   }
 
   const varRatio = (ctx?.varianceThreshold ?? 10) / 100
   const max = sgy.max
   return (
-    <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 2 }}>
+    <WideCard title="Spend by Group" subtitle="Full-year actual + forecast vs. budget">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {sgy.rows.map(r => {
           const over    = r.budget > 0 && r.projected > r.budget * (1 + varRatio)
           const under   = r.budget > 0 && r.projected < r.budget * (1 - varRatio)
           const onTrack = r.budget > 0 && !over && !under
           const actualColor = over ? 'var(--warn)' : onTrack ? 'var(--green)' : 'var(--accent)'
           const isHover = hover === r.group
-          const actualW  = (r.actual   / max) * 100
+          const actualW   = (r.actual   / max) * 100
           const forecastW = (r.forecast / max) * 100
-          const budgetW  = (r.budget   / max) * 100
+          const budgetW   = (r.budget   / max) * 100
           return (
             <div
               key={r.group}
@@ -348,24 +429,21 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns }) {
               onClick={() => setSelectedGroup(r.group)}
               style={{ position: 'relative', cursor: 'pointer' }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
-                <span style={{ color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{r.group}</span>
-                <span style={{ color: actualColor, fontVariantNumeric: 'tabular-nums' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, marginBottom: 5 }}>
+                <span style={{ color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: mobile ? 120 : 280 }}>{r.group}</span>
+                <span style={{ color: actualColor, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                   {fmtK(r.projected)}{r.budget > 0 ? ` / ${fmtK(r.budget)}` : ''}
                 </span>
               </div>
-              {/* Actual + forecast — one bar, two tones */}
-              <div style={{ display: 'flex', height: 6, background: 'var(--bd-light)', borderRadius: 3, overflow: 'hidden', marginBottom: 2 }}>
+              <div style={{ display: 'flex', height: 8, background: 'var(--bd-light)', borderRadius: 3, overflow: 'hidden', marginBottom: 3 }}>
                 <div style={{ width: `${actualW}%`, height: '100%', background: actualColor }} />
                 <div style={{ width: `${forecastW}%`, height: '100%', background: 'var(--forecast-bd)' }} />
               </div>
-              {/* Budget reference bar */}
               {r.budget > 0 && (
-                <div style={{ height: 3, background: 'var(--bd-light)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: 4, background: 'var(--bd-light)', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ width: `${budgetW}%`, height: '100%', background: 'var(--bar-budget)', borderRadius: 2 }} />
                 </div>
               )}
-              {/* Hover data labels */}
               {isHover && (
                 <div style={{
                   position: 'absolute', top: -8, right: 0, transform: 'translateY(-100%)',
@@ -376,10 +454,10 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns }) {
                   <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.07em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 7 }}>
                     {r.group}
                   </div>
-                  <SgRow label="Actual (YTD)"      value={fmtMoney(r.actual)}    color="var(--tx-1)" />
-                  <SgRow label="Forecast (rest)"    value={fmtMoney(r.forecast)}  color="var(--forecast-bd)" />
-                  <SgRow label="Actual + Forecast"  value={fmtMoney(r.projected)} color={actualColor} bold />
-                  <SgRow label="Budget"             value={r.budget > 0 ? fmtMoney(r.budget) : '—'} color="var(--bar-budget-tx)" />
+                  <SgRow label="Actual (YTD)"     value={fmtMoney(r.actual)}    color="var(--tx-1)" />
+                  <SgRow label="Forecast (rest)"   value={fmtMoney(r.forecast)}  color="var(--forecast-bd)" />
+                  <SgRow label="Actual + Forecast" value={fmtMoney(r.projected)} color={actualColor} bold />
+                  <SgRow label="Budget"            value={r.budget > 0 ? fmtMoney(r.budget) : '—'} color="var(--bar-budget-tx)" />
                   {r.budget > 0 && (
                     <SgRow
                       label="vs. budget"
@@ -395,7 +473,7 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns }) {
             </div>
           )
         })}
-        <div style={{ display: 'flex', gap: 14, fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 14, fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em', flexWrap: 'wrap', marginTop: 2 }}>
           <SgLegend color="var(--green)"       label="on track" />
           <SgLegend color="var(--accent)"      label="under budget" />
           <SgLegend color="var(--warn)"        label="over budget" />
@@ -412,7 +490,7 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns }) {
           onClose={() => setSelectedGroup(null)}
         />
       )}
-    </>
+    </WideCard>
   )
 }
 
@@ -615,8 +693,8 @@ function ScenarioPlanWidget({ si }) {
 
 // ── widget definitions ───────────────────────────────────────────────────────
 
-function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = []) {
-  const sgy = spendByGroupYear(ctx, yearTxns)
+function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = false) {
+  const sgy = spendByGroupYear(ctx, yearTxns, 12)
   const rr = yearProjection(ctx, yearTxns)
   const bva = budgetVsActual(ctx, yearTxns)
   const spike = cashFlowSpike(ctx)
@@ -630,13 +708,15 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = []) {
       id: 'incomeExpenses',
       title: 'Income vs. Expenses',
       subtitle: 'Year-to-date flow · savings rate',
-      render: () => <IncomeVsExpensesWidget ive={ive} />,
+      fullWidth: true,
+      render: () => <IncomeVsExpensesWidget ive={ive} mobile={mobile} />,
     },
     {
       id: 'spendGroup',
       title: 'Spend by Group',
       subtitle: 'Full-year actual + forecast vs. budget',
-      render: () => <SpendByGroupWidget sgy={sgy} ctx={ctx} yearTxns={yearTxns} priorYearTxns={priorYearTxns} />,
+      fullWidth: true,
+      render: () => <SpendByGroupWidget sgy={sgy} ctx={ctx} yearTxns={yearTxns} priorYearTxns={priorYearTxns} mobile={mobile} />,
     },
     {
       id: 'spikes',
@@ -843,7 +923,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   const blocks = useMemo(() => [
     { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: () => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} /> },
     { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: () => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} /> },
-    ...buildWidgets(context, summary, yearTxns, priorYearTxns),
+    ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile),
   ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing, onThresholdChange])
 
   const ordered = useMemo(() => {

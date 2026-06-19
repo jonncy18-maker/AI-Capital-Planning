@@ -372,13 +372,15 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const fullYearExpenses = fullYearActualExpenses + fullYearForecastExpenses
 
   const incomeByMonth = Array(12).fill(0)
+  const expensesByMonth = Array(12).fill(0)
   for (const t of yearTxns) {
     const amt = Number(t.amount) || 0
-    if (amt <= 0) continue
     if (excluded.has(t.category)) continue
     const d = new Date(t.date)
-    if (Number.isNaN(d.getTime()) || d.getFullYear() !== now.getFullYear()) continue
-    incomeByMonth[d.getMonth()] += amt
+    if (Number.isNaN(d.getTime())) continue
+    const m = d.getMonth()
+    if (amt > 0) incomeByMonth[m] += amt
+    else expensesByMonth[m] += Math.abs(amt)
   }
   // Average over completed months (everything before the current one) so a
   // partially-elapsed current month doesn't drag the projection down.
@@ -431,6 +433,9 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     fullYearSavingsRate,
     topYtdGroup,
     priorYearSavingsRate,
+    monthlyIncome: incomeByMonth,
+    monthlyExpenses: expensesByMonth,
+    currentMonth,
   }
 }
 
