@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
-  spendByGroup,
+  spendByGroupYear,
   runRateEOY,
   budgetVsActual,
   cashFlowSpike,
@@ -53,6 +53,29 @@ function Empty({ text }) {
 
 // ── Income vs. Expenses widget ───────────────────────────────────────────────
 
+function NetLine({ n }) {
+  return (
+    <div style={{ marginTop: 6, fontSize: 11, fontVariantNumeric: 'tabular-nums', color: n > 0 ? 'var(--accent)' : 'var(--warn)' }}>
+      {n > 0 ? '+' : ''}{fmtK(n)} net
+    </div>
+  )
+}
+
+function IveColumn({ title, income, expenses, net, hasIncome }) {
+  return (
+    <div style={{ flex: 1, minWidth: 110 }}>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
+        {title}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {hasIncome && <MiniStat value={fmtK(income)} label="income" />}
+        <MiniStat value={fmtK(expenses)} label="expenses" />
+      </div>
+      {net !== 0 && <NetLine n={net} />}
+    </div>
+  )
+}
+
 function IncomeVsExpensesWidget({ ive }) {
   if (!ive.hasData) {
     return <Empty text="Import transactions to see your income vs. expense breakdown." />
@@ -70,16 +93,110 @@ function IncomeVsExpensesWidget({ ive }) {
       ) : (
         <Stat value={fmtK(ive.ytdExpenses)} label="YTD EXPENSES" />
       )}
-      <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
-        {hasIncome && <MiniStat value={fmtK(ive.ytdIncome)} label="income YTD" />}
-        <MiniStat value={fmtK(ive.ytdExpenses)} label="expenses YTD" />
+      <div style={{ display: 'flex', gap: 16, marginTop: 16 }}>
+        <IveColumn title="YEAR TO DATE" income={ive.ytdIncome} expenses={ive.ytdExpenses} net={ive.ytdNet} hasIncome={hasIncome} />
+        <div style={{ width: 1, background: 'var(--bd-light)' }} />
+        <IveColumn title="FULL YEAR · ACT+FCST" income={ive.fullYearIncome} expenses={ive.fullYearExpenses} net={ive.fullYearNet} hasIncome={hasIncome} />
       </div>
-      {ive.ytdNet !== 0 && (
-        <div style={{ marginTop: 8, fontSize: 11.5, fontVariantNumeric: 'tabular-nums', color: ive.ytdNet > 0 ? 'var(--accent)' : 'var(--warn)' }}>
-          {ive.ytdNet > 0 ? '+' : ''}{fmtK(ive.ytdNet)} net
-        </div>
-      )}
     </>
+  )
+}
+
+// ── Spend by Group widget ────────────────────────────────────────────────────
+// Full-year actual + forecast (one bar, two tones) vs. the blue budget bar,
+// with per-group data labels on hover.
+
+function SpendByGroupWidget({ sgy }) {
+  const [hover, setHover] = useState(null)
+
+  if (!sgy.rows.length) {
+    return <Empty text="No budget or spending data for this year yet." />
+  }
+
+  const max = sgy.max
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 2 }}>
+      {sgy.rows.map(r => {
+        const over = r.budget > 0 && r.projected > r.budget * 1.1
+        const isHover = hover === r.group
+        const actualW = (r.actual / max) * 100
+        const forecastW = (r.forecast / max) * 100
+        const budgetW = (r.budget / max) * 100
+        return (
+          <div
+            key={r.group}
+            onMouseEnter={() => setHover(r.group)}
+            onMouseLeave={() => setHover(null)}
+            style={{ position: 'relative', cursor: 'default' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
+              <span style={{ color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{r.group}</span>
+              <span style={{ color: over ? 'var(--warn)' : 'var(--tx-1)', fontVariantNumeric: 'tabular-nums' }}>
+                {fmtK(r.projected)}{r.budget > 0 ? ` / ${fmtK(r.budget)}` : ''}
+              </span>
+            </div>
+            {/* Actual + forecast — one bar, two tones */}
+            <div style={{ display: 'flex', height: 6, background: 'var(--bd-light)', borderRadius: 3, overflow: 'hidden', marginBottom: 2 }}>
+              <div style={{ width: `${actualW}%`, height: '100%', background: over ? 'var(--warn)' : 'var(--accent)' }} />
+              <div style={{ width: `${forecastW}%`, height: '100%', background: over ? 'var(--warn-bg)' : 'var(--accent-bd)' }} />
+            </div>
+            {/* Budget reference bar */}
+            {r.budget > 0 && (
+              <div style={{ height: 3, background: 'var(--bd-light)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ width: `${budgetW}%`, height: '100%', background: 'var(--bar-budget)', borderRadius: 2 }} />
+              </div>
+            )}
+            {/* Hover data labels */}
+            {isHover && (
+              <div style={{
+                position: 'absolute', top: -8, right: 0, transform: 'translateY(-100%)',
+                zIndex: 6, background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                borderRadius: 9, padding: '9px 12px', minWidth: 178,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none',
+              }}>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.07em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 7 }}>
+                  {r.group}
+                </div>
+                <SgRow label="Actual (YTD)" value={fmtMoney(r.actual)} color="var(--tx-1)" />
+                <SgRow label="Forecast (rest)" value={fmtMoney(r.forecast)} color="var(--tx-2)" />
+                <SgRow label="Actual + Forecast" value={fmtMoney(r.projected)} color={over ? 'var(--warn)' : 'var(--accent)'} bold />
+                <SgRow label="Budget" value={r.budget > 0 ? fmtMoney(r.budget) : '—'} color="var(--bar-budget-tx)" />
+                {r.budget > 0 && (
+                  <SgRow
+                    label="vs. budget"
+                    value={`${r.projected - r.budget > 0 ? '+' : ''}${fmtMoney(r.projected - r.budget)}`}
+                    color={over ? 'var(--warn)' : 'var(--accent)'}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      <div style={{ display: 'flex', gap: 14, fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em', flexWrap: 'wrap' }}>
+        <SgLegend color="var(--accent)" label="actual" />
+        <SgLegend color="var(--accent-bd)" label="forecast" />
+        <SgLegend color="var(--bar-budget)" label="budget" />
+      </div>
+    </div>
+  )
+}
+
+function SgRow({ label, value, color, bold }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0' }}>
+      <span style={{ color: 'var(--tx-3)' }}>{label}</span>
+      <span style={{ color, fontVariantNumeric: 'tabular-nums', fontWeight: bold ? 600 : 500 }}>{value}</span>
+    </div>
+  )
+}
+
+function SgLegend({ color, label }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: 'inline-block' }} />
+      {label}
+    </span>
   )
 }
 
@@ -137,7 +254,7 @@ function ScenarioPlanWidget({ si }) {
 // ── widget definitions ───────────────────────────────────────────────────────
 
 function buildWidgets(ctx, summary, yearTxns = []) {
-  const sg = spendByGroup(ctx)
+  const sgy = spendByGroupYear(ctx, yearTxns)
   const rr = runRateEOY(ctx)
   const bva = budgetVsActual(ctx)
   const spike = cashFlowSpike(ctx)
@@ -145,14 +262,6 @@ function buildWidgets(ctx, summary, yearTxns = []) {
   const ws = wealthSummary(ctx)
   const si = scenarioImpact(ctx)
   const ive = incomeVsExpenses(ctx, yearTxns)
-
-  // Budget by group (monthly avg) for spend comparison bars
-  const budgetByGroupMonthly = {}
-  for (const li of (ctx?.budgetLineItems ?? [])) {
-    const g = li.budget_categories?.group || '—'
-    budgetByGroupMonthly[g] = (budgetByGroupMonthly[g] || 0) + Number(li.amount || 0) / 12
-  }
-  const hasBudgetGroups = Object.keys(budgetByGroupMonthly).length > 0
 
   return [
     {
@@ -164,49 +273,8 @@ function buildWidgets(ctx, summary, yearTxns = []) {
     {
       id: 'spendGroup',
       title: 'Spend by Group',
-      subtitle: 'Monthly avg vs. budget plan · last 90 days',
-      render: () => sg.rows.length ? (() => {
-        // Normalize bars against max of both actual-monthly and budget-monthly
-        const sgMax = Math.max(
-          sg.max / 3, // 90d → monthly
-          ...sg.rows.map(r => budgetByGroupMonthly[r.group] ?? 0),
-          1,
-        )
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 2 }}>
-            {sg.rows.map(r => {
-              const actualMonthly = r.total / 3
-              const budgetMonthly = budgetByGroupMonthly[r.group] ?? 0
-              const over = hasBudgetGroups && budgetMonthly > 0 && actualMonthly > budgetMonthly * 1.1
-              return (
-                <div key={r.group}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
-                    <span style={{ color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{r.group}</span>
-                    <span style={{ color: over ? 'var(--warn)' : 'var(--tx-1)', fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtK(actualMonthly)}{hasBudgetGroups && budgetMonthly > 0 ? ` / ${fmtK(budgetMonthly)}` : ''}
-                    </span>
-                  </div>
-                  {/* Actual bar */}
-                  <div style={{ height: 4, background: 'var(--bd-light)', borderRadius: 2, overflow: 'hidden', marginBottom: 2 }}>
-                    <div style={{ width: `${(actualMonthly / sgMax) * 100}%`, height: '100%', background: over ? 'var(--warn)' : 'var(--accent)', borderRadius: 2 }} />
-                  </div>
-                  {/* Budget reference bar */}
-                  {hasBudgetGroups && budgetMonthly > 0 && (
-                    <div style={{ height: 2, background: 'var(--bd-light)', borderRadius: 1, overflow: 'hidden' }}>
-                      <div style={{ width: `${(budgetMonthly / sgMax) * 100}%`, height: '100%', background: 'var(--bar-budget)', borderRadius: 1 }} />
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-            {hasBudgetGroups && (
-              <div style={{ fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em' }}>
-                ▮ actual/mo &nbsp; ▮ budget/mo
-              </div>
-            )}
-          </div>
-        )
-      })() : <Empty text="No spending data in the last 90 days." />,
+      subtitle: 'Full-year actual + forecast vs. budget',
+      render: () => <SpendByGroupWidget sgy={sgy} />,
     },
     {
       id: 'spikes',

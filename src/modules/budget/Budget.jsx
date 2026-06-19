@@ -9,6 +9,7 @@ import {
   getBudgetYears,
   saveBudgetForYear,
 } from '../../lib/db/budgetLineItems.js'
+import { getBudgetStatus, setBudgetStatus } from '../../lib/db/budgetStatus.js'
 import { analyzeTransactions, MONTHS } from '../../lib/budget/patternAnalyzer.js'
 import { commitmentYearSchedule } from '../../lib/commitments/schedule.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
@@ -374,6 +375,15 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
   }
   const groupNames = Object.keys(grouped).sort()
 
+  // Buckets (groups) collapse for a clean overview; collapsed by default so the
+  // module opens as a summary the user expands into.
+  const [expanded, setExpanded] = useState(() => new Set())
+  const toggleGroup = g => setExpanded(prev => {
+    const next = new Set(prev)
+    next.has(g) ? next.delete(g) : next.add(g)
+    return next
+  })
+
   const monthTotals = Array(12).fill(0)
   for (const r of rows) for (let m = 0; m < 12; m++) monthTotals[m] += r.months[m]
   const grandTotal = monthTotals.reduce((a, b) => a + b, 0)
@@ -424,14 +434,19 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
             const gTotals = Array(12).fill(0)
             for (const r of gRows) for (let m = 0; m < 12; m++) gTotals[m] += r.months[m]
             const gTotal = gTotals.reduce((a, b) => a + b, 0)
+            const isOpen = expanded.has(g)
             return (
               <Fragment key={`group-${g}`}>
-                <tr style={{ background: 'var(--hover)' }}>
-                  <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-2)', padding: '8px 14px', letterSpacing: '0.05em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)' }}>{g}</td>
+                <tr style={{ background: 'var(--hover)', cursor: 'pointer' }} onClick={() => toggleGroup(g)}>
+                  <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-2)', padding: '8px 14px', letterSpacing: '0.05em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)' }}>
+                    <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-3)', transition: 'transform .12s', transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                    {g}
+                    <span style={{ marginLeft: 6, color: 'var(--tx-4)', fontWeight: 600 }}>({gRows.length})</span>
+                  </td>
                   {gTotals.map((v, m) => <td key={m} style={{ ...cellStyle, color: 'var(--tx-3)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
                   <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(gTotal)}</td>
                 </tr>
-                {gRows.map((r, ri) => {
+                {isOpen && gRows.map((r, ri) => {
                   const rTotal = r.months.reduce((a, b) => a + b, 0)
                   return (
                     <tr key={`${g}-${ri}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
@@ -456,6 +471,222 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
           </tr>
         </tfoot>
       </table>
+    </div>
+  )
+}
+
+// ── Editable schedule grid ───────────────────────────────────────────────────
+// Direct month-by-month editing of a saved budget. Buckets collapse (collapsed
+// by default) and each month cell is an input. Commitment-fed rows are managed
+// in the Commitments module, so only real budget line items are editable here.
+
+function EditableScheduleGrid({ lineItems, year, onSave, onCancel, saving }) {
+  const initial = useMemo(() => {
+    const m = {}
+    for (const li of lineItems) {
+      const key = li.category_id || li.budget_categories?.category || 'Uncategorized'
+      if (!m[key]) {
+        m[key] = {
+          category_id: li.category_id,
+          name: li.budget_categories?.category || 'Uncategorized',
+          group: li.budget_categories?.group || '—',
+          type: li.budget_categories?.type || 'Flexible',
+          months: Array(12).fill(0),
+          labels: Array(12).fill(null),
+          commitment_id: li.commitment_id ?? null,
+        }
+      }
+      const mi = (li.month ?? 1) - 1
+      if (mi >= 0 && mi < 12) {
+        m[key].months[mi] += Number(li.amount || 0)
+        if (li.label) m[key].labels[mi] = li.label
+      }
+    }
+    return m
+  }, [lineItems])
+
+  const [model, setModel] = useState(initial)
+  const [expanded, setExpanded] = useState(() => new Set())
+  const toggleGroup = g => setExpanded(prev => {
+    const next = new Set(prev)
+    next.has(g) ? next.delete(g) : next.add(g)
+    return next
+  })
+
+  function setCell(key, mi, raw) {
+    const n = parseFloat(String(raw).replace(/[^0-9.]/g, '')) || 0
+    setModel(prev => {
+      const row = prev[key]
+      const months = [...row.months]
+      months[mi] = n
+      return { ...prev, [key]: { ...row, months } }
+    })
+  }
+
+  const rows = Object.values(model)
+  const grouped = {}
+  for (const r of rows) {
+    if (!grouped[r.group]) grouped[r.group] = []
+    grouped[r.group].push(r)
+  }
+  const groupNames = Object.keys(grouped).sort()
+
+  const monthTotals = Array(12).fill(0)
+  for (const r of rows) for (let m = 0; m < 12; m++) monthTotals[m] += r.months[m]
+  const grandTotal = monthTotals.reduce((a, b) => a + b, 0)
+
+  function handleSave() {
+    const items = []
+    for (const r of rows) {
+      if (!r.category_id) continue
+      for (let m = 0; m < 12; m++) {
+        const amount = Math.round(r.months[m])
+        if (amount > 0) {
+          items.push({ category_id: r.category_id, month: m + 1, amount, label: r.labels[m] ?? null, commitment_id: r.commitment_id })
+        }
+      }
+    }
+    onSave(items)
+  }
+
+  const cellStyle = { textAlign: 'right', fontSize: 12, padding: '7px 8px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+  const curMonth = year === CUR_YEAR ? new Date().getMonth() : -1
+  const colBg = m => (m === curMonth ? 'var(--accent-bg)' : 'transparent')
+  const STICKY = 168
+
+  const inputStyle = {
+    width: 56, textAlign: 'right', background: 'var(--field)', border: '1px solid var(--bd)',
+    borderRadius: 5, padding: '4px 5px', color: 'var(--tx-1)', fontSize: 11.5, outline: 'none',
+    fontVariantNumeric: 'tabular-nums',
+  }
+
+  return (
+    <div>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 14, flexWrap: 'wrap', gap: 12,
+      }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-1)', marginBottom: 4 }}>
+            Editing {year} budget
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--tx-2)' }}>
+            Adjust any month directly · total <strong style={{ color: 'var(--tx-1)' }}>{fmtFull(grandTotal)}</strong>.
+            Expand a bucket to edit its categories.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onCancel} style={ghostBtn}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            ...primaryBtn, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer',
+          }}>
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto', border: '1px solid var(--bd)', borderRadius: 12, background: 'var(--bg-card)' }}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 1040 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', fontSize: 10, color: 'var(--tx-3)', padding: '12px 14px', letterSpacing: '0.06em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg-card)', borderBottom: '1px solid var(--bd)', minWidth: STICKY }}>Category</th>
+              {MONTHS.map((m, mi) => (
+                <th key={m} style={{ ...cellStyle, color: mi === curMonth ? 'var(--accent)' : 'var(--tx-3)', fontWeight: 600, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', background: colBg(mi), borderBottom: '1px solid var(--bd)' }}>{m}</th>
+              ))}
+              <th style={{ ...cellStyle, color: 'var(--tx-2)', fontWeight: 700, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', borderBottom: '1px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groupNames.map(g => {
+              const gRows = grouped[g]
+              const gTotals = Array(12).fill(0)
+              for (const r of gRows) for (let m = 0; m < 12; m++) gTotals[m] += r.months[m]
+              const gTotal = gTotals.reduce((a, b) => a + b, 0)
+              const isOpen = expanded.has(g)
+              return (
+                <Fragment key={`group-${g}`}>
+                  <tr style={{ background: 'var(--hover)', cursor: 'pointer' }} onClick={() => toggleGroup(g)}>
+                    <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-2)', padding: '8px 14px', letterSpacing: '0.05em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)' }}>
+                      <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-3)', transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                      {g}
+                      <span style={{ marginLeft: 6, color: 'var(--tx-4)', fontWeight: 600 }}>({gRows.length})</span>
+                    </td>
+                    {gTotals.map((v, m) => <td key={m} style={{ ...cellStyle, color: 'var(--tx-3)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
+                    <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(gTotal)}</td>
+                  </tr>
+                  {isOpen && gRows.map((r, ri) => {
+                    const key = r.category_id || r.name
+                    const rTotal = r.months.reduce((a, b) => a + b, 0)
+                    return (
+                      <tr key={`${g}-${ri}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
+                        <td style={{ fontSize: 12.5, color: 'var(--tx-1)', padding: '7px 14px 7px 26px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap' }}>
+                          {r.name}
+                        </td>
+                        {r.months.map((v, m) => (
+                          <td key={m} style={{ ...cellStyle, background: colBg(m) }}>
+                            <input
+                              value={v ? Math.round(v) : ''}
+                              placeholder="0"
+                              onChange={e => setCell(key, m, e.target.value)}
+                              style={inputStyle}
+                            />
+                          </td>
+                        ))}
+                        <td style={{ ...cellStyle, fontWeight: 600, color: 'var(--tx-1)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(rTotal)}</td>
+                      </tr>
+                    )
+                  })}
+                </Fragment>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: 'var(--bg-card)' }}>
+              <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-1)', padding: '12px 14px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', borderTop: '2px solid var(--bd)' }}>Total</td>
+              {monthTotals.map((v, m) => <td key={m} style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', background: colBg(m), borderTop: '2px solid var(--bd)' }}>{fmt(v)}</td>)}
+              <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', borderTop: '2px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(grandTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Reopen confirmation ──────────────────────────────────────────────────────
+
+function ReopenModal({ year, busy, onConfirm, onCancel }) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+      }}
+    >
+      <div onClick={e => e.stopPropagation()} style={{
+        background: 'var(--bg-card)', border: '1px solid var(--warn)', borderRadius: 14,
+        padding: 24, maxWidth: 440, width: '100%', boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--tx-1)' }}>Reopen finalized budget?</div>
+        </div>
+        <div style={{ fontSize: 13.5, color: 'var(--tx-2)', lineHeight: 1.65, marginBottom: 20 }}>
+          The <strong style={{ color: 'var(--tx-1)' }}>{year}</strong> budget is finalized. Reopening it for
+          editing will change the plan that historical trends and budget-vs-actual comparisons are measured
+          against — past insights may shift. Finalize again once you're done.
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onCancel} style={ghostBtn}>Cancel</button>
+          <button onClick={onConfirm} disabled={busy} style={{
+            ...primaryBtn, background: 'var(--warn)', color: '#1A1205',
+            opacity: busy ? 0.6 : 1, cursor: busy ? 'not-allowed' : 'pointer',
+          }}>
+            {busy ? 'Reopening…' : 'Confirm & Reopen'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -486,20 +717,28 @@ export default function Budget({ userId, mobile }) {
   const [saving, setSaving] = useState(false)
   const [reviewing, setReviewing] = useState(false)
   const [pendingUpload, setPendingUpload] = useState(null)
+  const [status, setStatus] = useState({ status: 'draft', finalized_at: null })
+  const [editing, setEditing] = useState(false)
+  const [showReopen, setShowReopen] = useState(false)
+  const [statusBusy, setStatusBusy] = useState(false)
   const fileRef = useRef(null)
+
+  const finalized = status.status === 'finalized'
 
   const loadYearData = useCallback(async (yr) => {
     setLoading(true)
     setError(null)
     try {
-      const [items, yrs, cmts] = await Promise.all([
+      const [items, yrs, cmts, st] = await Promise.all([
         getBudgetLineItems(userId, { year: yr }),
         getBudgetYears(userId),
         getCommitments(userId, { status: 'active' }),
+        getBudgetStatus(userId, yr),
       ])
       setLineItems(items)
       setYears(yrs)
       setCommitments(cmts)
+      setStatus(st)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -629,6 +868,48 @@ export default function Budget({ userId, mobile }) {
     }
   }
 
+  async function handleSaveEdit(items) {
+    setSaving(true)
+    setError(null)
+    try {
+      await saveBudgetForYear(userId, year, 'v1', items)
+      setEditing(false)
+      await loadYearData(year)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleFinalize() {
+    setStatusBusy(true)
+    setError(null)
+    try {
+      await setBudgetStatus(userId, year, 'finalized')
+      setStatus({ status: 'finalized', finalized_at: new Date().toISOString() })
+      setEditing(false)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setStatusBusy(false)
+    }
+  }
+
+  async function handleReopen() {
+    setStatusBusy(true)
+    setError(null)
+    try {
+      await setBudgetStatus(userId, year, 'draft')
+      setStatus({ status: 'draft', finalized_at: null })
+      setShowReopen(false)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setStatusBusy(false)
+    }
+  }
+
   const yearOptions = useMemo(() => {
     const set = new Set([...years, CUR_YEAR, CUR_YEAR + 1])
     return [...set].sort((a, b) => a - b)
@@ -649,26 +930,47 @@ export default function Budget({ userId, mobile }) {
       <ModuleHeader
         mobile={mobile}
         icon="▦"
-        title={reviewing ? 'Match Detail Tabs' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
+        title={reviewing ? 'Match Detail Tabs' : editing ? 'Edit Budget' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
         subtitle={reviewing
           ? 'Confirm which detail tab feeds each non-monthly category.'
-          : generating
-            ? 'Review and adjust the proposed targets, then save the year.'
-            : 'Build and review a month-by-month budget for the year.'}
-        actions={!generating && !reviewing && (
+          : editing
+            ? 'Adjust month-by-month amounts directly, then save.'
+            : generating
+              ? 'Review and adjust the proposed targets, then save the year.'
+              : 'Build and review a month-by-month budget for the year.'}
+        actions={!generating && !reviewing && !editing && (
           <>
-            <select value={year} onChange={e => setYear(Number(e.target.value))} style={{
+            <select value={year} onChange={e => { setEditing(false); setYear(Number(e.target.value)) }} style={{
               padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--bd)',
               borderRadius: 7, color: 'var(--tx-1)', fontSize: 13, outline: 'none', cursor: 'pointer',
             }}>
               {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
-            <button onClick={() => fileRef.current?.click()} disabled={importing || analyzing} style={{ ...ghostBtn, opacity: importing || analyzing ? 0.6 : 1 }}>
-              {importing ? 'Importing…' : '⤓ Upload Budget'}
-            </button>
-            <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...primaryBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
-              {analyzing ? 'Analyzing…' : lineItems.length ? '↻ Regenerate' : '✦ Generate from History'}
-            </button>
+            {lineItems.length > 0 && <StatusPill finalized={finalized} />}
+            {lineItems.length > 0 && finalized ? (
+              <button onClick={() => setShowReopen(true)} disabled={statusBusy} style={{
+                ...ghostBtn, borderColor: 'var(--warn)', color: 'var(--warn)', opacity: statusBusy ? 0.6 : 1,
+              }}>
+                🔓 Reopen
+              </button>
+            ) : lineItems.length > 0 ? (
+              <>
+                <button onClick={() => setEditing(true)} style={ghostBtn}>✎ Edit</button>
+                <button onClick={handleFinalize} disabled={statusBusy} style={{ ...ghostBtn, opacity: statusBusy ? 0.6 : 1 }}>
+                  {statusBusy ? 'Finalizing…' : '🔒 Finalize'}
+                </button>
+              </>
+            ) : null}
+            {!finalized && (
+              <>
+                <button onClick={() => fileRef.current?.click()} disabled={importing || analyzing} style={{ ...ghostBtn, opacity: importing || analyzing ? 0.6 : 1 }}>
+                  {importing ? 'Importing…' : '⤓ Upload Budget'}
+                </button>
+                <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...primaryBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
+                  {analyzing ? 'Analyzing…' : lineItems.length ? '↻ Regenerate' : '✦ Generate from History'}
+                </button>
+              </>
+            )}
           </>
         )}
       />
@@ -697,6 +999,14 @@ export default function Budget({ userId, mobile }) {
           saving={saving}
           onSave={handleSaveBudget}
           onCancel={() => { setGenerating(false); setAnalysis(null) }}
+        />
+      ) : editing ? (
+        <EditableScheduleGrid
+          lineItems={lineItems}
+          year={year}
+          saving={saving}
+          onSave={handleSaveEdit}
+          onCancel={() => setEditing(false)}
         />
       ) : lineItems.length === 0 ? (
         <div style={{ border: '1px dashed var(--bd)', borderRadius: 12, padding: '48px 28px', textAlign: 'center' }}>
@@ -728,7 +1038,34 @@ export default function Budget({ userId, mobile }) {
           <ScheduleGrid lineItems={lineItems} commitments={commitments} year={year} mobile={mobile} />
         </>
       )}
+
+      {showReopen && (
+        <ReopenModal
+          year={year}
+          busy={statusBusy}
+          onConfirm={handleReopen}
+          onCancel={() => setShowReopen(false)}
+        />
+      )}
     </div>
+  )
+}
+
+function StatusPill({ finalized }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 20,
+      border: `1px solid ${finalized ? 'var(--accent-bd)' : 'var(--bd)'}`,
+      background: finalized ? 'var(--accent-bg)' : 'transparent',
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: 3, background: finalized ? 'var(--accent)' : 'var(--warn)' }} />
+      <span style={{
+        fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.07em', textTransform: 'uppercase',
+        color: finalized ? 'var(--accent)' : 'var(--tx-2)',
+      }}>
+        {finalized ? 'Finalized' : 'Draft'}
+      </span>
+    </span>
   )
 }
 
