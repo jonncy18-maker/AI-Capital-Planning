@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, Fragment } from 'react'
+import { createPortal } from 'react-dom'
 import { spendByCategoryForGroup } from '../../lib/dashboard/widgetData.js'
 
 const MONO = "'DM Mono', monospace"
@@ -362,7 +363,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, onClose }) {
     setExpandedCat(prev => prev === cat ? null : cat)
   }
 
-  return (
+  return createPortal(
     <div
       onClick={onClose}
       style={{
@@ -507,6 +508,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, onClose }) {
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
