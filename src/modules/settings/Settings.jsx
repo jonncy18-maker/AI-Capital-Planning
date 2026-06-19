@@ -161,6 +161,10 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
   const [four01kOnBonus, setFour01kOnBonus] = useState(
     profile?.four01k_on_bonus ?? false
   )
+  // Pay schedule
+  const [payFrequency, setPayFrequency] = useState(profile?.pay_frequency ?? '')
+  const [payDay1, setPayDay1] = useState(profile?.pay_day_1 != null ? String(profile.pay_day_1) : '')
+  const [payDay2, setPayDay2] = useState(profile?.pay_day_2 != null ? String(profile.pay_day_2) : '')
   // Tax profile (gross→net estimator inputs)
   const tp = profile?.tax_profile || {}
   const [filingStatus, setFilingStatus] = useState(tp.filingStatus || 'single')
@@ -282,6 +286,9 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
       benefitsPct: benefitsType === 'pct' ? (parseFloat(benefitsPct) || null) : null,
       four01kPct: has401k ? (parseFloat(four01kPct) || null) : null,
       four01kOnBonus: has401k ? four01kOnBonus : false,
+      payFrequency: payFrequency || null,
+      payDay1: payDay1 !== '' ? Number(payDay1) : null,
+      payDay2: payFrequency === 'semi_monthly' && payDay2 !== '' ? Number(payDay2) : null,
       taxProfile: {
         filingStatus,
         state: taxState || null,
@@ -1098,6 +1105,84 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
               </div>
             )}
           </>
+        )}
+      </div>
+
+      {/* Section: Pay Schedule */}
+      <div style={{ ...card, marginTop: 16 }}>
+        <div style={cardTitle}>PAY SCHEDULE</div>
+        <div style={{ fontSize: 12, color: 'var(--tx-3)', marginBottom: 14, lineHeight: 1.5 }}>
+          Used by the Pay Period Planner to split bills into the right semi-monthly windows.
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', letterSpacing: '0.06em', marginBottom: 6 }}>
+            PAY FREQUENCY
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[
+              { id: 'semi_monthly', label: 'Semi-Monthly' },
+              { id: 'biweekly',     label: 'Bi-Weekly' },
+              { id: 'monthly',      label: 'Monthly' },
+            ].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setPayFrequency(opt.id)}
+                style={{
+                  flex: 1, padding: '8px 0', borderRadius: 7, cursor: 'pointer', fontSize: 11,
+                  fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em',
+                  background: payFrequency === opt.id ? 'var(--accent)' : 'var(--bg-app)',
+                  color: payFrequency === opt.id ? 'var(--accent-tx-on, #fff)' : 'var(--tx-2)',
+                  border: payFrequency === opt.id ? '1px solid var(--accent)' : '1px solid var(--bd)',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {payFrequency && (
+          <div style={{ display: 'grid', gridTemplateColumns: payFrequency === 'semi_monthly' ? '1fr 1fr' : '1fr', gap: 10 }}>
+            <div>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', letterSpacing: '0.06em', marginBottom: 6 }}>
+                {payFrequency === 'semi_monthly' ? 'FIRST PAY DAY' : payFrequency === 'biweekly' ? 'NEXT PAY DATE (DAY OF MONTH)' : 'PAY DAY OF MONTH'}
+              </div>
+              <input
+                type="number" min="1" max="31"
+                value={payDay1}
+                onChange={e => setPayDay1(e.target.value)}
+                placeholder="e.g. 5"
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                  borderRadius: 7, padding: '9px 11px',
+                  color: 'var(--tx-1)', fontSize: 13,
+                  fontFamily: "'DM Mono', monospace", outline: 'none',
+                }}
+              />
+            </div>
+            {payFrequency === 'semi_monthly' && (
+              <div>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', letterSpacing: '0.06em', marginBottom: 6 }}>
+                  SECOND PAY DAY
+                </div>
+                <input
+                  type="number" min="1" max="31"
+                  value={payDay2}
+                  onChange={e => setPayDay2(e.target.value)}
+                  placeholder="e.g. 20"
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                    borderRadius: 7, padding: '9px 11px',
+                    color: 'var(--tx-1)', fontSize: 13,
+                    fontFamily: "'DM Mono', monospace", outline: 'none',
+                  }}
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
       </div>{/* ───────── end INCOME & GOALS TAB ───────── */}

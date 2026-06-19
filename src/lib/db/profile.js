@@ -35,6 +35,9 @@ export async function saveProfile(userId, profile) {
       benefits_pct: profile.benefitsPct ?? null,
       four01k_pct: profile.four01kPct ?? null,
       four01k_on_bonus: profile.four01kOnBonus ?? false,
+      pay_frequency: profile.payFrequency ?? null,
+      pay_day_1: profile.payDay1 ?? null,
+      pay_day_2: profile.payDay2 ?? null,
       updated_at: new Date().toISOString(),
     })
     .select()
