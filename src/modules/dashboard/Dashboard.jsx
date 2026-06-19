@@ -433,6 +433,134 @@ function SgLegend({ color, label }) {
   )
 }
 
+// ── Spend vs. Budget widget ──────────────────────────────────────────────────
+
+function BvaWidget({ bva, rr }) {
+  const [projHovered, setProjHovered] = useState(false)
+
+  if (!bva.hasBudget) {
+    return <Empty text="No budget yet. Generate one in the Budget Builder to track plan vs. actual." />
+  }
+
+  const pct = bva.pct
+  const over  = pct != null && pct > 110
+  const under = pct != null && pct < 90
+  const mainColor   = over ? 'var(--tx-1)' : 'var(--accent)'
+  const statusColor = over ? 'var(--warn)' : under ? 'var(--accent)' : 'var(--green)'
+  const statusText  = over
+    ? `${Math.round(pct - 100)}% above plan`
+    : under
+    ? `${Math.round(100 - pct)}% below plan`
+    : 'On track with annual budget'
+
+  return (
+    <div style={{ overflow: 'visible' }}>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
+        OF ANNUAL BUDGET
+      </div>
+      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, color: mainColor, lineHeight: 1 }}>
+        {pct != null ? Math.round(pct) + '%' : '—'}
+      </div>
+      {pct != null && (
+        <div style={{ marginTop: 6, fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: statusColor }}>
+          {statusText}
+        </div>
+      )}
+
+      <IveDivider />
+
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+        <div
+          style={{ flex: 1, position: 'relative' }}
+          onMouseEnter={() => setProjHovered(true)}
+          onMouseLeave={() => setProjHovered(false)}
+        >
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 5 }}>
+            PROJECTED
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, color: 'var(--tx-1)', cursor: 'default' }}>
+            {fmtK(bva.projected)}
+          </div>
+          <IveTooltip visible={projHovered}>
+            <TooltipHeader text="FULL YEAR BREAKDOWN" />
+            <TooltipRow label="Actual (YTD)" value={fmtK(rr.actualToDate)} />
+            <TooltipRow label="Forecast (rest)" value={fmtK(rr.forecastRemaining)} />
+            <TooltipRow label="Projected total" value={fmtK(bva.projected)} border />
+          </IveTooltip>
+        </div>
+        <div style={{ width: 1, background: 'var(--accent-bd)', margin: '0 14px', alignSelf: 'stretch', minHeight: 36 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 5 }}>
+            BUDGET
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, color: 'var(--bar-budget-tx)' }}>
+            {fmtK(bva.planned)}
+          </div>
+        </div>
+      </div>
+
+      {pct != null && (
+        <>
+          <IveDivider />
+          <div style={{ height: 4, background: 'var(--bd-light)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{
+              width: `${Math.min(pct, 100)}%`, height: '100%',
+              background: statusColor, borderRadius: 3, transition: 'width 0.3s ease',
+            }} />
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-4)', marginTop: 4 }}>
+            {Math.min(Math.round(pct), 100)}% of budget utilized
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Year-End Projection widget ────────────────────────────────────────────────
+
+function YearEndWidget({ rr }) {
+  if (!rr.hasActuals) {
+    return <Empty text="Import transactions to see your year-end projection." />
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
+        FULL YEAR · ACT+FCST
+      </div>
+      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, color: 'var(--accent)', lineHeight: 1 }}>
+        {fmtK(rr.projectedTotal)}
+      </div>
+
+      <IveDivider />
+
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 10 }}>
+        BREAKDOWN
+      </div>
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--tx-1)', lineHeight: 1 }}>
+            {fmtK(rr.actualToDate)}
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 4 }}>
+            ACTUAL YTD
+          </div>
+        </div>
+        <div style={{ width: 1, background: 'var(--accent-bd)', margin: '0 10px', alignSelf: 'stretch', minHeight: 24 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--forecast-bd)', lineHeight: 1 }}>
+            {fmtK(rr.forecastRemaining)}
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 4 }}>
+            FORECAST LEFT · {rr.daysLeft}D
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Scenario Plan widget ─────────────────────────────────────────────────────
 
 function ScenarioPlanWidget({ si }) {
@@ -524,47 +652,13 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = []) {
       id: 'budget',
       title: 'Spend vs. Budget',
       subtitle: 'Full-year actual + forecast vs. annual plan',
-      render: () => bva.hasBudget ? (() => {
-        const pct = bva.pct
-        const over = pct != null && pct > 105
-        const under = pct != null && pct < 90
-        return (
-          <>
-            <Stat
-              value={pct != null ? Math.round(pct) + '%' : '—'}
-              label="OF ANNUAL BUDGET"
-              accent={!over}
-            />
-            <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
-              <MiniStat value={fmtK(bva.projected)} label="projected" />
-              <MiniStat value={fmtK(bva.planned)} label="budget" />
-            </div>
-            {pct != null && (
-              <div style={{ marginTop: 8, fontSize: 11, color: over ? 'var(--warn)' : under ? 'var(--accent)' : 'var(--tx-3)' }}>
-                {over
-                  ? `${Math.round(pct - 100)}% above plan, full-year projected`
-                  : under
-                    ? `${Math.round(100 - pct)}% below plan, full-year projected`
-                    : 'On track with annual budget'}
-              </div>
-            )}
-          </>
-        )
-      })() : <Empty text="No budget yet. Generate one in the Budget Builder to track plan vs. actual." />,
+      render: () => <BvaWidget bva={bva} rr={rr} />,
     },
     {
       id: 'runrate',
       title: 'Year-End Projection',
       subtitle: 'Actuals so far + forecast through Dec 31',
-      render: () => summary.transactionCount ? (
-        <>
-          <Stat value={fmtK(rr.forecastRemaining)} label={`FORECAST REMAINING · ${rr.daysLeft} DAYS LEFT`} />
-          <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
-            <MiniStat value={fmtK(rr.projectedTotal)} label="full-year projected" />
-            <MiniStat value={fmtK(rr.actualToDate)} label="actual YTD" />
-          </div>
-        </>
-      ) : <Empty text="Import transactions to see your year-end projection." />,
+      render: () => <YearEndWidget rr={rr} />,
     },
     {
       id: 'commitments',
