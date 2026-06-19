@@ -34,7 +34,7 @@ function LegendDot({ color, dashed, label }) {
   )
 }
 
-export default function BudgetActualsChart({ data, mobile, onThresholdChange }) {
+export default function BudgetActualsChart({ data, mobile, onThresholdChange, onCollapse, isCollapsed }) {
   const [hover, setHover] = useState(null)
 
   const max = useMemo(() => {
@@ -50,7 +50,7 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange }) 
   // No budget yet — show a clear empty state inside the same card frame.
   if (!data.hasBudget) {
     return (
-      <ChartCard data={data} onThresholdChange={onThresholdChange}>
+      <ChartCard data={data} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed}>
         <div style={{
           padding: '40px 8px', textAlign: 'center', color: 'var(--tx-2)',
           fontSize: 13.5, lineHeight: 1.6,
@@ -64,7 +64,7 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange }) 
   }
 
   return (
-    <ChartCard data={data} onThresholdChange={onThresholdChange}>
+    <ChartCard data={data} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed}>
       <div style={{ position: 'relative', marginTop: 8 }}>
         {/* Tooltip */}
         {hover != null && (() => {
@@ -313,15 +313,15 @@ function FullYearPill({ data }) {
   )
 }
 
-function ChartCard({ data, children, onThresholdChange }) {
+function ChartCard({ data, children, onThresholdChange, onCollapse, isCollapsed }) {
   return (
     <div style={{
       border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)',
-      padding: '20px 22px', gridColumn: '1 / -1',
+      padding: isCollapsed ? '13px 22px' : '20px 22px', gridColumn: '1 / -1',
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexWrap: 'wrap', gap: 12, marginBottom: 18,
+        flexWrap: 'wrap', gap: 12, marginBottom: isCollapsed ? 0 : 18,
       }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-1)' }}>
@@ -332,18 +332,29 @@ function ChartCard({ data, children, onThresholdChange }) {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <LegendDot color="var(--bar-budget)" label={data.hasForecastOverrides ? 'Forecast' : 'Budget'} />
-          {onThresholdChange ? (
-            <ThresholdChip varThreshold={data.varThreshold} onThresholdChange={onThresholdChange} />
-          ) : (
-            <LegendDot color="var(--green)" label={`On target ±${data.varThreshold ?? 10}%`} />
+          {!isCollapsed && <>
+            <LegendDot color="var(--bar-budget)" label={data.hasForecastOverrides ? 'Forecast' : 'Budget'} />
+            {onThresholdChange ? (
+              <ThresholdChip varThreshold={data.varThreshold} onThresholdChange={onThresholdChange} />
+            ) : (
+              <LegendDot color="var(--green)" label={`On target ±${data.varThreshold ?? 10}%`} />
+            )}
+            <LegendDot color="var(--red)" label="Over" />
+            <LegendDot dashed label="Forecast" />
+            {data.hasActuals && <FullYearPill data={data} />}
+          </>}
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              title={isCollapsed ? 'Expand' : 'Collapse'}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-4)', fontSize: 13, padding: '0 0 0 4px', lineHeight: 1 }}
+            >
+              {isCollapsed ? '▸' : '▾'}
+            </button>
           )}
-          <LegendDot color="var(--red)" label="Over" />
-          <LegendDot dashed label="Forecast" />
-          {data.hasActuals && <FullYearPill data={data} />}
         </div>
       </div>
-      {children}
+      {!isCollapsed && children}
     </div>
   )
 }

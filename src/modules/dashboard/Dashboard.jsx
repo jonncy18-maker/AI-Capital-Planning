@@ -21,7 +21,7 @@ import { CONTENT_MAX } from '../common/layout.js'
 
 // v3: changes default hidden list; existing users who had v2 get fresh defaults
 const LS_LAYOUT = 'acp.dashboard.layout.v3'
-const DEFAULT_LAYOUT = { order: [], hidden: ['activity'] }
+const DEFAULT_LAYOUT = { order: [], hidden: ['activity'], collapsed: [] }
 
 function fmtMoney(n) { return '$' + Math.round(n || 0).toLocaleString() }
 function fmtK(n) {
@@ -61,14 +61,25 @@ function Empty({ text }) {
 
 // ── Shared full-width card wrapper ───────────────────────────────────────────
 
-function WideCard({ title, subtitle, children }) {
+function WideCard({ title, subtitle, children, onCollapse, isCollapsed }) {
   return (
-    <div style={{ border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)', padding: '20px 22px' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-1)' }}>{title}</span>
-        {subtitle && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: 'var(--tx-3)' }}>{subtitle}</span>}
+    <div style={{ border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)', padding: isCollapsed ? '13px 22px' : '20px 22px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: isCollapsed ? 0 : 18, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-1)' }}>{title}</span>
+          {subtitle && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: 'var(--tx-3)' }}>{subtitle}</span>}
+        </div>
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            title={isCollapsed ? 'Expand' : 'Collapse'}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-4)', fontSize: 13, padding: '0 0 0 4px', lineHeight: 1, flexShrink: 0 }}
+          >
+            {isCollapsed ? '▸' : '▾'}
+          </button>
+        )}
       </div>
-      {children}
+      {!isCollapsed && children}
     </div>
   )
 }
@@ -97,7 +108,7 @@ function IveTooltipRow({ label, value, highlight, border }) {
 
 const IVE_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-function IncomeVsExpensesWidget({ ive, mobile }) {
+function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
   const [hover, setHover] = useState(null)
 
   const hasForecastIncome = !!ive.monthlyIncomeForecast
@@ -122,7 +133,7 @@ function IncomeVsExpensesWidget({ ive, mobile }) {
 
   if (!ive.hasData && !hasForecastIncome) {
     return (
-      <WideCard title="Income vs. Expenses" subtitle="Full year · actuals + forecast">
+      <WideCard title="Income vs. Expenses" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
         <Empty text="Import transactions or set annual income in Settings to see your income vs. expense breakdown." />
       </WideCard>
     )
@@ -136,7 +147,7 @@ function IncomeVsExpensesWidget({ ive, mobile }) {
       : 'On pace to break even this year'
 
   return (
-    <WideCard title="Income vs. Expenses" subtitle="Full year · actuals + forecast">
+    <WideCard title="Income vs. Expenses" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
       {/* ── Chart ── */}
       <div style={{ position: 'relative', marginTop: 4 }}>
         {/* Tooltip */}
@@ -373,13 +384,13 @@ function IveKpi({ label, value, color }) {
 // Full-year actual + forecast (one bar, two tones) vs. the blue budget bar,
 // with per-group data labels on hover.
 
-function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns, mobile }) {
+function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns, mobile, onCollapse, isCollapsed }) {
   const [hover, setHover] = useState(null)
   const [selectedGroup, setSelectedGroup] = useState(null)
 
   if (!sgy.rows.length) {
     return (
-      <WideCard title="Spend by Group" subtitle="Full-year actual + forecast vs. budget">
+      <WideCard title="Spend by Group" subtitle="Full-year actual + forecast vs. budget" onCollapse={onCollapse} isCollapsed={isCollapsed}>
         <Empty text="No budget or spending data for this year yet." />
       </WideCard>
     )
@@ -388,7 +399,7 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns, mobile }) {
   const varRatio = (ctx?.varianceThreshold ?? 10) / 100
   const max = sgy.max
   return (
-    <WideCard title="Spend by Group" subtitle="Full-year actual + forecast vs. budget">
+    <WideCard title="Spend by Group" subtitle="Full-year actual + forecast vs. budget" onCollapse={onCollapse} isCollapsed={isCollapsed}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {sgy.rows.map(r => {
           const over    = r.budget > 0 && r.projected > r.budget * (1 + varRatio)
@@ -728,14 +739,14 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
       title: 'Income vs. Expenses',
       subtitle: 'Year-to-date flow · savings rate',
       fullWidth: true,
-      render: () => <IncomeVsExpensesWidget ive={ive} mobile={mobile} />,
+      render: ({ onCollapse, isCollapsed } = {}) => <IncomeVsExpensesWidget ive={ive} mobile={mobile} onCollapse={onCollapse} isCollapsed={isCollapsed} />,
     },
     {
       id: 'spendGroup',
       title: 'Spend by Group',
       subtitle: 'Full-year actual + forecast vs. budget',
       fullWidth: true,
-      render: () => <SpendByGroupWidget sgy={sgy} ctx={ctx} yearTxns={yearTxns} priorYearTxns={priorYearTxns} mobile={mobile} />,
+      render: ({ onCollapse, isCollapsed } = {}) => <SpendByGroupWidget sgy={sgy} ctx={ctx} yearTxns={yearTxns} priorYearTxns={priorYearTxns} mobile={mobile} onCollapse={onCollapse} isCollapsed={isCollapsed} />,
     },
     {
       id: 'spikes',
@@ -808,7 +819,7 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
 
 // ── AI Briefing widget (spans full width) ────────────────────────────────────
 
-function BriefingWidget({ userId, ctx, briefing, onGenerated }) {
+function BriefingWidget({ userId, ctx, briefing, onGenerated, onCollapse, isCollapsed }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -842,34 +853,47 @@ function BriefingWidget({ userId, ctx, briefing, onGenerated }) {
   }
 
   return (
-    <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 13, background: 'var(--bg-card)', padding: 20, gridColumn: '1 / -1' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+    <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 13, background: 'var(--bg-card)', padding: isCollapsed ? '13px 20px' : 20, gridColumn: '1 / -1' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCollapsed ? 0 : 12, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ color: 'var(--accent)', fontSize: 13 }}>✦</span>
           <div>
             <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>AI Briefing</span>
-            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 1 }}>On-demand narrative of your financial position</div>
+            {!isCollapsed && <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 1 }}>On-demand narrative of your financial position</div>}
           </div>
-          {briefing?.generated_at && (
+          {!isCollapsed && briefing?.generated_at && (
             <span style={{ fontSize: 10.5, color: 'var(--tx-3)' }}>
               · {new Date(briefing.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </span>
           )}
         </div>
-        <button onClick={generate} disabled={loading} style={{
-          padding: '6px 13px', background: briefing ? 'transparent' : 'var(--accent)',
-          color: briefing ? 'var(--accent)' : 'var(--accent-tx-on)',
-          border: briefing ? '1px solid var(--accent-bd)' : 'none', borderRadius: 7,
-          fontSize: 11.5, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1,
-        }}>
-          {loading ? 'Generating…' : briefing ? '↻ Refresh' : 'Generate Briefing'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {!isCollapsed && (
+            <button onClick={generate} disabled={loading} style={{
+              padding: '6px 13px', background: briefing ? 'transparent' : 'var(--accent)',
+              color: briefing ? 'var(--accent)' : 'var(--accent-tx-on)',
+              border: briefing ? '1px solid var(--accent-bd)' : 'none', borderRadius: 7,
+              fontSize: 11.5, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1,
+            }}>
+              {loading ? 'Generating…' : briefing ? '↻ Refresh' : 'Generate Briefing'}
+            </button>
+          )}
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              title={isCollapsed ? 'Expand' : 'Collapse'}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-4)', fontSize: 13, padding: '0 0 0 4px', lineHeight: 1 }}
+            >
+              {isCollapsed ? '▸' : '▾'}
+            </button>
+          )}
+        </div>
       </div>
-      {error && <div style={{ fontSize: 12.5, color: 'var(--warn)', lineHeight: 1.5 }}>{error}</div>}
-      {!error && briefing?.narrative && (
+      {!isCollapsed && error && <div style={{ fontSize: 12.5, color: 'var(--warn)', lineHeight: 1.5 }}>{error}</div>}
+      {!isCollapsed && !error && briefing?.narrative && (
         <div style={{ fontSize: 13.5, color: 'var(--tx-1)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>{briefing.narrative}</div>
       )}
-      {!error && !briefing && !loading && (
+      {!isCollapsed && !error && !briefing && !loading && (
         <Empty text="Generate an on-demand narrative summary of your financial position. Cached after generation to avoid repeat token cost." />
       )}
     </div>
@@ -940,8 +964,8 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   }, [userId])
 
   const blocks = useMemo(() => [
-    { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: () => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} /> },
-    { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: () => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} /> },
+    { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
+    { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
     ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile),
   ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing, onThresholdChange])
 
@@ -983,6 +1007,17 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   const visible = ordered.filter(w => !hidden.has(w.id))
   const optionalBlocks = blocks.filter(b => b.optional)
 
+  const collapsedSet = new Set(layout.collapsed ?? [])
+  const allCollapsed = visible.length > 0 && visible.every(b => collapsedSet.has(b.id))
+
+  function toggleCollapsed(id) {
+    const c = new Set(layout.collapsed ?? [])
+    c.has(id) ? c.delete(id) : c.add(id)
+    persist({ ...layout, collapsed: [...c] })
+  }
+  function collapseAll() { persist({ ...layout, collapsed: visible.map(b => b.id) }) }
+  function expandAll() { persist({ ...layout, collapsed: [] }) }
+
   return (
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       <ModuleHeader
@@ -1000,6 +1035,18 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
               ✓ DONE
             </button>
           ) : (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                onClick={allCollapsed ? expandAll : collapseAll}
+                style={{
+                  background: 'none', border: '1px solid var(--bd)',
+                  borderRadius: 8, padding: '8px 14px', fontFamily: "'DM Mono', monospace",
+                  fontSize: 10, letterSpacing: '0.05em', color: 'var(--tx-2)', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                {allCollapsed ? '▸' : '▾'} {allCollapsed ? 'EXPAND' : 'COLLAPSE'}
+              </button>
             <div ref={menuRef} style={{ position: 'relative' }}>
               <button
                 onClick={() => { setConfigMenu(m => !m); setAddReports(false) }}
@@ -1035,6 +1082,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
                   />
                 </div>
               )}
+            </div>
             </div>
           )
         )}
@@ -1100,6 +1148,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
         {(configure ? ordered : visible).map(b => {
           const isHidden = hidden.has(b.id)
+          const isCollapsed = collapsedSet.has(b.id)
           const dragProps = {
             draggable: configure,
             onDragStart: () => setDragId(b.id),
@@ -1124,7 +1173,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
                     </button>
                   </div>
                 )}
-                {b.render()}
+                {b.render({ onCollapse: () => toggleCollapsed(b.id), isCollapsed })}
               </div>
             )
           }
@@ -1135,24 +1184,35 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
               {...dragProps}
               style={{
                 border: dragId === b.id ? '1px solid var(--accent)' : '1px solid var(--bd)',
-                borderRadius: 13, background: 'var(--bg-card)', padding: 20, minHeight: 128,
+                borderRadius: 13, background: 'var(--bg-card)',
+                padding: isCollapsed ? '13px 20px' : 20,
+                minHeight: isCollapsed ? 0 : 128,
                 cursor: configure ? 'grab' : 'default',
                 opacity: dragId === b.id ? 0.5 : isHidden ? 0.4 : 1,
                 transition: 'border-color .15s, opacity .15s',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: isCollapsed ? 0 : 14 }}>
                 <div>
                   <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>{b.title}</div>
-                  {b.subtitle && <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 2, lineHeight: 1.4 }}>{b.subtitle}</div>}
+                  {!isCollapsed && b.subtitle && <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 2, lineHeight: 1.4 }}>{b.subtitle}</div>}
                 </div>
-                {configure && (
-                  <button onClick={() => toggleHidden(b.id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13, flexShrink: 0, marginLeft: 8 }}>
-                    {isHidden ? '◌' : '⏿'}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0, marginLeft: 8 }}>
+                  {configure && (
+                    <button onClick={() => toggleHidden(b.id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13 }}>
+                      {isHidden ? '◌' : '⏿'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => toggleCollapsed(b.id)}
+                    title={isCollapsed ? 'Expand' : 'Collapse'}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-4)', fontSize: 13, padding: 0, lineHeight: 1 }}
+                  >
+                    {isCollapsed ? '▸' : '▾'}
                   </button>
-                )}
+                </div>
               </div>
-              {b.render()}
+              {!isCollapsed && b.render()}
             </div>
           )
         })}
