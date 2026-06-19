@@ -4,7 +4,7 @@
 
 export const MODULES = [
   { id: 'dashboard',   label: 'Dashboard',             short: 'Dashboard',   icon: '◉', section: 'main' },
-  { id: 'cashflow',    label: 'Cash Flow Timing',      short: 'Cash Flow',   icon: '◷', section: 'modules' },
+  { id: 'payperiods',  label: 'Pay Period Planner',    short: 'Pay Periods', icon: '◫', section: 'modules' },
   { id: 'creditcards', label: 'Credit Cards',           short: 'Credit Cards', icon: '▬', section: 'modules' },
   { id: 'scenarios',   label: 'Scenario Planner',      short: 'Scenarios',   icon: '◑', section: 'modules' },
   { id: 'budget',      label: 'Annual Budget Builder', short: 'Budget',      icon: '▦', section: 'modules' },
