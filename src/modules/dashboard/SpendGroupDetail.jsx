@@ -267,7 +267,7 @@ function CatBar({ row, isYtd, isPriorYear, priorActual, max, isExpanded, onToggl
   let spending, budget, actualColor, delta, deltaPct, priorRefPct
 
   if (isPriorYear) {
-    spending = row.actual
+    spending = row.projected
     const comparison = priorActual || 0
     if (comparison > 0) {
       const ratio = spending / comparison
@@ -289,7 +289,7 @@ function CatBar({ row, isYtd, isPriorYear, priorActual, max, isExpanded, onToggl
   }
 
   const actualPct = max > 0 ? Math.min((row.actual / max) * 100, 100) : 0
-  const forecastPct = !isYtd && !isPriorYear && max > 0
+  const forecastPct = !isYtd && max > 0
     ? Math.min((row.forecast / max) * 100, 100 - actualPct) : 0
   const budgetPct = !isPriorYear && budget > 0 && max > 0
     ? Math.min((budget / max) * 100, 100) : 0
@@ -373,7 +373,7 @@ function CatBar({ row, isYtd, isPriorYear, priorActual, max, isExpanded, onToggl
           </div>
           {isPriorYear ? (
             <>
-              <TRow label="This Year (YTD)" value={fmtMoney(row.actual)} color="var(--tx-1)" />
+              <TRow label="This Year (Act+Fcst)" value={fmtMoney(row.projected)} color="var(--tx-1)" />
               <TRow label="Last Year (Full)" value={fmtMoney(priorActual || 0)} color="var(--tx-3)" border />
               {delta != null && (
                 <TRow
@@ -417,13 +417,13 @@ const SORTS = [
 function sortRows(rows, sortKey, isYtd, isPriorYear, priorActualByCat = {}) {
   const copy = [...rows]
   if (sortKey === 'spend') {
-    copy.sort((a, b) => (isYtd || isPriorYear ? b.actual - a.actual : b.projected - a.projected))
+    copy.sort((a, b) => (isYtd ? b.actual - a.actual : b.projected - a.projected))
   } else if (sortKey === 'variance') {
     if (isPriorYear) {
       const yoy = r => {
         const prior = priorActualByCat[r.category] || 0
-        if (prior === 0) return r.actual > 0 ? Infinity : -Infinity
-        return r.actual / prior - 1
+        if (prior === 0) return r.projected > 0 ? Infinity : -Infinity
+        return r.projected / prior - 1
       }
       copy.sort((a, b) => {
         const ya = yoy(a), yb = yoy(b)
@@ -521,7 +521,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
 
   const displayMax = useMemo(() => {
     if (isPriorYear) {
-      return rows.reduce((m, r) => Math.max(m, r.actual, priorActualByCat[r.category] || 0), 1)
+      return rows.reduce((m, r) => Math.max(m, r.projected, priorActualByCat[r.category] || 0), 1)
     }
     return rows.reduce(
       (m, r) => Math.max(m, isYtd ? Math.max(r.actual, r.ytdBudget) : Math.max(r.projected, r.fullBudget)),
@@ -549,9 +549,9 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
   let totalSpend, totalComparison, totalDelta, totalDeltaPct, totalStatus, comparisonLabel, spendLabel
 
   if (isPriorYear) {
-    totalSpend = totals.actual
+    totalSpend = totals.projected
     totalComparison = priorGroupTotal
-    spendLabel = 'THIS YEAR (YTD)'
+    spendLabel = 'THIS YEAR (ACT+FCST)'
     comparisonLabel = 'LAST YEAR (FULL)'
     if (totalComparison > 0) {
       const ratio = totalSpend / totalComparison
