@@ -446,7 +446,7 @@ function BvaWidget({ bva, rr, varThreshold = 10 }) {
   const pct = bva.pct
   const over  = pct != null && pct > 100 + varThreshold
   const under = pct != null && pct < 100 - varThreshold
-  const mainColor   = over ? 'var(--tx-1)' : 'var(--accent)'
+  const mainColor   = over ? 'var(--warn)' : 'var(--accent)'
   const statusColor = over ? 'var(--warn)' : under ? 'var(--accent)' : 'var(--green)'
   const statusText  = over
     ? `${Math.round(pct - 100)}% above plan`
