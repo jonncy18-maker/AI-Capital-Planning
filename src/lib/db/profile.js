@@ -30,6 +30,11 @@ export async function saveProfile(userId, profile) {
       savings_goal_type: profile.savingsGoalType ?? null,
       tax_profile: profile.taxProfile ?? null,
       variance_threshold: profile.varianceThreshold ?? 10,
+      bonus_month: profile.bonusMonth ?? null,
+      benefits_amount: profile.benefitsAmount ?? null,
+      benefits_pct: profile.benefitsPct ?? null,
+      four01k_pct: profile.four01kPct ?? null,
+      four01k_on_bonus: profile.four01kOnBonus ?? false,
       updated_at: new Date().toISOString(),
     })
     .select()
