@@ -140,8 +140,8 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
         return (
           <Settings
             profile={profile}
-            onSave={onProfileSave}
-            onBack={() => setActiveModule('dashboard')}
+            onSave={async (updated) => { await onProfileSave(updated); reloadAiContext() }}
+            onBack={() => selectModule('dashboard')}
             onImport={onStartReImport}
             userId={user.id}
             context={aiContext}
