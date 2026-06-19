@@ -29,6 +29,12 @@ function fmtK(n) {
   if (abs >= 1000) return '$' + Math.round(n / 1000) + 'k'
   return '$' + Math.round(n || 0)
 }
+function fmtK1(n) {
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) return '$' + (n / 1_000_000).toFixed(1) + 'M'
+  if (abs >= 1000) return '$' + (n / 1000).toFixed(1) + 'k'
+  return '$' + Math.round(n || 0)
+}
 
 // ── widget primitives ────────────────────────────────────────────────────────
 
@@ -240,6 +246,38 @@ function IncomeVsExpensesWidget({ ive }) {
         net={ive.ytdNet}
         hasIncome={hasIncome}
       />
+
+      <IveDivider />
+
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
+        PACE · AT CURRENT RATE
+      </div>
+      <div style={{
+        fontFamily: "'DM Mono', monospace",
+        fontSize: 11,
+        color: ive.fullYearNet > 0 ? 'var(--accent)' : 'var(--warn)',
+        lineHeight: 1.4,
+        marginBottom: hasIncome ? 10 : 0,
+      }}>
+        {ive.fullYearNet > 0
+          ? `On pace to save ${fmtK(ive.fullYearNet)} this year`
+          : ive.fullYearNet < 0
+            ? `On pace for a ${fmtK(Math.abs(ive.fullYearNet))} deficit this year`
+            : 'On pace to break even this year'}
+      </div>
+      {hasIncome && ive.avgMonthlyIncome > 0 && (
+        <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--tx-1)', lineHeight: 1 }}>{fmtK1(ive.avgMonthlyExpenses)}</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 4 }}>AVG/MO SPEND</div>
+          </div>
+          <div style={{ width: 1, background: 'var(--accent-bd)', margin: '0 10px', alignSelf: 'stretch', minHeight: 24 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--tx-1)', lineHeight: 1 }}>{fmtK1(ive.avgMonthlyIncome)}</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 4 }}>AVG/MO EARN</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

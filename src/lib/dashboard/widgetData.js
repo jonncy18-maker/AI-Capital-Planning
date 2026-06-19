@@ -378,12 +378,16 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
   const fullYearNet = fullYearIncome - fullYearExpenses
   const fullYearSavingsRate = fullYearIncome > 0 ? (fullYearNet / fullYearIncome) * 100 : null
 
+  const avgMonthlyExpenses = currentMonth > 0 ? ytdExpenses / currentMonth : ytdExpenses
+
   return {
     hasData: ytd.length > 0,
     ytdIncome,
     ytdExpenses,
     ytdNet,
     savingsRate,
+    avgMonthlyIncome,
+    avgMonthlyExpenses,
     fullYearIncome,
     fullYearExpenses,
     fullYearActualExpenses,
