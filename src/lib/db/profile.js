@@ -23,6 +23,11 @@ export async function saveProfile(userId, profile) {
       period_default: profile.periodDefault ?? null,
       data_path: profile.dataPath ?? null,
       onboarding_complete: profile.onboardingComplete ?? false,
+      annual_income: profile.annualIncome ?? null,
+      annual_bonus: profile.annualBonus ?? null,
+      savings_goal_amount: profile.savingsGoalAmount ?? null,
+      savings_goal_pct: profile.savingsGoalPct ?? null,
+      savings_goal_type: profile.savingsGoalType ?? null,
       updated_at: new Date().toISOString(),
     })
     .select()
