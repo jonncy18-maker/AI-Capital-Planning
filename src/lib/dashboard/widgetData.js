@@ -255,7 +255,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     ytdActual += mo.actual
   }
   const ytdPct = ytdForecast > 0 ? (ytdActual / ytdForecast) * 100 : null
-  const onTrack = ytdPct == null ? true : ytdPct <= 105
+  const onTrack = ytdPct == null ? true : ytdPct <= 110
 
   return {
     year,
