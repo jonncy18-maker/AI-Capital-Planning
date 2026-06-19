@@ -15,6 +15,7 @@ import { getTransactionsByMonth } from '../../lib/db/transactions.js'
 import { sendAIMessage } from '../../lib/ai/sendMessage.js'
 import { summarizeContext } from '../../lib/ai/contextLoader.js'
 import BudgetActualsChart from './BudgetActualsChart.jsx'
+import SpendGroupDetail from './SpendGroupDetail.jsx'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
 
@@ -317,8 +318,9 @@ function IncomeVsExpensesWidget({ ive }) {
 // Full-year actual + forecast (one bar, two tones) vs. the blue budget bar,
 // with per-group data labels on hover.
 
-function SpendByGroupWidget({ sgy }) {
+function SpendByGroupWidget({ sgy, ctx, yearTxns }) {
   const [hover, setHover] = useState(null)
+  const [selectedGroup, setSelectedGroup] = useState(null)
 
   if (!sgy.rows.length) {
     return <Empty text="No budget or spending data for this year yet." />
@@ -326,70 +328,89 @@ function SpendByGroupWidget({ sgy }) {
 
   const max = sgy.max
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 2 }}>
-      {sgy.rows.map(r => {
-        const over = r.budget > 0 && r.projected > r.budget * 1.1
-        const isHover = hover === r.group
-        const actualW = (r.actual / max) * 100
-        const forecastW = (r.forecast / max) * 100
-        const budgetW = (r.budget / max) * 100
-        return (
-          <div
-            key={r.group}
-            onMouseEnter={() => setHover(r.group)}
-            onMouseLeave={() => setHover(null)}
-            style={{ position: 'relative', cursor: 'default' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
-              <span style={{ color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{r.group}</span>
-              <span style={{ color: over ? 'var(--warn)' : 'var(--tx-1)', fontVariantNumeric: 'tabular-nums' }}>
-                {fmtK(r.projected)}{r.budget > 0 ? ` / ${fmtK(r.budget)}` : ''}
-              </span>
-            </div>
-            {/* Actual + forecast — one bar, two tones */}
-            <div style={{ display: 'flex', height: 6, background: 'var(--bd-light)', borderRadius: 3, overflow: 'hidden', marginBottom: 2 }}>
-              <div style={{ width: `${actualW}%`, height: '100%', background: over ? 'var(--warn)' : 'var(--accent)' }} />
-              <div style={{ width: `${forecastW}%`, height: '100%', background: over ? 'var(--warn-bg)' : 'var(--accent-bd)' }} />
-            </div>
-            {/* Budget reference bar */}
-            {r.budget > 0 && (
-              <div style={{ height: 3, background: 'var(--bd-light)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ width: `${budgetW}%`, height: '100%', background: 'var(--bar-budget)', borderRadius: 2 }} />
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 2 }}>
+        {sgy.rows.map(r => {
+          const over    = r.budget > 0 && r.projected > r.budget * 1.1
+          const under   = r.budget > 0 && r.projected < r.budget * 0.9
+          const onTrack = r.budget > 0 && !over && !under
+          const actualColor = over ? 'var(--warn)' : onTrack ? 'var(--green)' : 'var(--accent)'
+          const isHover = hover === r.group
+          const actualW  = (r.actual   / max) * 100
+          const forecastW = (r.forecast / max) * 100
+          const budgetW  = (r.budget   / max) * 100
+          return (
+            <div
+              key={r.group}
+              onMouseEnter={() => setHover(r.group)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => setSelectedGroup(r.group)}
+              style={{ position: 'relative', cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
+                <span style={{ color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{r.group}</span>
+                <span style={{ color: actualColor, fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtK(r.projected)}{r.budget > 0 ? ` / ${fmtK(r.budget)}` : ''}
+                </span>
               </div>
-            )}
-            {/* Hover data labels */}
-            {isHover && (
-              <div style={{
-                position: 'absolute', top: -8, right: 0, transform: 'translateY(-100%)',
-                zIndex: 6, background: 'var(--bg-app)', border: '1px solid var(--bd)',
-                borderRadius: 9, padding: '9px 12px', minWidth: 178,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none',
-              }}>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.07em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 7 }}>
-                  {r.group}
+              {/* Actual + forecast — one bar, two tones */}
+              <div style={{ display: 'flex', height: 6, background: 'var(--bd-light)', borderRadius: 3, overflow: 'hidden', marginBottom: 2 }}>
+                <div style={{ width: `${actualW}%`, height: '100%', background: actualColor }} />
+                <div style={{ width: `${forecastW}%`, height: '100%', background: 'var(--forecast-bd)' }} />
+              </div>
+              {/* Budget reference bar */}
+              {r.budget > 0 && (
+                <div style={{ height: 3, background: 'var(--bd-light)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ width: `${budgetW}%`, height: '100%', background: 'var(--bar-budget)', borderRadius: 2 }} />
                 </div>
-                <SgRow label="Actual (YTD)" value={fmtMoney(r.actual)} color="var(--tx-1)" />
-                <SgRow label="Forecast (rest)" value={fmtMoney(r.forecast)} color="var(--tx-2)" />
-                <SgRow label="Actual + Forecast" value={fmtMoney(r.projected)} color={over ? 'var(--warn)' : 'var(--accent)'} bold />
-                <SgRow label="Budget" value={r.budget > 0 ? fmtMoney(r.budget) : '—'} color="var(--bar-budget-tx)" />
-                {r.budget > 0 && (
-                  <SgRow
-                    label="vs. budget"
-                    value={`${r.projected - r.budget > 0 ? '+' : ''}${fmtMoney(r.projected - r.budget)}`}
-                    color={over ? 'var(--warn)' : 'var(--accent)'}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-      <div style={{ display: 'flex', gap: 14, fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em', flexWrap: 'wrap' }}>
-        <SgLegend color="var(--accent)" label="actual" />
-        <SgLegend color="var(--accent-bd)" label="forecast" />
-        <SgLegend color="var(--bar-budget)" label="budget" />
+              )}
+              {/* Hover data labels */}
+              {isHover && (
+                <div style={{
+                  position: 'absolute', top: -8, right: 0, transform: 'translateY(-100%)',
+                  zIndex: 6, background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                  borderRadius: 9, padding: '9px 12px', minWidth: 178,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none',
+                }}>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.07em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 7 }}>
+                    {r.group}
+                  </div>
+                  <SgRow label="Actual (YTD)"      value={fmtMoney(r.actual)}    color="var(--tx-1)" />
+                  <SgRow label="Forecast (rest)"    value={fmtMoney(r.forecast)}  color="var(--forecast-bd)" />
+                  <SgRow label="Actual + Forecast"  value={fmtMoney(r.projected)} color={actualColor} bold />
+                  <SgRow label="Budget"             value={r.budget > 0 ? fmtMoney(r.budget) : '—'} color="var(--bar-budget-tx)" />
+                  {r.budget > 0 && (
+                    <SgRow
+                      label="vs. budget"
+                      value={`${r.projected - r.budget > 0 ? '+' : ''}${fmtMoney(r.projected - r.budget)}`}
+                      color={over ? 'var(--warn)' : 'var(--accent)'}
+                    />
+                  )}
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-3)', marginTop: 8, borderTop: '1px solid var(--bd)', paddingTop: 6 }}>
+                    Click to explore categories →
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        <div style={{ display: 'flex', gap: 14, fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em', flexWrap: 'wrap' }}>
+          <SgLegend color="var(--green)"       label="on track" />
+          <SgLegend color="var(--accent)"      label="under budget" />
+          <SgLegend color="var(--warn)"        label="over budget" />
+          <SgLegend color="var(--forecast-bd)" label="forecast" />
+          <SgLegend color="var(--bar-budget)"  label="budget" />
+        </div>
       </div>
-    </div>
+      {selectedGroup && (
+        <SpendGroupDetail
+          group={selectedGroup}
+          ctx={ctx}
+          yearTxns={yearTxns}
+          onClose={() => setSelectedGroup(null)}
+        />
+      )}
+    </>
   )
 }
 
@@ -485,7 +506,7 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = []) {
       id: 'spendGroup',
       title: 'Spend by Group',
       subtitle: 'Full-year actual + forecast vs. budget',
-      render: () => <SpendByGroupWidget sgy={sgy} />,
+      render: () => <SpendByGroupWidget sgy={sgy} ctx={ctx} yearTxns={yearTxns} />,
     },
     {
       id: 'spikes',
