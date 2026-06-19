@@ -48,6 +48,9 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
   // Bumped whenever the AI writes data (e.g. creates a scenario) so dependent
   // modules reload without a manual refresh.
   const [dataNonce, setDataNonce] = useState(0)
+  // When the user clicks "Open →" on an AI-created scenario card, we store the
+  // ID here so the Scenarios module can auto-select it on mount/change.
+  const [openScenarioId, setOpenScenarioId] = useState(null)
 
   const reloadAiContext = useCallback(() => {
     if (!user) return
@@ -122,7 +125,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
           />
         )
       case 'cashflow':    return <CashFlow userId={user.id} mobile={mobile} />
-      case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} reloadSignal={dataNonce} context={aiContext} onDataChange={() => { setDataNonce(n => n + 1); reloadAiContext() }} />
+      case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} reloadSignal={dataNonce} context={aiContext} onDataChange={() => { setDataNonce(n => n + 1); reloadAiContext() }} openScenarioId={openScenarioId} />
       case 'budget':      return <Budget userId={user.id} mobile={mobile} />
       case 'commitments': return <Commitments userId={user.id} mobile={mobile} />
       case 'wealth':      return <Wealth userId={user.id} mobile={mobile} />
@@ -239,7 +242,10 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
                     <ConversationCard
                       messages={conversation}
                       onClear={() => setConversation([])}
-                      onViewScenarios={() => selectModule('scenarios')}
+                      onViewScenarios={(scenarioId) => {
+                        setOpenScenarioId(scenarioId ?? null)
+                        selectModule('scenarios')
+                      }}
                     />
                   )}
                   {renderModule()}
@@ -356,7 +362,7 @@ function Turn({ message, onViewScenarios }) {
                     {c.adjustmentCount} adjustment{c.adjustmentCount === 1 ? '' : 's'} · net {c.netDelta >= 0 ? '+' : '−'}${Math.abs(Math.round(c.netDelta)).toLocaleString()}
                   </div>
                 </div>
-                <button onClick={onViewScenarios} style={{
+                <button onClick={() => onViewScenarios(c.scenarioId)} style={{
                   flexShrink: 0, background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none',
                   borderRadius: 7, padding: '6px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
                 }}>
