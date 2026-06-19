@@ -4,6 +4,7 @@ import { getCommitments } from '../db/commitments.js'
 import { getScenarios, getAdjustments } from '../db/scenarios.js'
 import { getLatestWealthSnapshot } from '../db/wealthSnapshots.js'
 import { getBudgetLineItems, getBudgetYears } from '../db/budgetLineItems.js'
+import { getForecastOverrides } from '../db/forecastOverrides.js'
 
 // Loads the structured financial brief the AI reasons against at session start.
 // Mirrors ARCHITECTURE §5.2 (AI Context Strategy): last 90 days of transactions
@@ -23,8 +24,9 @@ export async function loadAIContext(userId) {
       getBudgetYears(userId).catch(() => []),
     ])
 
-  const [budgetLineItems, scenariosWithAdjs] = await Promise.all([
+  const [budgetLineItems, forecastOverrides, scenariosWithAdjs] = await Promise.all([
     getBudgetLineItems(userId, { year: thisYear }).catch(() => []),
+    getForecastOverrides(userId, thisYear).catch(() => []),
     // Load adjustments for all open scenarios (modeled + committed)
     Promise.all(
       scenarios.map(async s => {
@@ -47,6 +49,7 @@ export async function loadAIContext(userId) {
     wealth,
     scenarios: scenariosWithAdjs,
     budgetLineItems,
+    forecastOverrides,
     budgetYears,
     thisYear,
     loadedAt: new Date().toISOString(),
