@@ -820,7 +820,7 @@ function AiScenarioComposer({ userId, context, onCreated, mobile }) {
   )
 }
 
-export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange }) {
+export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange, openScenarioId }) {
   const [scenarios, setScenarios] = useState([])
   const [adjustments, setAdjustments] = useState({}) // { [scenarioId]: adj[] }
   const [adjLoading, setAdjLoading] = useState({})  // { [scenarioId]: bool }
@@ -860,6 +860,14 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     getScenarios(userId).then(setScenarios).catch(() => {})
     getBudgetCategories(userId).then(setCategories).catch(() => {})
   }, [reloadSignal]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When the user clicks "Open →" on an AI result card, auto-select that scenario.
+  useEffect(() => {
+    if (!openScenarioId) return
+    setSelectedId(openScenarioId)
+    setViewMode('scenario')
+    loadAdjustments(openScenarioId)
+  }, [openScenarioId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // After the in-module AI composer builds a scenario, refresh and open it.
   async function handleAiCreated(created) {
