@@ -779,7 +779,7 @@ function BriefingWidget({ userId, ctx, briefing, onGenerated }) {
 
 // ── Main dashboard ───────────────────────────────────────────────────────────
 
-export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [] }) {
+export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [], onThresholdChange }) {
   const [briefing, setBriefing] = useState(null)
   const [configure, setConfigure] = useState(false)
   const [configMenu, setConfigMenu] = useState(false)
@@ -841,10 +841,10 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   }, [userId])
 
   const blocks = useMemo(() => [
-    { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: () => <BudgetActualsChart data={monthly} mobile={mobile} /> },
+    { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: () => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} /> },
     { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: () => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} /> },
     ...buildWidgets(context, summary, yearTxns, priorYearTxns),
-  ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing])
+  ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing, onThresholdChange])
 
   const ordered = useMemo(() => {
     const byId = Object.fromEntries(blocks.map(b => [b.id, b]))

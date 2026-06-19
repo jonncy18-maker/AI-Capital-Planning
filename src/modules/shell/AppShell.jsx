@@ -127,6 +127,10 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
             userId={user.id}
             periodOptions={profile?.period_options ?? []}
             periodDefault={profile?.period_default ?? null}
+            onThresholdChange={async (val) => {
+              await onProfileSave({ ...(profile || {}), varianceThreshold: val })
+              reloadAiContext()
+            }}
           />
         )
       case 'cashflow':    return <CashFlow userId={user.id} mobile={mobile} />

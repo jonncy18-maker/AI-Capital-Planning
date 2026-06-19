@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 
 // Monthly Budget vs Actuals — the dashboard centerpiece. Past months render the
 // real actual bar (green on-target / red over / teal under) next to the planned
@@ -34,7 +34,7 @@ function LegendDot({ color, dashed, label }) {
   )
 }
 
-export default function BudgetActualsChart({ data, mobile }) {
+export default function BudgetActualsChart({ data, mobile, onThresholdChange }) {
   const [hover, setHover] = useState(null)
 
   const max = useMemo(() => {
@@ -50,7 +50,7 @@ export default function BudgetActualsChart({ data, mobile }) {
   // No budget yet — show a clear empty state inside the same card frame.
   if (!data.hasBudget) {
     return (
-      <ChartCard data={data}>
+      <ChartCard data={data} onThresholdChange={onThresholdChange}>
         <div style={{
           padding: '40px 8px', textAlign: 'center', color: 'var(--tx-2)',
           fontSize: 13.5, lineHeight: 1.6,
@@ -64,7 +64,7 @@ export default function BudgetActualsChart({ data, mobile }) {
   }
 
   return (
-    <ChartCard data={data}>
+    <ChartCard data={data} onThresholdChange={onThresholdChange}>
       <div style={{ position: 'relative', marginTop: 8 }}>
         {/* Tooltip */}
         {hover != null && (() => {
@@ -189,7 +189,86 @@ function Row({ label, value, color }) {
   )
 }
 
-function ChartCard({ data, children }) {
+function ThresholdChip({ varThreshold, onThresholdChange }) {
+  const [open, setOpen] = useState(false)
+  const [local, setLocal] = useState(varThreshold ?? 10)
+  const ref = useRef(null)
+
+  useEffect(() => { setLocal(varThreshold ?? 10) }, [varThreshold])
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '3px 9px', borderRadius: 6, cursor: 'pointer',
+          background: open ? 'var(--accent-bg)' : 'transparent',
+          border: `1px solid ${open ? 'var(--accent-bd)' : 'var(--bd)'}`,
+        }}
+      >
+        <span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--green)', display: 'inline-block', flexShrink: 0 }} />
+        <span style={{
+          fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.05em',
+          color: open ? 'var(--accent)' : 'var(--tx-3)', textTransform: 'uppercase',
+        }}>
+          On target ±{local}%
+        </span>
+        <span style={{ fontSize: 7, color: open ? 'var(--accent)' : 'var(--tx-4)' }}>▾</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+          background: 'var(--bg-app)', border: '1px solid var(--bd)',
+          borderRadius: 10, padding: '14px 16px', width: 228, zIndex: 40,
+          boxShadow: '0 8px 28px rgba(0,0,0,0.4)',
+        }}>
+          <div style={{
+            fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-3)',
+            letterSpacing: '0.06em', marginBottom: 10,
+          }}>
+            VARIANCE THRESHOLD
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <input
+              type="range" min="1" max="25" step="1"
+              value={local}
+              onChange={e => setLocal(Number(e.target.value))}
+              onPointerUp={e => onThresholdChange?.(Number(e.target.value))}
+              style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer' }}
+            />
+            <span style={{
+              fontFamily: "'DM Mono', monospace", fontSize: 17,
+              color: 'var(--accent)', minWidth: 36, textAlign: 'right', lineHeight: 1,
+            }}>
+              ±{local}%
+            </span>
+          </div>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)', marginTop: 5,
+          }}>
+            <span>1% strict</span><span>25% lenient</span>
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-4)', marginTop: 10, lineHeight: 1.5 }}>
+            Also editable in Settings → Planning
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChartCard({ data, children, onThresholdChange }) {
   return (
     <div style={{
       border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)',
@@ -209,7 +288,11 @@ function ChartCard({ data, children }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <LegendDot color="var(--bar-budget)" label={data.hasForecastOverrides ? 'Forecast' : 'Budget'} />
-          <LegendDot color="var(--green)" label={`On target ±${data.varThreshold ?? 10}%`} />
+          {onThresholdChange ? (
+            <ThresholdChip varThreshold={data.varThreshold} onThresholdChange={onThresholdChange} />
+          ) : (
+            <LegendDot color="var(--green)" label={`On target ±${data.varThreshold ?? 10}%`} />
+          )}
           <LegendDot color="var(--red)" label="Over" />
           <LegendDot dashed label="Forecast" />
           {data.hasActuals && (
