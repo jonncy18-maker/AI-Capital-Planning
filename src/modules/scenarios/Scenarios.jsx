@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   getScenarios,
   createScenario,
@@ -12,6 +12,7 @@ import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { runScenarioAgent } from '../../lib/ai/scenarioAgent.js'
 import { headerStyles } from '../common/headerStyles.js'
 import Markdown from '../common/Markdown.jsx'
+import { computeImpactSummary, buildComparisonRows, buildCumulativeTimeline } from '../../lib/scenarios/scenarioUtils.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CUR_YEAR = new Date().getFullYear()
@@ -24,6 +25,91 @@ function fmt(n) {
 
 function fmtFull(n) {
   return (n < 0 ? '-$' : n > 0 ? '+$' : '$') + Math.abs(Math.round(n)).toLocaleString()
+}
+
+function ImpactSummaryStrip({ summary }) {
+  if (!summary || summary.monthCount === 0) return null
+
+  const signedFmt = (n) => {
+    const abs = Math.abs(n)
+    const s = abs >= 1000 ? '$' + (abs / 1000).toFixed(1) + 'k' : '$' + Math.round(abs)
+    return (n < 0 ? '−' : '+') + s
+  }
+
+  const labelStyle = {
+    fontFamily: "'DM Mono', monospace",
+    fontSize: 9,
+    color: 'var(--tx-3)',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    marginBottom: 3,
+  }
+  const valStyle = (color) => ({
+    fontSize: 14,
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
+    color,
+  })
+
+  const deltaColor = (n) => n < 0 ? 'var(--green)' : n > 0 ? 'var(--red)' : 'var(--tx-2)'
+
+  const segments = [
+    {
+      label: 'Monthly avg',
+      value: signedFmt(summary.monthlyAvg),
+      color: deltaColor(summary.monthlyAvg),
+    },
+    {
+      label: 'Annualized',
+      value: signedFmt(summary.annualized),
+      color: deltaColor(summary.annualized),
+    },
+    ...(summary.hasIncome && summary.pctOfIncome != null ? [{
+      label: 'Of monthly income',
+      value: Math.round(summary.pctOfIncome) + '%',
+      color: summary.pctOfIncome > 20 ? 'var(--red)' : summary.pctOfIncome > 10 ? 'var(--warn)' : 'var(--tx-1)',
+      sub: `~${signedFmt(summary.incomeRunRate)}/mo income`,
+    }] : []),
+    ...(summary.hasBudget ? [{
+      label: 'Budget (scenario vs. plan)',
+      value: signedFmt(summary.budgetProjected - summary.budgetPlanned),
+      color: deltaColor(summary.budgetProjected - summary.budgetPlanned),
+      sub: `${signedFmt(summary.budgetPlanned)} → ${signedFmt(summary.budgetProjected)}`,
+    }] : []),
+    {
+      label: 'Horizon',
+      value: summary.horizon,
+      color: 'var(--tx-2)',
+      isText: true,
+    },
+  ]
+
+  return (
+    <div style={{
+      display: 'flex',
+      border: '1px solid var(--bd)',
+      borderRadius: 8,
+      overflow: 'hidden',
+      marginTop: 14,
+      background: 'var(--bg-app)',
+      flexShrink: 0,
+    }}>
+      {segments.map((seg, i) => (
+        <div key={i} style={{
+          flex: 1,
+          padding: '9px 14px',
+          borderRight: i < segments.length - 1 ? '1px solid var(--bd)' : 'none',
+          minWidth: 0,
+        }}>
+          <div style={labelStyle}>{seg.label}</div>
+          <div style={seg.isText ? { fontSize: 12, color: seg.color, fontWeight: 500 } : valStyle(seg.color)}>
+            {seg.value}
+          </div>
+          {seg.sub && <div style={{ fontSize: 9.5, color: 'var(--tx-3)', marginTop: 2 }}>{seg.sub}</div>}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function StateBadge({ state }) {
@@ -404,7 +490,7 @@ function AdjustmentsTable({ adjustments, onDelete, readOnly }) {
   )
 }
 
-function ComparisonView({ adjustments }) {
+function ComparisonView({ adjustments, ctx }) {
   if (!adjustments.length) {
     return (
       <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--tx-3)', fontSize: 13 }}>
@@ -413,75 +499,94 @@ function ComparisonView({ adjustments }) {
     )
   }
 
-  // Group by year → month
-  const byYearMonth = {}
-  for (const adj of adjustments) {
-    const key = `${adj.year}-${String(adj.month).padStart(2, '0')}`
-    if (!byYearMonth[key]) byYearMonth[key] = { year: adj.year, month: adj.month, rows: [] }
-    byYearMonth[key].rows.push(adj)
-  }
+  const periods = buildComparisonRows(adjustments, ctx)
+  const hasBaseline = periods.some(p => p.rows.some(r => r.baseline != null))
 
-  const periods = Object.values(byYearMonth).sort((a, b) => {
-    if (a.year !== b.year) return a.year - b.year
-    return a.month - b.month
-  })
+  const hdrCell = { textAlign: 'right', color: 'var(--tx-3)' }
+  const cols = hasBaseline
+    ? '110px 1fr 90px 90px 90px 90px'
+    : '110px 1fr 100px 100px'
 
   let running = 0
 
   return (
     <div>
+      {/* Header */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: '110px 1fr 100px 100px',
-        gap: '0 12px',
-        padding: '6px 12px',
-        fontSize: 10,
-        fontWeight: 600,
-        color: 'var(--tx-3)',
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
+        display: 'grid', gridTemplateColumns: cols, gap: '0 10px',
+        padding: '6px 12px', fontSize: 10, fontWeight: 600,
+        color: 'var(--tx-3)', letterSpacing: '0.06em', textTransform: 'uppercase',
         borderBottom: '1px solid var(--bd)',
       }}>
         <span>Period</span>
-        <span>Changes</span>
-        <span style={{ textAlign: 'right' }}>Delta</span>
-        <span style={{ textAlign: 'right' }}>Cumulative</span>
+        <span>Line</span>
+        {hasBaseline && <span style={hdrCell}>Baseline</span>}
+        {hasBaseline && <span style={hdrCell}>Scenario</span>}
+        <span style={hdrCell}>Delta</span>
+        <span style={hdrCell}>Cumul.</span>
       </div>
-      {periods.map(({ year, month, rows }) => {
-        const periodDelta = rows.reduce((s, r) => s + Number(r.delta_amount), 0)
+
+      {periods.map(({ year, month, periodLabel, rows, periodDelta, periodBaseline, periodScenario }) => {
         running += periodDelta
         const runSnap = running
+        const deltaColor = (n) => n < 0 ? 'var(--green)' : n > 0 ? 'var(--red)' : 'var(--tx-2)'
+
         return (
           <div key={`${year}-${month}`} style={{ borderBottom: '1px solid var(--bd-light)' }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '110px 1fr 100px 100px',
-              gap: '0 12px',
-              alignItems: 'start',
-              padding: '10px 12px',
-              fontSize: 13,
-            }}>
-              <span style={{ fontWeight: 600, color: 'var(--tx-1)' }}>{MONTHS[month - 1]} {year}</span>
-              <div>
-                {rows.map(r => (
-                  <div key={r.id} style={{ fontSize: 12, color: 'var(--tx-2)', marginBottom: 2 }}>
-                    {r.budget_categories?.category ?? '—'}{r.label ? ` — ${r.label}` : ''}
-                  </div>
-                ))}
-              </div>
-              <span style={{
-                textAlign: 'right',
-                fontWeight: 600,
-                fontVariantNumeric: 'tabular-nums',
-                color: periodDelta < 0 ? 'var(--red)' : 'var(--green)',
+            {/* Detail rows */}
+            {rows.map((r, ri) => (
+              <div key={r.id} style={{
+                display: 'grid', gridTemplateColumns: cols, gap: '0 10px',
+                alignItems: 'center', padding: ri === 0 ? '10px 12px 4px' : '2px 12px',
+                fontSize: 12,
               }}>
+                <span style={{ fontWeight: 600, color: 'var(--tx-1)', fontSize: 13 }}>
+                  {ri === 0 ? periodLabel : ''}
+                </span>
+                <span style={{ color: 'var(--tx-2)' }}>
+                  {r.category}{r.label ? ` — ${r.label}` : ''}
+                </span>
+                {hasBaseline && (
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.baseline != null ? 'var(--tx-2)' : 'var(--tx-3)' }}>
+                    {r.baseline != null ? fmtFull(r.baseline) : '—'}
+                  </span>
+                )}
+                {hasBaseline && (
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.scenario != null ? deltaColor(r.delta) : 'var(--tx-3)', fontWeight: r.scenario != null ? 600 : 400 }}>
+                    {r.scenario != null ? fmtFull(r.scenario) : '—'}
+                  </span>
+                )}
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: deltaColor(r.delta), fontWeight: 600 }}>
+                  {fmtFull(r.delta)}
+                </span>
+                <span />
+              </div>
+            ))}
+
+            {/* Period subtotal */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: cols, gap: '0 10px',
+              alignItems: 'center', padding: '4px 12px 10px',
+              fontSize: 12, borderTop: rows.length > 1 ? '1px dashed var(--bd-light)' : 'none',
+            }}>
+              <span />
+              <span style={{ fontSize: 11, color: 'var(--tx-3)' }}>
+                {rows.length} line{rows.length > 1 ? 's' : ''}
+              </span>
+              {hasBaseline && (
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--tx-2)', fontWeight: 600 }}>
+                  {periodBaseline != null ? fmtFull(periodBaseline) : '—'}
+                </span>
+              )}
+              {hasBaseline && (
+                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: periodScenario != null ? 'var(--tx-1)' : 'var(--tx-3)', fontWeight: 600 }}>
+                  {periodScenario != null ? fmtFull(periodScenario) : '—'}
+                </span>
+              )}
+              <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: deltaColor(periodDelta), fontWeight: 700 }}>
                 {fmtFull(periodDelta)}
               </span>
-              <span style={{
-                textAlign: 'right',
-                fontVariantNumeric: 'tabular-nums',
-                color: runSnap < 0 ? 'var(--red)' : runSnap > 0 ? 'var(--green)' : 'var(--tx-2)',
-              }}>
+              <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: deltaColor(runSnap) }}>
                 {fmtFull(runSnap)}
               </span>
             </div>
@@ -492,10 +597,99 @@ function ComparisonView({ adjustments }) {
   )
 }
 
+function TimelineChart({ adjustments }) {
+  const data = useMemo(() => buildCumulativeTimeline(adjustments), [adjustments])
+
+  if (!data.labels.length) {
+    return (
+      <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--tx-3)', fontSize: 13 }}>
+        No adjustments to chart.
+      </div>
+    )
+  }
+
+  const W = 600, H = 160
+  const padL = 56, padR = 16, padT = 16, padB = 30
+  const drawW = W - padL - padR
+  const drawH = H - padT - padB
+
+  const { labels, values, min, max } = data
+  const range = max - min || 1
+  const n = values.length
+
+  const xPos = (i) => padL + (i / Math.max(n - 1, 1)) * drawW
+  const yPos = (v) => padT + drawH - ((v - min) / range) * drawH
+  const zeroY = yPos(0)
+
+  const linePts = values.map((v, i) => `${xPos(i)},${yPos(v)}`).join(' ')
+  const areaPath = [
+    `M ${xPos(0)} ${zeroY}`,
+    ...values.map((v, i) => `L ${xPos(i)} ${yPos(v)}`),
+    `L ${xPos(n - 1)} ${zeroY}`,
+    'Z',
+  ].join(' ')
+
+  const fmtTick = (n) => {
+    const abs = Math.abs(n)
+    const s = abs >= 1000 ? '$' + Math.round(abs / 1000) + 'k' : '$' + Math.round(abs)
+    return n < 0 ? '−' + s : n > 0 ? '+' + s : s
+  }
+
+  // Only show labels every N steps to avoid crowding
+  const labelEvery = n > 8 ? 3 : n > 4 ? 2 : 1
+
+  const yTicks = [...new Set([min, min < 0 && max > 0 ? 0 : null, max].filter(v => v != null))]
+
+  return (
+    <div style={{ padding: '4px 0' }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ width: '100%', display: 'block', overflow: 'visible' }}
+      >
+        {/* Zero baseline */}
+        {min < 0 && max > 0 && (
+          <line x1={padL} y1={zeroY} x2={W - padR} y2={zeroY}
+            stroke="var(--bd)" strokeWidth={1} strokeDasharray="4 3" />
+        )}
+
+        {/* Filled area */}
+        <path d={areaPath} fill="var(--accent)" opacity={0.1} />
+
+        {/* Line */}
+        <polyline points={linePts} fill="none" stroke="var(--accent)" strokeWidth={2}
+          strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Dots */}
+        {values.map((v, i) => (
+          <circle key={i} cx={xPos(i)} cy={yPos(v)} r={3.5} fill="var(--accent)" />
+        ))}
+
+        {/* X-axis labels */}
+        {labels.map((lbl, i) => i % labelEvery === 0 && (
+          <text key={i} x={xPos(i)} y={H - 4} textAnchor="middle"
+            fontSize={9} fill="var(--tx-3)" fontFamily="'DM Mono', monospace">
+            {lbl}
+          </text>
+        ))}
+
+        {/* Y-axis ticks */}
+        {yTicks.map((tick, i) => (
+          <text key={i} x={padL - 4} y={yPos(tick)} textAnchor="end" dominantBaseline="middle"
+            fontSize={8.5} fill="var(--tx-3)" fontFamily="'DM Mono', monospace">
+            {fmtTick(tick)}
+          </text>
+        ))}
+      </svg>
+    </div>
+  )
+}
+
 function ScenarioDetail({
   scenario,
   adjustments,
   categories,
+  context,
   onPromote,
   onDelete,
   onAddAdj,
@@ -506,6 +700,11 @@ function ScenarioDetail({
   const [showAddForm, setShowAddForm] = useState(false)
   const [promoting, setPromoting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const impactSummary = useMemo(
+    () => computeImpactSummary(adjustments, context),
+    [adjustments, context]
+  )
 
   const isCommitted = scenario.state === 'committed'
 
@@ -621,6 +820,7 @@ function ScenarioDetail({
             Committed {new Date(scenario.committed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
           </div>
         )}
+        {!loading && <ImpactSummaryStrip summary={impactSummary} />}
       </div>
 
       {/* Tabs */}
@@ -629,7 +829,10 @@ function ScenarioDetail({
           Adjustments {adjustments.length > 0 ? `(${adjustments.length})` : ''}
         </button>
         <button style={tabStyle(activeTab === 'comparison')} onClick={() => setActiveTab('comparison')}>
-          Comparison View
+          Baseline View
+        </button>
+        <button style={tabStyle(activeTab === 'timeline')} onClick={() => setActiveTab('timeline')}>
+          Timeline
         </button>
       </div>
 
@@ -684,8 +887,10 @@ function ScenarioDetail({
               </div>
             )}
           </>
+        ) : activeTab === 'timeline' ? (
+          <TimelineChart adjustments={adjustments} />
         ) : (
-          <ComparisonView adjustments={adjustments} />
+          <ComparisonView adjustments={adjustments} ctx={context} />
         )}
       </div>
     </div>
@@ -1127,6 +1332,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                   ? (adjustments[visibleSelected.id] ?? [])
                   : selectedAdjs}
                 categories={categories}
+                context={context}
                 onPromote={handlePromote}
                 onDelete={handleDelete}
                 onAddAdj={handleAddAdj}

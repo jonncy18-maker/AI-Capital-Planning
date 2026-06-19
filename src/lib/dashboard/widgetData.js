@@ -170,4 +170,39 @@ export function wealthSummary(ctx) {
   }
 }
 
+// Scenario impact summary from the loaded context.
+// committed scenarios contribute a measurable plan delta; modeled are tracked separately.
+export function scenarioImpact(ctx) {
+  const scenarios = ctx?.scenarios ?? []
+  if (!scenarios.length) return { hasData: false, committed: [], modeled: [], committedMonthlyNet: 0, committedAnnualNet: 0, hasCommitted: false }
+
+  const committed = scenarios.filter(s => s.state === 'committed')
+  const modeled = scenarios.filter(s => s.state === 'modeled')
+
+  const committedSummaries = committed.map(s => {
+    const adjs = s.adjustments ?? []
+    const netTotal = adjs.reduce((sum, a) => sum + Number(a.delta_amount), 0)
+    const monthCount = new Set(adjs.map(a => `${a.year}-${a.month}`)).size
+    const monthlyAvg = monthCount > 0 ? netTotal / monthCount : 0
+    return { name: s.name, netTotal, monthlyAvg }
+  })
+
+  const modeledSummaries = modeled.map(s => {
+    const adjs = s.adjustments ?? []
+    const netTotal = adjs.reduce((sum, a) => sum + Number(a.delta_amount), 0)
+    return { name: s.name, netTotal }
+  })
+
+  const committedMonthlyNet = committedSummaries.reduce((s, c) => s + c.monthlyAvg, 0)
+
+  return {
+    hasData: true,
+    committed: committedSummaries,
+    modeled: modeledSummaries,
+    committedMonthlyNet,
+    committedAnnualNet: committedMonthlyNet * 12,
+    hasCommitted: committed.length > 0,
+  }
+}
+
 export { MONTHS }
