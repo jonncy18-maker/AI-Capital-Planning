@@ -37,7 +37,9 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
   const mobile = vw < 760
   const tablet = vw >= 760 && vw < 1100
 
-  const [activeModule, setActiveModule] = useState('dashboard')
+  const [activeModule, setActiveModule] = useState(() => {
+    try { return sessionStorage.getItem('acp.activeModule') || 'dashboard' } catch { return 'dashboard' }
+  })
   const [collapsed, setCollapsed] = useState(tablet)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
@@ -108,6 +110,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
 
   function selectModule(id) {
     setActiveModule(id)
+    try { sessionStorage.setItem('acp.activeModule', id) } catch {}
     setDrawerOpen(false)
   }
 

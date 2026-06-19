@@ -147,7 +147,9 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
   const [taxYear, setTaxYear] = useState(CUR_YEAR)
   const [estimate, setEstimate] = useState(null)
   // UI
-  const [tab, setTab] = useState('income')
+  const [tab, setTab] = useState(() => {
+    try { return sessionStorage.getItem('acp.settings.tab') || 'planning' } catch { return 'planning' }
+  })
   const [saved, setSaved] = useState(false)
   const [importHistory, setImportHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -397,7 +399,7 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
         {TABS.map(t => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => { setTab(t.id); try { sessionStorage.setItem('acp.settings.tab', t.id) } catch {} }}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
               padding: '10px 16px', marginBottom: -1,
