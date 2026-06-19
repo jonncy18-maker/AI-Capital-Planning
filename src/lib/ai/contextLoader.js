@@ -5,23 +5,32 @@ import { getScenarios, getAdjustments } from '../db/scenarios.js'
 import { getLatestWealthSnapshot } from '../db/wealthSnapshots.js'
 import { getBudgetLineItems, getBudgetYears } from '../db/budgetLineItems.js'
 import { getForecastOverrides } from '../db/forecastOverrides.js'
+import { getAIPreferences } from '../db/aiPreferences.js'
+import { formatPreferencesForBrief } from './preferences.js'
+
+// How far back the AI's transaction context reaches. A full trailing year
+// captures the user's actual annual cycle (seasonality, annual bills, bonuses)
+// rather than anchoring the AI to an arbitrary rolling quarter.
+const CONTEXT_DAYS = 365
 
 // Loads the structured financial brief the AI reasons against at session start.
-// Mirrors ARCHITECTURE §5.2 (AI Context Strategy): last 90 days of transactions
-// (summary level), budget categories, current-year budget line items, active
-// commitments, latest wealth snapshot, and all open scenarios.
+// Mirrors ARCHITECTURE §5.2 (AI Context Strategy): trailing 12 months of
+// transactions (summary level), budget categories, current-year budget line
+// items, active commitments, latest wealth snapshot, all open scenarios, and the
+// user's AI personalization preferences.
 
 export async function loadAIContext(userId) {
   const thisYear = new Date().getFullYear()
 
-  const [transactions, categories, commitments, wealth, scenarios, budgetYears] =
+  const [transactions, categories, commitments, wealth, scenarios, budgetYears, aiPreferences] =
     await Promise.all([
-      getRecentTransactions(userId, 90).catch(() => []),
+      getRecentTransactions(userId, CONTEXT_DAYS).catch(() => []),
       getBudgetCategories(userId).catch(() => []),
       getCommitments(userId, { status: null }).catch(() => []),
       getLatestWealthSnapshot(userId).catch(() => null),
       getScenarios(userId).catch(() => []),
       getBudgetYears(userId).catch(() => []),
+      getAIPreferences(userId).catch(() => ({ preferences: {}, grill_enabled: false })),
     ])
 
   const [budgetLineItems, forecastOverrides, scenariosWithAdjs] = await Promise.all([
@@ -51,6 +60,8 @@ export async function loadAIContext(userId) {
     budgetLineItems,
     forecastOverrides,
     budgetYears,
+    aiPreferences: aiPreferences?.preferences ?? {},
+    grillEnabled: aiPreferences?.grill_enabled ?? false,
     thisYear,
     loadedAt: new Date().toISOString(),
   }
@@ -59,10 +70,10 @@ export async function loadAIContext(userId) {
 // Lightweight stats for dashboard widgets / UI badges.
 export function summarizeContext(ctx) {
   const txn = ctx?.transactions ?? []
-  const spend90d = txn
+  const spendTrailing = txn
     .filter(t => Number(t.amount) < 0)
     .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0)
-  const income90d = txn
+  const incomeTrailing = txn
     .filter(t => Number(t.amount) > 0)
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
 
@@ -83,8 +94,8 @@ export function summarizeContext(ctx) {
     budgetYears: ctx?.budgetYears ?? [],
     budgetLineItemCount: lineItems.length,
     budgetTotal,
-    spend90d,
-    income90d,
+    spendTrailing,
+    incomeTrailing,
     hasWealth: !!wealth,
     netWorth: wealth ? Number(wealth.net_worth || 0) : null,
   }
@@ -99,9 +110,9 @@ export function buildContextBrief(ctx) {
 
   lines.push('## Financial Context')
   lines.push(
-    `- Transactions (last 90d): ${s.transactionCount} rows, ` +
-    `~$${Math.round(s.spend90d).toLocaleString()} spend, ` +
-    `~$${Math.round(s.income90d).toLocaleString()} income`
+    `- Transactions (trailing 12 months): ${s.transactionCount} rows, ` +
+    `~$${Math.round(s.spendTrailing).toLocaleString()} spend, ` +
+    `~$${Math.round(s.incomeTrailing).toLocaleString()} income`
   )
 
   if (s.categoryCount) {
@@ -156,6 +167,9 @@ export function buildContextBrief(ctx) {
       }
     }
   }
+
+  const prefsBlock = formatPreferencesForBrief(ctx?.aiPreferences)
+  if (prefsBlock) lines.push('\n' + prefsBlock)
 
   return lines.join('\n')
 }
