@@ -452,7 +452,7 @@ function BvaWidget({ bva, rr, varThreshold = 10 }) {
     ? `${Math.round(pct - 100)}% above plan`
     : under
     ? `${Math.round(100 - pct)}% below plan`
-    : 'On track with annual budget'
+    : pct != null ? `On track · ${Math.round(pct)}% of plan` : 'On track with annual budget'
 
   return (
     <div style={{ overflow: 'visible' }}>

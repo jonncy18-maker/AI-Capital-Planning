@@ -258,7 +258,15 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     ytdActual += mo.actual
   }
   const ytdPct = ytdForecast > 0 ? (ytdActual / ytdForecast) * 100 : null
-  const onTrack = ytdPct == null ? true : ytdPct <= 100 + varThreshold
+
+  // Full-year projection: actuals for past/current months + forecast for the rest
+  let fullYearProjected = 0
+  for (const mo of months) {
+    fullYearProjected += mo.actual != null ? mo.actual : (mo.forecast ?? mo.budget)
+  }
+  const annualBudgetTotal = budget.reduce((s, v) => s + v, 0)
+  const fullYearPct = annualBudgetTotal > 0 ? (fullYearProjected / annualBudgetTotal) * 100 : null
+  const onTrack = (fullYearPct ?? ytdPct) == null ? true : (fullYearPct ?? ytdPct) <= 100 + varThreshold
 
   return {
     year,
@@ -273,6 +281,8 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     ytdForecast,
     ytdActual,
     ytdPct,
+    fullYearProjected,
+    fullYearPct,
     onTrack,
     varThreshold,
   }
