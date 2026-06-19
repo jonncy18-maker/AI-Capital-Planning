@@ -420,4 +420,94 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   }
 }
 
+// Category-level breakdown for a single spend group — used by the drill-down modal.
+// Mirrors the logic of spendByGroupYear but scoped to one group and at category granularity.
+export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
+  const lineItems = ctx?.budgetLineItems ?? []
+  const overrides = ctx?.forecastOverrides ?? []
+  const year = ctx?.thisYear ?? new Date().getFullYear()
+  const categories = ctx?.categories ?? []
+  const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
+
+  const now = new Date()
+  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+
+  // category_id (UUID) → category name string
+  const catIdToName = {}
+  for (const c of categories) {
+    if (c.id && c.category) catIdToName[c.id] = c.category
+  }
+
+  // Budget per category per month (only for the target group)
+  const budgetByCatMonth = {}
+  for (const li of lineItems) {
+    const g = li.budget_categories?.group || 'Uncategorized'
+    if (g !== groupName) continue
+    const catName = catIdToName[li.category_id]
+    if (!catName || excluded.has(catName)) continue
+    const m = (li.month ?? 1) - 1
+    if (m < 0 || m > 11) continue
+    if (!budgetByCatMonth[catName]) budgetByCatMonth[catName] = Array(12).fill(0)
+    budgetByCatMonth[catName][m] += Number(li.amount || 0)
+  }
+
+  // Forecast = budget, overridden where a forecastOverride exists for that category+month
+  const forecastByCatMonth = {}
+  for (const cat of Object.keys(budgetByCatMonth)) {
+    forecastByCatMonth[cat] = [...budgetByCatMonth[cat]]
+  }
+  for (const ov of overrides) {
+    const g = ov.budget_categories?.group || 'Uncategorized'
+    if (g !== groupName) continue
+    const catName = catIdToName[ov.category_id]
+    if (!catName || excluded.has(catName)) continue
+    const m = (ov.month ?? 1) - 1
+    if (m < 0 || m > 11) continue
+    if (!forecastByCatMonth[catName]) forecastByCatMonth[catName] = Array(12).fill(0)
+    const budgetContrib = budgetByCatMonth[catName]?.[m] ?? 0
+    forecastByCatMonth[catName][m] = forecastByCatMonth[catName][m] - budgetContrib + Number(ov.amount || 0)
+  }
+
+  // Actual expenses by category from transactions
+  const actualByCatMonth = {}
+  for (const t of yearTxns) {
+    const amt = Number(t.amount) || 0
+    if (amt >= 0) continue
+    if (excluded.has(t.category)) continue
+    if ((t.group || 'Uncategorized') !== groupName) continue
+    const d = new Date(t.date)
+    if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
+    const m = d.getMonth()
+    if (!actualByCatMonth[t.category]) actualByCatMonth[t.category] = Array(12).fill(0)
+    actualByCatMonth[t.category][m] += Math.abs(amt)
+  }
+
+  const allCats = new Set([...Object.keys(budgetByCatMonth), ...Object.keys(actualByCatMonth)])
+
+  const rows = []
+  for (const cat of allCats) {
+    const budgetMonths = budgetByCatMonth[cat] || Array(12).fill(0)
+    const forecastMonths = forecastByCatMonth[cat] || budgetMonths
+    const actualMonths = actualByCatMonth[cat] || Array(12).fill(0)
+    let actual = 0, forecast = 0, fullBudget = 0, ytdBudget = 0
+    for (let m = 0; m < 12; m++) {
+      fullBudget += budgetMonths[m]
+      if (m <= currentMonth) {
+        actual += actualMonths[m]
+        ytdBudget += budgetMonths[m]
+      } else {
+        forecast += forecastMonths[m]
+      }
+    }
+    const projected = actual + forecast
+    if (fullBudget < 1 && projected < 1) continue
+    rows.push({ category: cat, actual, forecast, projected, fullBudget, ytdBudget,
+      monthlyActual: [...actualMonths], monthlyBudget: [...budgetMonths] })
+  }
+
+  rows.sort((a, b) => b.projected - a.projected)
+  const max = rows.reduce((m, r) => Math.max(m, r.projected, r.fullBudget), 0) || 1
+  return { rows, max, currentMonth }
+}
+
 export { MONTHS }
