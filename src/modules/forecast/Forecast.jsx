@@ -5,6 +5,7 @@ import { getTransactionsForYear } from '../../lib/db/transactions.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { getScenarios, getAdjustments } from '../../lib/db/scenarios.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
+import { CONTENT_MAX } from '../common/layout.js'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const CUR_YEAR = new Date().getFullYear()
@@ -493,7 +494,7 @@ export default function Forecast({ userId, mobile }) {
   const pctVariance = annualBudget > 0 ? (variance / annualBudget) * 100 : null
 
   return (
-    <div style={{ maxWidth: 1200 }}>
+    <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       <ModuleHeader
         mobile={mobile}
         icon="⬡"

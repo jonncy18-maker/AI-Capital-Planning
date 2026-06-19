@@ -12,6 +12,7 @@ import {
 } from '../../lib/wealth/projection.js'
 import { commitmentYearSchedule } from '../../lib/commitments/schedule.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
+import { CONTENT_MAX } from '../common/layout.js'
 
 const CUR_YEAR = new Date().getFullYear()
 
@@ -221,7 +222,7 @@ export default function Wealth({ userId, mobile }) {
   const finalBalance = activeSeries[activeSeries.length - 1].balance
 
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       {/* Header */}
       <ModuleHeader
         mobile={mobile}

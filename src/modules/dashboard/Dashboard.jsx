@@ -16,6 +16,7 @@ import { sendAIMessage } from '../../lib/ai/sendMessage.js'
 import { summarizeContext } from '../../lib/ai/contextLoader.js'
 import BudgetActualsChart from './BudgetActualsChart.jsx'
 import ModuleHeader from '../common/ModuleHeader.jsx'
+import { CONTENT_MAX } from '../common/layout.js'
 
 // v3: changes default hidden list; existing users who had v2 get fresh defaults
 const LS_LAYOUT = 'acp.dashboard.layout.v3'
@@ -546,7 +547,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   const optionalBlocks = blocks.filter(b => b.optional)
 
   return (
-    <div style={{ maxWidth: 1120 }}>
+    <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       <ModuleHeader
         mobile={mobile}
         icon="◉"

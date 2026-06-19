@@ -10,6 +10,7 @@ import {
   describeCostStructure,
 } from '../../lib/commitments/schedule.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
+import { CONTENT_MAX } from '../common/layout.js'
 
 const CUR_YEAR = new Date().getFullYear()
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -404,7 +405,7 @@ export default function Commitments({ userId, mobile }) {
     .reduce((s, c) => s + commitmentYearSchedule(c, CUR_YEAR).reduce((a, b) => a + b, 0), 0)
 
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       {/* Header */}
       <ModuleHeader
         mobile={mobile}
