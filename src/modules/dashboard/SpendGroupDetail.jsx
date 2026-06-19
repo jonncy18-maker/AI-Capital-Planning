@@ -374,7 +374,7 @@ function CatBar({ row, isYtd, isPriorYear, priorActual, max, isExpanded, onToggl
           {isPriorYear ? (
             <>
               <TRow label="This Year (YTD)" value={fmtMoney(row.actual)} color="var(--tx-1)" />
-              <TRow label="Last Year (YTD)" value={fmtMoney(priorActual || 0)} color="var(--tx-3)" border />
+              <TRow label="Last Year (Full)" value={fmtMoney(priorActual || 0)} color="var(--tx-3)" border />
               {delta != null && (
                 <TRow
                   label="YoY change"
@@ -497,7 +497,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
     [ctx, yearTxns, group]
   )
 
-  // Prior year YTD actuals by category (same months as current year)
+  // Prior year full-year actuals by category (all 12 months)
   const priorActualByCat = useMemo(() => {
     if (!priorYearTxns?.length) return {}
     const res = {}
@@ -507,11 +507,10 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
       if ((t.group || 'Uncategorized') !== group) continue
       const d = new Date(t.date)
       if (Number.isNaN(d.getTime())) continue
-      if (d.getMonth() > currentMonth) continue
       res[t.category] = (res[t.category] || 0) + Math.abs(amt)
     }
     return res
-  }, [priorYearTxns, group, currentMonth])
+  }, [priorYearTxns, group])
 
   const hasPriorYear = Object.keys(priorActualByCat).length > 0
 
@@ -553,7 +552,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
     totalSpend = totals.actual
     totalComparison = priorGroupTotal
     spendLabel = 'THIS YEAR (YTD)'
-    comparisonLabel = 'LAST YEAR (YTD)'
+    comparisonLabel = 'LAST YEAR (FULL)'
     if (totalComparison > 0) {
       const ratio = totalSpend / totalComparison
       totalStatus = ratio > 1 + THRESHOLD ? 'over' : ratio < 1 - THRESHOLD ? 'under' : 'onTrack'
@@ -580,7 +579,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
     { color: 'var(--accent)', label: 'Less than last year (>10%)', line: false },
     { color: 'var(--green)',  label: 'On par with last year',       line: false },
     { color: 'var(--warn)',   label: 'More than last year (>10%)',  line: false },
-    { color: 'var(--tx-3)',   label: 'Prior year',                  line: true  },
+    { color: 'var(--tx-3)',   label: 'Prior year (full)',             line: true  },
   ] : [
     { color: 'var(--green)',       label: 'On track (within 10%)', line: false },
     { color: 'var(--accent)',      label: 'Under budget (>10%)',   line: false },
