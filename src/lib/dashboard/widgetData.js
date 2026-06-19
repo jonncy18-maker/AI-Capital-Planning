@@ -346,9 +346,16 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
   // average of completed months projected across the remaining months.
   const mbva = monthlyBudgetVsActual(ctx, yearTxns)
   const currentMonth = mbva.currentMonth
-  const fullYearExpenses = mbva.months.reduce(
-    (s, mo) => s + (mo.actual != null ? mo.actual : mo.forecast), 0
-  )
+  let fullYearActualExpenses = 0
+  let fullYearForecastExpenses = 0
+  for (const mo of mbva.months) {
+    if (mo.actual != null) {
+      fullYearActualExpenses += mo.actual
+    } else {
+      fullYearForecastExpenses += (mo.forecast ?? 0)
+    }
+  }
+  const fullYearExpenses = fullYearActualExpenses + fullYearForecastExpenses
 
   const incomeByMonth = Array(12).fill(0)
   for (const t of yearTxns) {
@@ -379,6 +386,8 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
     savingsRate,
     fullYearIncome,
     fullYearExpenses,
+    fullYearActualExpenses,
+    fullYearForecastExpenses,
     fullYearNet,
     fullYearSavingsRate,
   }

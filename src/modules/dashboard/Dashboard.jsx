@@ -54,25 +54,112 @@ function Empty({ text }) {
 
 // ── Income vs. Expenses widget ───────────────────────────────────────────────
 
-function NetLine({ n }) {
+function IveTooltip({ visible, children }) {
+  if (!visible) return null
   return (
-    <div style={{ marginTop: 6, fontSize: 11, fontVariantNumeric: 'tabular-nums', color: n > 0 ? 'var(--accent)' : 'var(--warn)' }}>
-      {n > 0 ? '+' : ''}{fmtK(n)} net
+    <div style={{
+      position: 'absolute',
+      bottom: 'calc(100% + 8px)',
+      left: 0,
+      background: 'var(--bg-app)',
+      border: '1px solid var(--accent-bd)',
+      borderRadius: 7,
+      padding: '10px 12px',
+      minWidth: 175,
+      zIndex: 200,
+      boxShadow: '0 6px 20px rgba(0,0,0,0.5)',
+      pointerEvents: 'none',
+      whiteSpace: 'nowrap',
+    }}>
+      {children}
     </div>
   )
 }
 
-function IveColumn({ title, income, expenses, net, hasIncome }) {
+function IveDivider() {
+  return <div style={{ height: 1, background: 'var(--accent-bd)', margin: '14px 0' }} />
+}
+
+function TooltipHeader({ text }) {
   return (
-    <div style={{ flex: 1, minWidth: 110 }}>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
-        {title}
+    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.07em', color: 'var(--tx-3)', marginBottom: 6 }}>
+      {text}
+    </div>
+  )
+}
+
+function TooltipRow({ label, value, highlight, border }) {
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: 16,
+      fontFamily: "'DM Mono', monospace",
+      fontSize: 10,
+      color: highlight === 'accent' ? 'var(--accent)' : highlight === 'warn' ? 'var(--warn)' : 'var(--tx-2)',
+      lineHeight: 1.9,
+      borderTop: border ? '1px solid var(--accent-bd)' : 'none',
+      marginTop: border ? 4 : 0,
+      paddingTop: border ? 4 : 0,
+    }}>
+      <span style={{ color: 'var(--tx-3)' }}>{label}</span>
+      <span>{value}</span>
+    </div>
+  )
+}
+
+function IveFlowRow({ income, expenses, net, hasIncome, primary = false }) {
+  const valueSize = primary ? 20 : 14
+  const labelSize = primary ? 8.5 : 7.5
+
+  const items = []
+  if (hasIncome) {
+    items.push({ val: fmtK(income), lbl: 'INCOME', color: 'var(--tx-1)' })
+    items.push('sep')
+  }
+  items.push({ val: fmtK(expenses), lbl: 'EXPENSES', color: 'var(--tx-1)' })
+  if (net !== 0) {
+    items.push('sep')
+    items.push({ val: (net > 0 ? '+' : '') + fmtK(net), lbl: 'NET', color: net > 0 ? 'var(--accent)' : 'var(--warn)' })
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+      {items.map((item, i) => item === 'sep' ? (
+        <div key={i} style={{ width: 1, background: 'var(--accent-bd)', margin: '0 10px', alignSelf: 'stretch', minHeight: 28 }} />
+      ) : (
+        <div key={i} style={{ flex: 1 }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: valueSize, color: item.color, lineHeight: 1 }}>{item.val}</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: labelSize, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 4 }}>{item.lbl}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function IveSavingsRateStat({ rate, label, primary = false, tooltipLines }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <div
+      style={{ position: 'relative', flex: 1 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 5 }}>
+        {label}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {hasIncome && <MiniStat value={fmtK(income)} label="income" />}
-        <MiniStat value={fmtK(expenses)} label="expenses" />
+      <div style={{
+        fontFamily: "'DM Serif Display', serif",
+        fontSize: primary ? 30 : 22,
+        color: rate > 0 ? 'var(--accent)' : rate < 0 ? 'var(--warn)' : 'var(--tx-2)',
+        lineHeight: 1,
+        cursor: 'default',
+      }}>
+        {rate != null ? Math.round(rate) + '%' : '—'}
       </div>
-      {net !== 0 && <NetLine n={net} />}
+      <IveTooltip visible={hovered}>
+        {tooltipLines}
+      </IveTooltip>
     </div>
   )
 }
@@ -83,23 +170,77 @@ function IncomeVsExpensesWidget({ ive }) {
   }
 
   const hasIncome = ive.ytdIncome > 0
-  return (
+
+  const fullYearTooltip = (
     <>
-      {hasIncome && ive.savingsRate != null ? (
-        <Stat
-          value={Math.round(ive.savingsRate) + '%'}
-          label="SAVINGS RATE · YTD"
-          accent={ive.savingsRate > 0}
-        />
-      ) : (
-        <Stat value={fmtK(ive.ytdExpenses)} label="YTD EXPENSES" />
+      <TooltipHeader text="FULL YEAR BREAKDOWN" />
+      {hasIncome && <TooltipRow label="Income" value={fmtK(ive.fullYearIncome)} />}
+      <TooltipRow label="Expenses" value={fmtK(ive.fullYearExpenses)} />
+      <TooltipRow
+        label="Net"
+        value={(ive.fullYearNet > 0 ? '+' : '') + fmtK(ive.fullYearNet)}
+        highlight={ive.fullYearNet > 0 ? 'accent' : 'warn'}
+        border
+      />
+      {ive.fullYearActualExpenses != null && (
+        <>
+          <TooltipRow label="Act. Expenses" value={fmtK(ive.fullYearActualExpenses)} border />
+          <TooltipRow label="Fcst. Expenses" value={fmtK(ive.fullYearForecastExpenses)} />
+        </>
       )}
-      <div style={{ display: 'flex', gap: 16, marginTop: 16 }}>
-        <IveColumn title="YEAR TO DATE" income={ive.ytdIncome} expenses={ive.ytdExpenses} net={ive.ytdNet} hasIncome={hasIncome} />
-        <div style={{ width: 1, background: 'var(--bd-light)' }} />
-        <IveColumn title="FULL YEAR · ACT+FCST" income={ive.fullYearIncome} expenses={ive.fullYearExpenses} net={ive.fullYearNet} hasIncome={hasIncome} />
-      </div>
     </>
+  )
+
+  const ytdTooltip = (
+    <>
+      <TooltipHeader text="YEAR TO DATE" />
+      {hasIncome && <TooltipRow label="Income" value={fmtK(ive.ytdIncome)} />}
+      <TooltipRow label="Expenses" value={fmtK(ive.ytdExpenses)} />
+      <TooltipRow
+        label="Net"
+        value={(ive.ytdNet > 0 ? '+' : '') + fmtK(ive.ytdNet)}
+        highlight={ive.ytdNet > 0 ? 'accent' : 'warn'}
+        border
+      />
+    </>
+  )
+
+  return (
+    <div style={{ overflow: 'visible' }}>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 10 }}>
+        FULL YEAR · ACT+FCST
+      </div>
+      <IveFlowRow
+        income={ive.fullYearIncome}
+        expenses={ive.fullYearExpenses}
+        net={ive.fullYearNet}
+        hasIncome={hasIncome}
+        primary
+      />
+
+      <IveDivider />
+
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 10 }}>
+        SAVINGS RATE
+      </div>
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+        <IveSavingsRateStat rate={ive.fullYearSavingsRate} label="FULL YEAR" primary tooltipLines={fullYearTooltip} />
+        <div style={{ width: 1, background: 'var(--accent-bd)', margin: '0 14px', alignSelf: 'stretch', minHeight: 36 }} />
+        <IveSavingsRateStat rate={ive.savingsRate} label="YEAR TO DATE" tooltipLines={ytdTooltip} />
+      </div>
+
+      <IveDivider />
+
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
+        YEAR TO DATE
+      </div>
+      <IveFlowRow
+        income={ive.ytdIncome}
+        expenses={ive.ytdExpenses}
+        net={ive.ytdNet}
+        hasIncome={hasIncome}
+      />
+    </div>
   )
 }
 
