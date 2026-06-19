@@ -52,7 +52,7 @@ trustworthy build. Roughly in order of leverage:
 6. **Stop swallowing errors.** Many `.catch(() => [])` hide failures; finance
    needs surfaced errors plus basic telemetry/observability.
 7. **Data-source consistency.** The dashboard chart fetches full-year transactions
-   separately from the 90-day AI context, and Monarch↔CSV dedup leans on
+   separately from the trailing-12-month AI context, and Monarch↔CSV dedup leans on
    merchant/account strings matching. Nail down these correctness edges.
 
 ## Current Phase

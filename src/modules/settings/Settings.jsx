@@ -3,6 +3,7 @@ import { derivePeriods } from '../../lib/periods.js'
 import { getImportHistory } from '../../lib/db/importLog.js'
 import BudgetMapImport from '../import/BudgetMapImport.jsx'
 import MonarchConnect from './MonarchConnect.jsx'
+import AIPersonalization from './AIPersonalization.jsx'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 
 // Normalize legacy scalar planningHorizon (e.g. 3) into the multi-select array form.
@@ -74,7 +75,7 @@ function SettingsField({ label, prefix, suffix, value, onChange, placeholder, st
   )
 }
 
-export default function Settings({ profile, onSave, onBack, onImport, userId }) {
+export default function Settings({ profile, onSave, onBack, onImport, userId, context, onAIPrefsChange }) {
   // Accept both camelCase (onboarding) and snake_case (DB row) profile shapes.
   const [focuses, setFocuses] = useState(profile?.focuses || [])
   const [commitments, setCommitments] = useState(profile?.commitments || [])
@@ -285,6 +286,14 @@ export default function Settings({ profile, onSave, onBack, onImport, userId }) 
         title="Settings"
         subtitle="Preferences, data management, and account connections."
       />
+
+      {/* Section: AI Personalization */}
+      {userId && (
+        <div style={card}>
+          <div style={cardTitle}>AI PERSONALIZATION</div>
+          <AIPersonalization userId={userId} context={context} onChange={onAIPrefsChange} />
+        </div>
+      )}
 
       {/* Section 1: Financial Focuses */}
       <div style={card}>

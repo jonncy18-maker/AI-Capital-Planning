@@ -31,7 +31,7 @@
   - `src/modules/shell/Sidebar.jsx` — collapsible left sidebar (icon rail when collapsed); also rendered inside mobile drawer.
   - `src/modules/shell/CommandBar.jsx` — persistent AI input; desktop bottom bar, mobile FAB + bottom sheet. Responses render as a dismissible card in the canvas.
   - `src/modules/registry.js` — central module registry (single source of truth for nav + routing).
-  - `src/modules/dashboard/Dashboard.jsx` — widget grid with drag-to-rearrange scaffold; live widgets (90-day activity, categories, commitments) render real numbers from the AI context.
+  - `src/modules/dashboard/Dashboard.jsx` — widget grid with drag-to-rearrange scaffold; live widgets (trailing-12-month activity, categories, commitments) render real numbers from the AI context.
   - Module stubs: `cashflow`, `scenarios`, `budget`, `commitments`, `wealth` (shared `common/ModuleStub.jsx`), plus `mapping` "Coming Soon".
   - `src/lib/theme/useTheme.js` — persistent dark/light toggle (localStorage, sets `data-theme`).
   - `src/lib/ai/contextLoader.js` — `loadAIContext(userId)` (90d txns + categories + active commitments + latest wealth snapshot), `summarizeContext`, `buildContextBrief`.
@@ -327,6 +327,15 @@ account access; steps 4, 5, 6, 8, 9 are pure code.
 
 ## Phase 2+ Backlog (Not in V1 Scope)
 
+- **AI-driven app customization (builds on AI personalization).** The personalization
+  interview ("grill me") already produces a durable, flexible `ai_preferences` blob
+  (priorities, surface/ignore, tone, notes). Once the dashboard/module catalog is
+  built out, a "layout recommender" can read that blob to auto-configure which
+  dashboards, widgets, and modules a given user sees by default — instead of making
+  them configure it by hand. No schema change needed: new features read the existing
+  preferences record; the interview prompt just grows a few questions about new
+  surfaces. Deliberately deferred until there's more than one dashboard to choose
+  between.
 - Monarch unofficial API connection (live data sync)
 - Category Mapping module (full build-out)
 - Monte Carlo simulation for Wealth Trajectory

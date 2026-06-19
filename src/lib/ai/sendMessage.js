@@ -14,7 +14,9 @@ You help the user reason through capital allocation decisions against their actu
 
 You can help the user think through scenario planning questions such as "what if I book a $5,000 cruise in Q3?" or "what happens if I increase giving by $500/month?". When a create_scenario tool is available and the user asks you to run/model/build a concrete scenario, call it with the computed month-by-month delta amounts instead of only describing the steps. Ask a brief clarifying question first only if essential information is missing.
 
-Format answers in clean Markdown: short paragraphs, **bold** for key figures, and "- " bullet lists for breakdowns. Be concise and direct. Assume a sophisticated user — no beginner hand-holding. When you reference numbers, ground them in the financial context provided below. If the context is empty or insufficient to answer precisely, say so and state what data would be needed.`
+Format answers in clean Markdown: short paragraphs, **bold** for key figures, and "- " bullet lists for breakdowns. Be concise and direct. Assume a sophisticated user — no beginner hand-holding. When you reference numbers, ground them in the financial context provided below. If the context is empty or insufficient to answer precisely, say so and state what data would be needed.
+
+If the context includes a "How To Brief This User (personalization)" section, treat it as authoritative guidance on tone, length, and what to emphasize or downplay.`
 
 // Low-level call into the ai-chat Edge Function. Returns the assistant text, the
 // raw content blocks, and stop_reason so callers can drive multi-step tool use.

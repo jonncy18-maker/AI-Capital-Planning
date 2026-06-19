@@ -7,6 +7,7 @@ import Markdown from '../common/Markdown.jsx'
 
 import Sidebar from './Sidebar.jsx'
 import CommandBar from './CommandBar.jsx'
+import AIPrefsButton from './AIPrefsButton.jsx'
 import ImportFlow from '../import/ImportFlow.jsx'
 import Dashboard from '../dashboard/Dashboard.jsx'
 import CashFlow from '../cashflow/CashFlow.jsx'
@@ -140,6 +141,8 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
             onBack={() => setActiveModule('dashboard')}
             onImport={onStartReImport}
             userId={user.id}
+            context={aiContext}
+            onAIPrefsChange={reloadAiContext}
           />
         )
       default:
@@ -261,6 +264,14 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
             loading={aiLoading}
             onSubmit={handleAiSubmit}
             placeholder={`Ask about ${current.short.toLowerCase()}…`}
+            accessory={
+              <AIPrefsButton
+                userId={user.id}
+                context={aiContext}
+                onChange={reloadAiContext}
+                mobile={mobile}
+              />
+            }
           />
         </div>
       </div>

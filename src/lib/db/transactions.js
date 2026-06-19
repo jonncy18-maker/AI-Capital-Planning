@@ -51,7 +51,8 @@ export async function importTransactions(userId, rows) {
 }
 
 // Fetch recent transactions for AI context (last N days, summary level).
-export async function getRecentTransactions(userId, days = 90) {
+// Defaults to a full trailing year so the AI sees the whole annual cycle.
+export async function getRecentTransactions(userId, days = 365) {
   const since = new Date()
   since.setDate(since.getDate() - days)
 
