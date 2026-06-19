@@ -318,7 +318,7 @@ function IncomeVsExpensesWidget({ ive }) {
 // Full-year actual + forecast (one bar, two tones) vs. the blue budget bar,
 // with per-group data labels on hover.
 
-function SpendByGroupWidget({ sgy, ctx, yearTxns }) {
+function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns }) {
   const [hover, setHover] = useState(null)
   const [selectedGroup, setSelectedGroup] = useState(null)
 
@@ -407,6 +407,7 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns }) {
           group={selectedGroup}
           ctx={ctx}
           yearTxns={yearTxns}
+          priorYearTxns={priorYearTxns}
           onClose={() => setSelectedGroup(null)}
         />
       )}
@@ -506,7 +507,7 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = []) {
       id: 'spendGroup',
       title: 'Spend by Group',
       subtitle: 'Full-year actual + forecast vs. budget',
-      render: () => <SpendByGroupWidget sgy={sgy} ctx={ctx} yearTxns={yearTxns} />,
+      render: () => <SpendByGroupWidget sgy={sgy} ctx={ctx} yearTxns={yearTxns} priorYearTxns={priorYearTxns} />,
     },
     {
       id: 'spikes',

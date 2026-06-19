@@ -507,7 +507,17 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
 
   rows.sort((a, b) => b.projected - a.projected)
   const max = rows.reduce((m, r) => Math.max(m, r.projected, r.fullBudget), 0) || 1
-  return { rows, max, currentMonth }
+
+  const groupMonthlyActual = Array(12).fill(0)
+  const groupMonthlyBudget = Array(12).fill(0)
+  for (const r of rows) {
+    for (let m = 0; m < 12; m++) {
+      groupMonthlyActual[m] += r.monthlyActual[m] || 0
+      groupMonthlyBudget[m] += r.monthlyBudget[m] || 0
+    }
+  }
+
+  return { rows, max, currentMonth, groupMonthlyActual, groupMonthlyBudget }
 }
 
 export { MONTHS }
