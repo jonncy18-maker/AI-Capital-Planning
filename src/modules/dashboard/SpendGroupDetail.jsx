@@ -1,9 +1,10 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { spendByCategoryForGroup } from '../../lib/dashboard/widgetData.js'
 
 const MONO = "'DM Mono', monospace"
 const SERIF = "'DM Serif Display', serif"
 const THRESHOLD = 0.10
+const MONTH_LABELS = ['J','F','M','A','M','J','J','A','S','O','N','D']
 
 function fmtK(n) {
   const abs = Math.abs(n)
@@ -43,7 +44,126 @@ function TRow({ label, value, color, bold, border }) {
   )
 }
 
-function CatBar({ row, isYtd, max }) {
+function MonthSparkline({ row, currentMonth }) {
+  const { monthlyActual = [], monthlyBudget = [] } = row
+  const maxBar = Math.max(...monthlyActual, ...monthlyBudget, 1)
+  const BAR_H = 44
+
+  return (
+    <div>
+      <div style={{ fontFamily: MONO, fontSize: 8, color: 'var(--tx-4)', letterSpacing: '0.06em', marginBottom: 8 }}>
+        MONTHLY TREND
+      </div>
+      <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
+        {Array.from({ length: 12 }, (_, m) => {
+          const actual = monthlyActual[m] || 0
+          const budget = monthlyBudget[m] || 0
+          const isFuture = m > currentMonth
+          const isCurrent = m === currentMonth
+          const status = getStatus(actual, budget)
+          const barVal = isFuture ? budget : actual
+          const barH = maxBar > 0 ? Math.max(Math.round((barVal / maxBar) * BAR_H), barVal > 0 ? 1 : 0) : 0
+          const budgetH = maxBar > 0 && budget > 0 ? Math.max(Math.round((budget / maxBar) * BAR_H), 1) : 0
+          const barColor = isFuture ? 'var(--tx-4)' : STATUS[status].color
+
+          return (
+            <div key={m} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+              <div style={{ width: '100%', height: BAR_H, position: 'relative', display: 'flex', alignItems: 'flex-end' }}>
+                {budgetH > 0 && (
+                  <div style={{
+                    position: 'absolute', left: 0, right: 0, bottom: budgetH - 1,
+                    height: 1, background: 'var(--bar-budget)', opacity: 0.8,
+                  }} />
+                )}
+                {barH > 0 && (
+                  <div style={{
+                    width: '100%', height: barH,
+                    background: barColor,
+                    opacity: isFuture ? 0.3 : 1,
+                    borderRadius: '2px 2px 0 0',
+                  }} />
+                )}
+              </div>
+              <div style={{
+                fontFamily: MONO, fontSize: 7,
+                color: isCurrent ? 'var(--tx-2)' : 'var(--tx-4)',
+                lineHeight: 1,
+              }}>
+                {MONTH_LABELS[m]}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function TransactionList({ category, yearTxns }) {
+  const [showAll, setShowAll] = useState(false)
+  const INITIAL = 8
+
+  const txns = useMemo(() => {
+    return (yearTxns || [])
+      .filter(t => t.category === category && Number(t.amount) < 0)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+  }, [category, yearTxns])
+
+  if (txns.length === 0) return (
+    <div style={{ fontFamily: MONO, fontSize: 9.5, color: 'var(--tx-4)', paddingTop: 12 }}>
+      No transactions found.
+    </div>
+  )
+
+  const visible = showAll ? txns : txns.slice(0, INITIAL)
+  const hidden = txns.length - INITIAL
+
+  return (
+    <div style={{ paddingTop: 14 }}>
+      <div style={{ fontFamily: MONO, fontSize: 8, color: 'var(--tx-4)', letterSpacing: '0.06em', marginBottom: 8 }}>
+        TRANSACTIONS
+      </div>
+      {visible.map((t, i) => {
+        const d = new Date(t.date)
+        const dateStr = Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const name = t.merchant_name || t.name || t.description || '—'
+        const amt = Math.abs(Number(t.amount))
+        return (
+          <div key={t.id || i} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '5px 0', borderBottom: '1px solid var(--bd-light)',
+          }}>
+            <span style={{ fontFamily: MONO, fontSize: 9.5, color: 'var(--tx-3)', minWidth: 46, flexShrink: 0 }}>
+              {dateStr}
+            </span>
+            <span style={{
+              fontFamily: MONO, fontSize: 10, color: 'var(--tx-2)',
+              flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {name}
+            </span>
+            <span style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+              ${amt % 1 === 0 ? Math.round(amt).toLocaleString() : amt.toFixed(2)}
+            </span>
+          </div>
+        )
+      })}
+      {!showAll && hidden > 0 && (
+        <button
+          onClick={e => { e.stopPropagation(); setShowAll(true) }}
+          style={{
+            marginTop: 8, fontFamily: MONO, fontSize: 9, color: 'var(--accent)',
+            background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0',
+          }}
+        >
+          Show {hidden} more
+        </button>
+      )}
+    </div>
+  )
+}
+
+function CatBar({ row, isYtd, max, isExpanded, onToggle }) {
   const [hovered, setHovered] = useState(false)
 
   const spending = isYtd ? row.actual : row.projected
@@ -62,11 +182,21 @@ function CatBar({ row, isYtd, max }) {
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{ position: 'relative', padding: '10px 0', borderBottom: '1px solid var(--bd-light)', cursor: 'default' }}
+      onClick={onToggle}
+      style={{
+        position: 'relative', padding: '10px 0',
+        borderBottom: isExpanded ? 'none' : '1px solid var(--bd-light)',
+        cursor: 'pointer',
+      }}
     >
       {/* Row header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 7 }}>
-        <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--tx-2)' }}>{row.category}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontFamily: MONO, fontSize: 9, color: 'var(--tx-4)', lineHeight: 1, userSelect: 'none' }}>
+            {isExpanded ? '▾' : '▸'}
+          </span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--tx-2)' }}>{row.category}</span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
           <span style={{ fontFamily: MONO, fontSize: 12, color: actualColor, fontVariantNumeric: 'tabular-nums' }}>
             {fmtK(spending)}
@@ -106,7 +236,7 @@ function CatBar({ row, isYtd, max }) {
       )}
 
       {/* Hover tooltip */}
-      {hovered && (
+      {hovered && !isExpanded && (
         <div style={{
           position: 'absolute', bottom: 'calc(100% + 6px)', left: 0,
           background: 'var(--bg-app)', border: '1px solid var(--bd)',
@@ -193,6 +323,7 @@ function SortPill({ active, onClick, children }) {
 export default function SpendGroupDetail({ group, ctx, yearTxns, onClose }) {
   const [filter, setFilter] = useState('FULL YEAR')
   const [sortKey, setSortKey] = useState('spend')
+  const [expandedCat, setExpandedCat] = useState(null)
 
   const isYtd = filter === 'YTD'
 
@@ -202,7 +333,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, onClose }) {
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
-  const { rows: rawRows } = useMemo(
+  const { rows: rawRows, currentMonth } = useMemo(
     () => spendByCategoryForGroup(ctx, yearTxns, group),
     [ctx, yearTxns, group]
   )
@@ -226,6 +357,10 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, onClose }) {
   const totalStatus = getStatus(totalSpend, totalBudget)
   const totalDelta = totalBudget > 0 ? totalSpend - totalBudget : null
   const totalDeltaPct = totalBudget > 0 ? ((totalSpend / totalBudget) - 1) * 100 : null
+
+  function handleToggle(cat) {
+    setExpandedCat(prev => prev === cat ? null : cat)
+  }
 
   return (
     <div
@@ -326,7 +461,28 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, onClose }) {
             No spending data for this group.
           </div>
         ) : rows.map(r => (
-          <CatBar key={r.category} row={r} isYtd={isYtd} max={displayMax} />
+          <Fragment key={r.category}>
+            <CatBar
+              row={r}
+              isYtd={isYtd}
+              max={displayMax}
+              isExpanded={expandedCat === r.category}
+              onToggle={() => handleToggle(r.category)}
+            />
+            {expandedCat === r.category && (
+              <div style={{
+                background: 'var(--bg-app)', borderRadius: '0 0 10px 10px',
+                border: '1px solid var(--bd-light)', borderTop: 'none',
+                padding: '12px 16px 16px',
+                marginBottom: 4,
+              }}>
+                <MonthSparkline row={r} currentMonth={currentMonth} />
+                <div style={{ marginTop: 14, borderTop: '1px solid var(--bd-light)', paddingTop: 0 }}>
+                  <TransactionList category={r.category} yearTxns={yearTxns} />
+                </div>
+              </div>
+            )}
+          </Fragment>
         ))}
 
         {/* ── Legend ── */}

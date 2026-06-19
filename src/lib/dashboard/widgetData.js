@@ -501,7 +501,8 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
     }
     const projected = actual + forecast
     if (fullBudget < 1 && projected < 1) continue
-    rows.push({ category: cat, actual, forecast, projected, fullBudget, ytdBudget })
+    rows.push({ category: cat, actual, forecast, projected, fullBudget, ytdBudget,
+      monthlyActual: [...actualMonths], monthlyBudget: [...budgetMonths] })
   }
 
   rows.sort((a, b) => b.projected - a.projected)
