@@ -3,7 +3,7 @@
 **Repo:** AI Capital Planning  
 **Description:** A personal capital planning OS. Forward-looking scenario modeling, cash flow timing, and AI-driven decision support built on top of transaction data.  
 **Version:** 1.0  
-**Status:** Pre-build. Founding architecture document.
+**Status:** V1 built and in daily use. All core modules are live. This document is the founding architecture; implementation notes are inline where behavior diverged from the original design.
 
 ---
 
@@ -62,7 +62,7 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
 
 - **Frontend:** React SPA (Vite), responsive at mobile and desktop breakpoints
 - **Backend/Database:** Supabase (PostgreSQL)
-- **AI:** Anthropic API (Claude Sonnet), context loaded from Supabase at session start
+- **AI:** Anthropic API (`claude-sonnet-4-6`), context loaded from Supabase at session start
 - **Deployment:** GitHub Pages (V1 personal use); Netlify Functions proxy added before any public deployment to shield API key
 - **Future:** React Native native app (planned migration, not V1 scope)
 
@@ -73,14 +73,17 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
 ### 4.1 Dashboard (Hub)
 The default landing screen after login. Widget canvas with drag-to-rearrange configurability. Persistent collapsible left sidebar for navigation on web; card-based navigation on mobile.
 
-**Pre-defined widgets (forward-looking, deterministic):**
-- Monthly spend by group (vs. budget target)
-- Cash flow spike calendar (upcoming large/irregular expenses)
-- Budget vs. actual trajectory (YTD + projected EOY)
-- Run-rate EOY projection
+**Widgets built and live:**
+- Monthly Budget vs. Actuals bar chart (12 months, actuals + forecast, TODAY marker, on-target threshold control)
+- Income vs. Expenses 12-month chart (post-tax income forecast, actuals for past months, forecast bars for future)
+- Spend by Group drill-down (vs. budget target, expandable per group)
+- Budget vs. Actual (BvA) KPI summary widget
 - Long-Term Commitments summary
 - Wealth Trajectory snapshot
 - AI Briefing card (on-demand narrative, cached, single token cost per refresh)
+- Net Worth snapshot
+
+**Layout configurability:** Drag-to-reorder, show/hide per card, collapse/expand per card (chevron in each card header), global Collapse All / Expand All. All layout state persisted to localStorage.
 
 **AI-generated widgets:** Savable as custom widgets. Generated once (one token cost), then rendered deterministically from Supabase like any pre-defined widget.
 
@@ -285,6 +288,20 @@ module_context  text  -- which module generated it
 is_cached       boolean
 ```
 
+**user_profiles** *(added during V1 build)*
+```
+id                  uuid PRIMARY KEY REFERENCES auth.users
+salary              numeric         -- annual gross salary
+bonus               numeric         -- annual bonus amount
+bonus_month         integer         -- 1-12, month bonus is received
+benefits_amount     numeric         -- monthly benefits deduction ($ or %)
+benefits_is_pct     boolean         -- true = benefits_amount is a percent of salary
+k401_pct            numeric         -- 401k contribution % of gross
+bonus_also_subject  boolean         -- whether 401k/benefits apply in bonus month too
+created_at          timestamptz
+updated_at          timestamptz
+```
+
 ### 5.2 AI Context Strategy
 
 At session start, the app automatically loads the following from Supabase into the AI's context window:
@@ -379,14 +396,29 @@ The parser maps Monarch's Category directly to `budget_categories.category`. Gro
 
 ---
 
-## 10. Open Items Before Build
+## 10. Implementation Notes (V1 Divergences & Additions)
 
-1. Confirm Supabase project setup (new project or existing)
-2. Confirm whether to archive or repurpose V0 repo
-3. Verify current Anthropic model string for API calls
-4. Define the exact widget inventory for the Dashboard (deferred to build phase)
-5. Define Wealth Trajectory input fields for V1 (net worth components)
+The founding architecture held. These are the notable implementation details that weren't pinned at design time:
+
+**Income modeling added.** `user_profiles` table stores salary, bonus, bonus month, benefits, and 401k% so the Income vs. Expenses chart can show a post-tax take-home forecast (effective tax rate derived from trailing 12-month transaction data).
+
+**Settings module expanded.** Beyond CSV import and category mapping, Settings now includes a Planning tab (salary, bonus, 401k, benefits inputs with live take-home readout), an AI Preferences tab (briefing persona and communication style), and a Budget tab (variance threshold).
+
+**Collapse/expand on all cards.** The dashboard widget canvas gained per-card collapse (chevron in each card's own header) plus global Collapse All / Expand All. State is stored in the `layout` object in localStorage alongside `order` and `hidden`.
+
+**Error boundary not yet added.** A missing component definition caused a blank-page incident (June 2026). Adding a React error boundary around `<AppShell>` is the highest-priority hardening item. A missing component produces a `ReferenceError` that crashes the full React tree with no recovery path — blank page with no console access for users.
+
+**Model pinning deferred.** `resolveModel` still floats to the newest Claude model. For a financial product this is a behavior-change risk (tool-use / JSON schema can shift between model versions). Pinning deliberately and spot-checking tool calls after each bump is documented as a hardening priority.
+
+**Known hardening backlog** (in order of leverage):
+1. Add Vitest + unit tests for pure modeling functions
+2. Add React error boundary
+3. Strengthen CI (lint + tests, not just build)
+4. Preview-before-write for AI scenario creation
+5. Move currency math to integer cents
+6. Pin AI model version
+7. Surface errors instead of swallowing them
 
 ---
 
-*Document generated from architecture grill session. All major decisions locked. Build sequence: Supabase schema → data import + deduplication → Dashboard shell + navigation → Cash Flow Timing → Scenario Planner → Annual Budget Builder → Long-Term Commitments → Wealth Trajectory → Onboarding flow.*
+*Document generated from architecture grill session. All major decisions held through V1. Build sequence executed as planned: schema → import/dedup → Dashboard shell → Cash Flow Timing → Scenario Planner → Budget Builder → Commitments → Wealth Trajectory → onboarding polish.*
