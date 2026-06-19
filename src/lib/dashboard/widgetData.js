@@ -323,7 +323,7 @@ export function scenarioImpact(ctx) {
 
 // Income vs. expenses — YTD from full-year transactions plus a full-year
 // actual-so-far + forecast-for-the-rest projection.
-export function incomeVsExpenses(ctx, yearTxns = []) {
+export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const excluded = new Set(
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
   )
@@ -346,9 +346,16 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
   // average of completed months projected across the remaining months.
   const mbva = monthlyBudgetVsActual(ctx, yearTxns)
   const currentMonth = mbva.currentMonth
-  const fullYearExpenses = mbva.months.reduce(
-    (s, mo) => s + (mo.actual != null ? mo.actual : mo.forecast), 0
-  )
+  let fullYearActualExpenses = 0
+  let fullYearForecastExpenses = 0
+  for (const mo of mbva.months) {
+    if (mo.actual != null) {
+      fullYearActualExpenses += mo.actual
+    } else {
+      fullYearForecastExpenses += (mo.forecast ?? 0)
+    }
+  }
+  const fullYearExpenses = fullYearActualExpenses + fullYearForecastExpenses
 
   const incomeByMonth = Array(12).fill(0)
   for (const t of yearTxns) {
@@ -371,16 +378,45 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
   const fullYearNet = fullYearIncome - fullYearExpenses
   const fullYearSavingsRate = fullYearIncome > 0 ? (fullYearNet / fullYearIncome) * 100 : null
 
+  const avgMonthlyExpenses = currentMonth > 0 ? ytdExpenses / currentMonth : ytdExpenses
+
+  // Top YTD spending group
+  const ytdSpendByGroup = {}
+  for (const t of ytd) {
+    if (Number(t.amount) < 0) {
+      const grp = t.group || t.category || 'Other'
+      ytdSpendByGroup[grp] = (ytdSpendByGroup[grp] || 0) + Math.abs(Number(t.amount))
+    }
+  }
+  const topGroupEntry = Object.entries(ytdSpendByGroup).sort((a, b) => b[1] - a[1])[0]
+  const topYtdGroup = topGroupEntry ? { name: topGroupEntry[0], amount: topGroupEntry[1] } : null
+
+  // Prior-year full savings rate (all 12 months completed, no forecasting needed)
+  let priorYearSavingsRate = null
+  if (priorYearTxns.length > 0) {
+    const pyFiltered = priorYearTxns.filter(t => !excluded.has(t.category))
+    const pyIncome = pyFiltered.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0)
+    const pyExpenses = pyFiltered.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
+    const pyNet = pyIncome - pyExpenses
+    priorYearSavingsRate = pyIncome > 0 ? (pyNet / pyIncome) * 100 : null
+  }
+
   return {
     hasData: ytd.length > 0,
     ytdIncome,
     ytdExpenses,
     ytdNet,
     savingsRate,
+    avgMonthlyIncome,
+    avgMonthlyExpenses,
     fullYearIncome,
     fullYearExpenses,
+    fullYearActualExpenses,
+    fullYearForecastExpenses,
     fullYearNet,
     fullYearSavingsRate,
+    topYtdGroup,
+    priorYearSavingsRate,
   }
 }
 
