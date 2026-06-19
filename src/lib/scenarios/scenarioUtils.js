@@ -81,17 +81,26 @@ export function computeImpactSummary(adjustments, ctx) {
   }
 }
 
-// Join adjustments to baseline budget line items, grouped by period.
+// Join adjustments to the forecast baseline (override ?? budget), grouped by period.
 export function buildComparisonRows(adjustments, ctx) {
   const lineItems = ctx?.budgetLineItems ?? []
+  const overrides = ctx?.forecastOverrides ?? []
 
-  // Index budget by "categoryName::month" → amount
+  // Build forecast index: prefer override, fall back to budget
   const budgetIndex = {}
   for (const li of lineItems) {
     const cat = (li.budget_categories?.category || '').trim()
     if (!cat) continue
     const key = `${cat}::${li.month}`
     budgetIndex[key] = (budgetIndex[key] || 0) + Number(li.amount || 0)
+  }
+  // Override index wins when present
+  const forecastIndex = { ...budgetIndex }
+  for (const ov of overrides) {
+    const cat = (ov.budget_categories?.category || '').trim()
+    if (!cat) continue
+    const key = `${cat}::${ov.month}`
+    forecastIndex[key] = Number(ov.amount)
   }
 
   // Group adjustments by year-month
@@ -102,7 +111,7 @@ export function buildComparisonRows(adjustments, ctx) {
 
     const catName = a.budget_categories?.category ?? '—'
     const budgetKey = `${catName}::${a.month}`
-    const baseline = budgetIndex[budgetKey] != null ? budgetIndex[budgetKey] : null
+    const baseline = forecastIndex[budgetKey] != null ? forecastIndex[budgetKey] : null
     const delta = Number(a.delta_amount)
 
     byPeriod[periodKey].rows.push({

@@ -89,6 +89,7 @@ export function commitmentsSummary(ctx) {
 // re-apply the exclusion here against ctx.categories.
 export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   const lineItems = ctx?.budgetLineItems ?? []
+  const overrides = ctx?.forecastOverrides ?? []
   const year = ctx?.thisYear ?? new Date().getFullYear()
   const excluded = new Set(
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
@@ -98,6 +99,31 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   for (const li of lineItems) {
     const m = (li.month ?? 1) - 1
     if (m >= 0 && m < 12) budget[m] += Number(li.amount || 0)
+  }
+
+  // Forecast = override ?? budget per category per month.
+  // Re-aggregate from scratch: start with budget, then apply overrides.
+  // An override replaces the per-category contribution for that month.
+  // We build a category→month budget index so we can subtract the original
+  // budget contribution and add the override value.
+  const catMonthBudget = {}
+  for (const li of lineItems) {
+    const catId = li.category_id
+    const m = (li.month ?? 1) - 1
+    if (m < 0 || m >= 12 || !catId) continue
+    if (!catMonthBudget[catId]) catMonthBudget[catId] = Array(12).fill(0)
+    catMonthBudget[catId][m] += Number(li.amount || 0)
+  }
+  const forecast = [...budget]
+  for (const ov of overrides) {
+    const catId = ov.category_id
+    const m = (ov.month ?? 1) - 1
+    if (m < 0 || m >= 12 || !catId) continue
+    const budgetContrib = catMonthBudget[catId]?.[m] ?? 0
+    forecast[m] = forecast[m] - budgetContrib + Number(ov.amount)
+    // update the contribution so further overrides for same cat accumulate correctly
+    if (!catMonthBudget[catId]) catMonthBudget[catId] = Array(12).fill(0)
+    catMonthBudget[catId][m] = Number(ov.amount)
   }
 
   const actual = Array(12).fill(0)
@@ -118,30 +144,34 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
 
   const months = MONTHS.map((label, m) => {
     const b = budget[m]
+    const f = forecast[m]          // forecast = override ?? budget for this month
+    const hasOverride = f !== b    // at least one category overridden
     const isPast = m < currentMonth
     const isCurrent = m === currentMonth
     const isFuture = m > currentMonth
-    // A month has real actuals if it's not in the future and we saw spend for it.
     const hasActual = !isFuture && seen[m]
     const a = hasActual ? actual[m] : null
+    // For status comparison use forecast (not raw budget) so overridden months track correctly
     let status = 'none'
-    if (b > 0 && a != null) {
-      if (a > b * 1.1) status = 'over'
-      else if (a < b * 0.9) status = 'under'
+    if (f > 0 && a != null) {
+      if (a > f * 1.1) status = 'over'
+      else if (a < f * 0.9) status = 'under'
       else status = 'on'
     }
-    return { month: m, label, budget: b, actual: a, hasActual, isPast, isCurrent, isFuture, status }
+    return { month: m, label, budget: b, forecast: f, hasOverride, actual: a, hasActual, isPast, isCurrent, isFuture, status }
   })
 
-  // YTD roll-up across months that have actuals — drives the "on track" pill.
+  // YTD roll-up against forecast (not raw budget) — drives the "on track" pill.
   let ytdBudget = 0
+  let ytdForecast = 0
   let ytdActual = 0
   for (const mo of months) {
     if (mo.actual == null) continue
     ytdBudget += mo.budget
+    ytdForecast += mo.forecast
     ytdActual += mo.actual
   }
-  const ytdPct = ytdBudget > 0 ? (ytdActual / ytdBudget) * 100 : null
+  const ytdPct = ytdForecast > 0 ? (ytdActual / ytdForecast) * 100 : null
   const onTrack = ytdPct == null ? true : ytdPct <= 105
 
   return {
@@ -149,9 +179,12 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     currentMonth,
     months,
     hasBudget: lineItems.length > 0,
+    hasForecastOverrides: overrides.length > 0,
     hasActuals: seen.some(Boolean),
     annualBudget: budget.reduce((a, b) => a + b, 0),
+    annualForecast: forecast.reduce((a, b) => a + b, 0),
     ytdBudget,
+    ytdForecast,
     ytdActual,
     ytdPct,
     onTrack,

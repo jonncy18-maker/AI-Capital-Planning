@@ -7,6 +7,7 @@ export const MODULES = [
   { id: 'cashflow',    label: 'Cash Flow Timing',      short: 'Cash Flow',   icon: '◷', section: 'modules' },
   { id: 'scenarios',   label: 'Scenario Planner',      short: 'Scenarios',   icon: '◑', section: 'modules' },
   { id: 'budget',      label: 'Annual Budget Builder', short: 'Budget',      icon: '▦', section: 'modules' },
+  { id: 'forecast',    label: 'Forecast',              short: 'Forecast',    icon: '⬡', section: 'modules' },
   { id: 'commitments', label: 'Long-Term Commitments', short: 'Commitments', icon: '◈', section: 'modules' },
   { id: 'wealth',      label: 'Wealth Trajectory',     short: 'Wealth',      icon: '↗', section: 'modules' },
   { id: 'settings',    label: 'Settings',              short: 'Settings',    icon: '⚙', section: 'system' },

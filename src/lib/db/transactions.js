@@ -113,6 +113,21 @@ export async function getTransactionsForAnalysis(userId, months = 24) {
   return all
 }
 
+// Fetch all expense transactions for a full calendar year (for forecast actuals).
+export async function getTransactionsForYear(userId, year) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('date, amount, category, "group"')
+    .eq('user_id', userId)
+    .gte('date', `${year}-01-01`)
+    .lte('date', `${year}-12-31`)
+    .lt('amount', 0) // expenses only
+    .order('date', { ascending: true })
+
+  if (error) throw error
+  return data ?? []
+}
+
 // Fetch transactions in a date range for cash flow calendar aggregation.
 export async function getTransactionsByMonth(userId, fromDate, toDate) {
   const { data, error } = await supabase
