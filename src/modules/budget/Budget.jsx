@@ -13,6 +13,7 @@ import { getBudgetStatus, setBudgetStatus } from '../../lib/db/budgetStatus.js'
 import { analyzeTransactions, MONTHS } from '../../lib/budget/patternAnalyzer.js'
 import { commitmentYearSchedule } from '../../lib/commitments/schedule.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
+import { CONTENT_MAX } from '../common/layout.js'
 
 const CUR_YEAR = new Date().getFullYear()
 
@@ -918,7 +919,7 @@ export default function Budget({ userId, mobile }) {
   const annualTotal = lineItems.reduce((s, li) => s + Number(li.amount || 0), 0)
 
   return (
-    <div style={{ maxWidth: 1100 }}>
+    <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       <input
         type="file"
         accept=".csv,.xlsx,.xlsm"

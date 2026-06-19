@@ -5,6 +5,8 @@ import { getScenarios, getAdjustments } from '../db/scenarios.js'
 import { getLatestWealthSnapshot } from '../db/wealthSnapshots.js'
 import { getBudgetLineItems, getBudgetYears } from '../db/budgetLineItems.js'
 import { getForecastOverrides } from '../db/forecastOverrides.js'
+import { getProfile } from '../db/profile.js'
+import { estimateNet } from '../db/taxBrackets.js'
 import { getAIPreferences } from '../db/aiPreferences.js'
 import { formatPreferencesForBrief } from './preferences.js'
 
@@ -22,7 +24,7 @@ const CONTEXT_DAYS = 365
 export async function loadAIContext(userId) {
   const thisYear = new Date().getFullYear()
 
-  const [transactions, categories, commitments, wealth, scenarios, budgetYears, aiPreferences] =
+  const [transactions, categories, commitments, wealth, scenarios, budgetYears, profile, aiPreferences] =
     await Promise.all([
       getRecentTransactions(userId, CONTEXT_DAYS).catch(() => []),
       getBudgetCategories(userId).catch(() => []),
@@ -30,8 +32,26 @@ export async function loadAIContext(userId) {
       getLatestWealthSnapshot(userId).catch(() => null),
       getScenarios(userId).catch(() => []),
       getBudgetYears(userId).catch(() => []),
+      getProfile(userId).catch(() => null),
       getAIPreferences(userId).catch(() => ({ preferences: {}, grill_enabled: false })),
     ])
+
+  // Estimated take-home for the current year (gross→net), so the assistant
+  // reasons on after-tax dollars. Null when no income is set or brackets are
+  // unavailable.
+  let incomeEstimate = null
+  if (profile?.annual_income > 0) {
+    const tp = profile.tax_profile || {}
+    incomeEstimate = await estimateNet({
+      grossIncome: Number(profile.annual_income) || 0,
+      bonus: Number(profile.annual_bonus) || 0,
+      filingStatus: tp.filingStatus || 'single',
+      state: tp.state || null,
+      stateRateOverride: tp.stateRateOverride ?? null,
+      preTaxDeductions: (Number(tp.preTax401k) || 0) + (Number(tp.preTaxOther) || 0),
+      year: thisYear,
+    }).catch(() => null)
+  }
 
   const [budgetLineItems, forecastOverrides, scenariosWithAdjs] = await Promise.all([
     getBudgetLineItems(userId, { year: thisYear }).catch(() => []),
@@ -60,6 +80,8 @@ export async function loadAIContext(userId) {
     budgetLineItems,
     forecastOverrides,
     budgetYears,
+    profile,
+    incomeEstimate,
     aiPreferences: aiPreferences?.preferences ?? {},
     grillEnabled: aiPreferences?.grill_enabled ?? false,
     thisYear,
@@ -114,6 +136,19 @@ export function buildContextBrief(ctx) {
     `~$${Math.round(s.spendTrailing).toLocaleString()} spend, ` +
     `~$${Math.round(s.incomeTrailing).toLocaleString()} income`
   )
+
+  const inc = ctx.incomeEstimate
+  if (inc && inc.netIncome > 0) {
+    lines.push(
+      `- Planned income (${inc.year}${inc.estimated ? ', est.' : ''}): ` +
+      `$${Math.round(inc.grossWages).toLocaleString()} gross → ` +
+      `~$${Math.round(inc.netIncome).toLocaleString()} take-home ` +
+      `(~${(inc.effectiveRate * 100).toFixed(0)}% est. tax: ` +
+      `federal $${Math.round(inc.federalTax).toLocaleString()}, ` +
+      `FICA $${Math.round(inc.ficaTax).toLocaleString()}, ` +
+      `state $${Math.round(inc.stateTax).toLocaleString()})`
+    )
+  }
 
   if (s.categoryCount) {
     const byGroup = {}
