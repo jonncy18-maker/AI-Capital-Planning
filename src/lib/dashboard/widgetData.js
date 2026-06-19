@@ -225,6 +225,9 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   const now = new Date()
   const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
 
+  const varThreshold = ctx?.varianceThreshold ?? 10   // percent, e.g. 10 means ±10%
+  const varRatio = varThreshold / 100                  // decimal form, e.g. 0.10
+
   const months = MONTHS.map((label, m) => {
     const b = budget[m]
     const f = forecast[m]          // forecast = override ?? budget for this month
@@ -237,8 +240,8 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     // For status comparison use forecast (not raw budget) so overridden months track correctly
     let status = 'none'
     if (f > 0 && a != null) {
-      if (a > f * 1.1) status = 'over'
-      else if (a < f * 0.9) status = 'under'
+      if (a > f * (1 + varRatio)) status = 'over'
+      else if (a < f * (1 - varRatio)) status = 'under'
       else status = 'on'
     }
     return { month: m, label, budget: b, forecast: f, hasOverride, actual: a, hasActual, isPast, isCurrent, isFuture, status }
@@ -255,7 +258,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     ytdActual += mo.actual
   }
   const ytdPct = ytdForecast > 0 ? (ytdActual / ytdForecast) * 100 : null
-  const onTrack = ytdPct == null ? true : ytdPct <= 110
+  const onTrack = ytdPct == null ? true : ytdPct <= 100 + varThreshold
 
   return {
     year,
@@ -271,6 +274,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     ytdActual,
     ytdPct,
     onTrack,
+    varThreshold,
   }
 }
 

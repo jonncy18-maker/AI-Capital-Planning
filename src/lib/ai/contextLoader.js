@@ -85,6 +85,7 @@ export async function loadAIContext(userId) {
     aiPreferences: aiPreferences?.preferences ?? {},
     grillEnabled: aiPreferences?.grill_enabled ?? false,
     thisYear,
+    varianceThreshold: profile?.variance_threshold ?? 10,
     loadedAt: new Date().toISOString(),
   }
 }

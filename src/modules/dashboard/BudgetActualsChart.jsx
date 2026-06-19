@@ -209,7 +209,7 @@ function ChartCard({ data, children }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <LegendDot color="var(--bar-budget)" label={data.hasForecastOverrides ? 'Forecast' : 'Budget'} />
-          <LegendDot color="var(--green)" label="On target ±10%" />
+          <LegendDot color="var(--green)" label={`On target ±${data.varThreshold ?? 10}%`} />
           <LegendDot color="var(--red)" label="Over" />
           <LegendDot dashed label="Forecast" />
           {data.hasActuals && (

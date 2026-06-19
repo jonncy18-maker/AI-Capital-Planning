@@ -4,7 +4,6 @@ import { spendByCategoryForGroup } from '../../lib/dashboard/widgetData.js'
 
 const MONO = "'DM Mono', monospace"
 const SERIF = "'DM Serif Display', serif"
-const THRESHOLD = 0.10
 const MONTH_LABELS = ['J','F','M','A','M','J','J','A','S','O','N','D']
 
 function fmtK(n) {
@@ -15,11 +14,11 @@ function fmtK(n) {
 }
 function fmtMoney(n) { return '$' + Math.round(n || 0).toLocaleString() }
 
-function getStatus(spending, budget) {
+function getStatus(spending, budget, threshold = 0.10) {
   if (!budget) return 'none'
   const ratio = spending / budget
-  if (ratio > 1 + THRESHOLD) return 'over'
-  if (ratio < 1 - THRESHOLD) return 'under'
+  if (ratio > 1 + threshold) return 'over'
+  if (ratio < 1 - threshold) return 'under'
   return 'onTrack'
 }
 
@@ -45,7 +44,7 @@ function TRow({ label, value, color, bold, border }) {
   )
 }
 
-function GroupMonthlyChart({ monthlyActual, monthlyBudget, currentMonth }) {
+function GroupMonthlyChart({ monthlyActual, monthlyBudget, currentMonth, threshold = 0.10 }) {
   const maxBar = Math.max(...monthlyActual, ...monthlyBudget, 1)
   const BAR_H = 50
 
@@ -64,7 +63,7 @@ function GroupMonthlyChart({ monthlyActual, monthlyBudget, currentMonth }) {
           const isFuture = m > currentMonth
           const isCurrent = m === currentMonth
           const barVal = isFuture ? budget : actual
-          const status = getStatus(actual, budget)
+          const status = getStatus(actual, budget, threshold)
           const barColor = isFuture ? 'var(--tx-4)' : STATUS[status].color
           const barH = maxBar > 0 ? Math.max(Math.round((barVal / maxBar) * BAR_H), barVal > 0 ? 1 : 0) : 0
           const budgetH = maxBar > 0 && budget > 0 ? Math.max(Math.round((budget / maxBar) * BAR_H), 1) : 0
@@ -142,7 +141,7 @@ function TopMerchants({ category, yearTxns }) {
   )
 }
 
-function MonthSparkline({ row, currentMonth }) {
+function MonthSparkline({ row, currentMonth, threshold = 0.10 }) {
   const { monthlyActual = [], monthlyBudget = [] } = row
   const maxBar = Math.max(...monthlyActual, ...monthlyBudget, 1)
   const BAR_H = 44
@@ -158,7 +157,7 @@ function MonthSparkline({ row, currentMonth }) {
           const budget = monthlyBudget[m] || 0
           const isFuture = m > currentMonth
           const isCurrent = m === currentMonth
-          const status = getStatus(actual, budget)
+          const status = getStatus(actual, budget, threshold)
           const barVal = isFuture ? budget : actual
           const barH = maxBar > 0 ? Math.max(Math.round((barVal / maxBar) * BAR_H), barVal > 0 ? 1 : 0) : 0
           const budgetH = maxBar > 0 && budget > 0 ? Math.max(Math.round((budget / maxBar) * BAR_H), 1) : 0
@@ -261,7 +260,7 @@ function TransactionList({ category, yearTxns }) {
   )
 }
 
-function CatBar({ row, isYtd, isPriorYear, priorActual, max, isExpanded, onToggle }) {
+function CatBar({ row, isYtd, isPriorYear, priorActual, max, isExpanded, onToggle, threshold = 0.10 }) {
   const [hovered, setHovered] = useState(false)
 
   let spending, budget, actualColor, delta, deltaPct, priorRefPct
@@ -271,7 +270,7 @@ function CatBar({ row, isYtd, isPriorYear, priorActual, max, isExpanded, onToggl
     const comparison = priorActual || 0
     if (comparison > 0) {
       const ratio = spending / comparison
-      actualColor = ratio > 1 + THRESHOLD ? 'var(--warn)' : ratio < 1 - THRESHOLD ? 'var(--accent)' : 'var(--green)'
+      actualColor = ratio > 1 + threshold ? 'var(--warn)' : ratio < 1 - threshold ? 'var(--accent)' : 'var(--green)'
       delta = spending - comparison
       deltaPct = (ratio - 1) * 100
     } else {
@@ -282,7 +281,7 @@ function CatBar({ row, isYtd, isPriorYear, priorActual, max, isExpanded, onToggl
   } else {
     spending = isYtd ? row.actual : row.projected
     budget = isYtd ? row.ytdBudget : row.fullBudget
-    actualColor = STATUS[getStatus(spending, budget)].color
+    actualColor = STATUS[getStatus(spending, budget, threshold)].color
     delta = budget > 0 ? spending - budget : null
     deltaPct = budget > 0 ? ((spending / budget) - 1) * 100 : null
     priorRefPct = 0
@@ -483,6 +482,8 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
   const [sortKey, setSortKey] = useState('spend')
   const [expandedCat, setExpandedCat] = useState(null)
 
+  const threshold = (ctx?.varianceThreshold ?? 10) / 100
+
   const isYtd = filter === 'YTD'
   const isPriorYear = filter === 'PRIOR YEAR'
 
@@ -555,7 +556,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
     comparisonLabel = 'LAST YEAR (FULL)'
     if (totalComparison > 0) {
       const ratio = totalSpend / totalComparison
-      totalStatus = ratio > 1 + THRESHOLD ? 'over' : ratio < 1 - THRESHOLD ? 'under' : 'onTrack'
+      totalStatus = ratio > 1 + threshold ? 'over' : ratio < 1 - threshold ? 'under' : 'onTrack'
       totalDelta = totalSpend - totalComparison
       totalDeltaPct = (ratio - 1) * 100
     } else {
@@ -566,7 +567,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
     totalComparison = isYtd ? totals.ytdBudget : totals.fullBudget
     spendLabel = isYtd ? 'YTD TOTAL' : 'FULL YEAR · ACT+FCST'
     comparisonLabel = isYtd ? 'YTD BUDGET' : 'ANNUAL BUDGET'
-    totalStatus = getStatus(totalSpend, totalComparison)
+    totalStatus = getStatus(totalSpend, totalComparison, threshold)
     totalDelta = totalComparison > 0 ? totalSpend - totalComparison : null
     totalDeltaPct = totalComparison > 0 ? ((totalSpend / totalComparison) - 1) * 100 : null
   }
@@ -575,16 +576,17 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
     setExpandedCat(prev => prev === cat ? null : cat)
   }
 
+  const tPct = Math.round(threshold * 100)
   const legendItems = isPriorYear ? [
-    { color: 'var(--accent)', label: 'Less than last year (>10%)', line: false },
-    { color: 'var(--green)',  label: 'On par with last year',       line: false },
-    { color: 'var(--warn)',   label: 'More than last year (>10%)',  line: false },
-    { color: 'var(--tx-3)',   label: 'Prior year (full)',             line: true  },
+    { color: 'var(--accent)', label: `Less than last year (>${tPct}%)`, line: false },
+    { color: 'var(--green)',  label: 'On par with last year',           line: false },
+    { color: 'var(--warn)',   label: `More than last year (>${tPct}%)`, line: false },
+    { color: 'var(--tx-3)',   label: 'Prior year (full)',                line: true  },
   ] : [
-    { color: 'var(--green)',       label: 'On track (within 10%)', line: false },
-    { color: 'var(--accent)',      label: 'Under budget (>10%)',   line: false },
-    { color: 'var(--warn)',        label: 'Over budget (>10%)',    line: false },
-    { color: 'var(--forecast-bd)', label: 'Forecast',              line: false },
+    { color: 'var(--green)',       label: `On track (within ${tPct}%)`, line: false },
+    { color: 'var(--accent)',      label: `Under budget (>${tPct}%)`,   line: false },
+    { color: 'var(--warn)',        label: `Over budget (>${tPct}%)`,    line: false },
+    { color: 'var(--forecast-bd)', label: 'Forecast',                   line: false },
     ...(hasBudget ? [{ color: 'var(--bar-budget)', label: 'Budget', line: true }] : []),
   ]
 
@@ -671,6 +673,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
           monthlyActual={groupMonthlyActual}
           monthlyBudget={groupMonthlyBudget}
           currentMonth={currentMonth}
+          threshold={threshold}
         />
 
         {/* ── Controls: filter + sort ── */}
@@ -707,6 +710,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
               max={displayMax}
               isExpanded={expandedCat === r.category}
               onToggle={() => handleToggle(r.category)}
+              threshold={threshold}
             />
             {expandedCat === r.category && (
               <div style={{
@@ -714,7 +718,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
                 border: '1px solid var(--bd-light)', borderTop: 'none',
                 padding: '12px 16px 16px', marginBottom: 4,
               }}>
-                <MonthSparkline row={r} currentMonth={currentMonth} />
+                <MonthSparkline row={r} currentMonth={currentMonth} threshold={threshold} />
                 <div style={{ marginTop: 14, borderTop: '1px solid var(--bd-light)', paddingTop: 14 }}>
                   <TopMerchants category={r.category} yearTxns={yearTxns} />
                   <TransactionList category={r.category} yearTxns={yearTxns} />
