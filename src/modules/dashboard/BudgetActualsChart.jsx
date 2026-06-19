@@ -268,6 +268,51 @@ function ThresholdChip({ varThreshold, onThresholdChange }) {
   )
 }
 
+function FullYearPill({ data }) {
+  const [hovered, setHovered] = useState(false)
+  const pct = data.fullYearPct
+  if (pct == null) return null
+  return (
+    <div
+      style={{ position: 'relative' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '4px 11px', borderRadius: 20, cursor: 'default',
+        border: `1px solid ${data.onTrack ? 'var(--accent-bd)' : 'var(--warn)'}`,
+        background: data.onTrack ? 'var(--accent-bg)' : 'var(--warn-bg)',
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: 3, background: data.onTrack ? 'var(--accent)' : 'var(--warn)' }} />
+        <span style={{
+          fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em',
+          color: data.onTrack ? 'var(--accent)' : 'var(--warn)', textTransform: 'uppercase',
+        }}>
+          {data.onTrack ? 'On track' : 'Over plan'} · {Math.round(pct)}% full yr
+        </span>
+      </span>
+      {hovered && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+          background: 'var(--bg-app)', border: '1px solid var(--bd)',
+          borderRadius: 9, padding: '10px 13px', minWidth: 200, zIndex: 40,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none',
+          whiteSpace: 'nowrap',
+        }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
+            FULL YEAR · ACT + FORECAST
+          </div>
+          <Row label="Projected vs. budget" value={`${Math.round(pct)}%`} color={data.onTrack ? 'var(--accent)' : 'var(--warn)'} />
+          {data.ytdPct != null && (
+            <Row label="YTD vs. YTD budget" value={`${Math.round(data.ytdPct)}%`} color="var(--tx-2)" />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ChartCard({ data, children, onThresholdChange }) {
   return (
     <div style={{
@@ -295,23 +340,7 @@ function ChartCard({ data, children, onThresholdChange }) {
           )}
           <LegendDot color="var(--red)" label="Over" />
           <LegendDot dashed label="Forecast" />
-          {data.hasActuals && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 11px', borderRadius: 20,
-              border: `1px solid ${data.onTrack ? 'var(--accent-bd)' : 'var(--warn)'}`,
-              background: data.onTrack ? 'var(--accent-bg)' : 'var(--warn-bg)',
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: 3, background: data.onTrack ? 'var(--accent)' : 'var(--warn)' }} />
-              <span style={{
-                fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em',
-                color: data.onTrack ? 'var(--accent)' : 'var(--warn)', textTransform: 'uppercase',
-              }}>
-                {data.onTrack ? 'On track' : 'Over plan'}
-                {data.ytdPct != null && ` · ${Math.round(data.ytdPct)}%`}
-              </span>
-            </span>
-          )}
+          {data.hasActuals && <FullYearPill data={data} />}
         </div>
       </div>
       {children}
