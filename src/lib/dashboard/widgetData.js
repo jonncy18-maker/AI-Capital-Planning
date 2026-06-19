@@ -323,7 +323,7 @@ export function scenarioImpact(ctx) {
 
 // Income vs. expenses — YTD from full-year transactions plus a full-year
 // actual-so-far + forecast-for-the-rest projection.
-export function incomeVsExpenses(ctx, yearTxns = []) {
+export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const excluded = new Set(
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
   )
@@ -380,6 +380,27 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
 
   const avgMonthlyExpenses = currentMonth > 0 ? ytdExpenses / currentMonth : ytdExpenses
 
+  // Top YTD spending group
+  const ytdSpendByGroup = {}
+  for (const t of ytd) {
+    if (Number(t.amount) < 0) {
+      const grp = t.group || t.category || 'Other'
+      ytdSpendByGroup[grp] = (ytdSpendByGroup[grp] || 0) + Math.abs(Number(t.amount))
+    }
+  }
+  const topGroupEntry = Object.entries(ytdSpendByGroup).sort((a, b) => b[1] - a[1])[0]
+  const topYtdGroup = topGroupEntry ? { name: topGroupEntry[0], amount: topGroupEntry[1] } : null
+
+  // Prior-year full savings rate (all 12 months completed, no forecasting needed)
+  let priorYearSavingsRate = null
+  if (priorYearTxns.length > 0) {
+    const pyFiltered = priorYearTxns.filter(t => !excluded.has(t.category))
+    const pyIncome = pyFiltered.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0)
+    const pyExpenses = pyFiltered.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
+    const pyNet = pyIncome - pyExpenses
+    priorYearSavingsRate = pyIncome > 0 ? (pyNet / pyIncome) * 100 : null
+  }
+
   return {
     hasData: ytd.length > 0,
     ytdIncome,
@@ -394,6 +415,8 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
     fullYearForecastExpenses,
     fullYearNet,
     fullYearSavingsRate,
+    topYtdGroup,
+    priorYearSavingsRate,
   }
 }
 

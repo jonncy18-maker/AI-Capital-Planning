@@ -143,8 +143,21 @@ function IveFlowRow({ income, expenses, net, hasIncome, primary = false }) {
   )
 }
 
-function IveSavingsRateStat({ rate, label, primary = false, tooltipLines }) {
+function IveSavingsRateStat({ rate, label, primary = false, tooltipLines, priorRate }) {
   const [hovered, setHovered] = useState(false)
+
+  let yoyEl = null
+  if (priorRate != null && rate != null) {
+    const delta = Math.round(rate) - Math.round(priorRate)
+    const color = delta > 0 ? 'var(--accent)' : delta < 0 ? 'var(--warn)' : 'var(--tx-3)'
+    const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→'
+    yoyEl = (
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color, marginTop: 5, lineHeight: 1 }}>
+        {arrow}{Math.abs(delta)}pp vs. {Math.round(priorRate)}% last yr
+      </div>
+    )
+  }
+
   return (
     <div
       style={{ position: 'relative', flex: 1 }}
@@ -163,6 +176,7 @@ function IveSavingsRateStat({ rate, label, primary = false, tooltipLines }) {
       }}>
         {rate != null ? Math.round(rate) + '%' : '—'}
       </div>
+      {yoyEl}
       <IveTooltip visible={hovered}>
         {tooltipLines}
       </IveTooltip>
@@ -230,7 +244,7 @@ function IncomeVsExpensesWidget({ ive }) {
         SAVINGS RATE
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-        <IveSavingsRateStat rate={ive.fullYearSavingsRate} label="FULL YEAR" primary tooltipLines={fullYearTooltip} />
+        <IveSavingsRateStat rate={ive.fullYearSavingsRate} label="FULL YEAR" primary tooltipLines={fullYearTooltip} priorRate={ive.priorYearSavingsRate} />
         <div style={{ width: 1, background: 'var(--accent-bd)', margin: '0 14px', alignSelf: 'stretch', minHeight: 36 }} />
         <IveSavingsRateStat rate={ive.savingsRate} label="YEAR TO DATE" tooltipLines={ytdTooltip} />
       </div>
@@ -246,6 +260,23 @@ function IncomeVsExpensesWidget({ ive }) {
         net={ive.ytdNet}
         hasIncome={hasIncome}
       />
+      {ive.topYtdGroup && (
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          marginTop: 10,
+          padding: '3px 8px',
+          background: 'var(--accent-bg)',
+          border: '1px solid var(--accent-bd)',
+          borderRadius: 4,
+        }}>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 7.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>TOP SPEND</span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-2)' }}>
+            {ive.topYtdGroup.name} · {fmtK(ive.topYtdGroup.amount)}
+          </span>
+        </div>
+      )}
 
       <IveDivider />
 
@@ -433,7 +464,7 @@ function ScenarioPlanWidget({ si }) {
 
 // ── widget definitions ───────────────────────────────────────────────────────
 
-function buildWidgets(ctx, summary, yearTxns = []) {
+function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = []) {
   const sgy = spendByGroupYear(ctx, yearTxns)
   const rr = yearProjection(ctx, yearTxns)
   const bva = budgetVsActual(ctx, yearTxns)
@@ -441,7 +472,7 @@ function buildWidgets(ctx, summary, yearTxns = []) {
   const cs = commitmentsSummary(ctx)
   const ws = wealthSummary(ctx)
   const si = scenarioImpact(ctx)
-  const ive = incomeVsExpenses(ctx, yearTxns)
+  const ive = incomeVsExpenses(ctx, yearTxns, priorYearTxns)
 
   return [
     {
@@ -639,6 +670,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   const [dragId, setDragId] = useState(null)
   const [activePeriod, setActivePeriod] = useState(periodDefault)
   const [yearTxns, setYearTxns] = useState([])
+  const [priorYearTxns, setPriorYearTxns] = useState([])
   const menuRef = useRef(null)
 
   // Close configure dropdown when clicking outside
@@ -658,6 +690,16 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
     getTransactionsByMonth(userId, `${year}-01-01`, `${year}-12-31`)
       .then(rows => { if (!cancelled) setYearTxns(rows) })
       .catch(() => { if (!cancelled) setYearTxns([]) })
+    return () => { cancelled = true }
+  }, [userId, context?.thisYear])
+
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    const year = (context?.thisYear ?? new Date().getFullYear()) - 1
+    getTransactionsByMonth(userId, `${year}-01-01`, `${year}-12-31`)
+      .then(rows => { if (!cancelled) setPriorYearTxns(rows) })
+      .catch(() => { if (!cancelled) setPriorYearTxns([]) })
     return () => { cancelled = true }
   }, [userId, context?.thisYear])
 
@@ -684,8 +726,8 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   const blocks = useMemo(() => [
     { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: () => <BudgetActualsChart data={monthly} mobile={mobile} /> },
     { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: () => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} /> },
-    ...buildWidgets(context, summary, yearTxns),
-  ], [context, summary, yearTxns, monthly, mobile, userId, briefing])
+    ...buildWidgets(context, summary, yearTxns, priorYearTxns),
+  ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing])
 
   const ordered = useMemo(() => {
     const byId = Object.fromEntries(blocks.map(b => [b.id, b]))
