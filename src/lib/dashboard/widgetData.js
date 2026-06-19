@@ -238,4 +238,38 @@ export function scenarioImpact(ctx) {
   }
 }
 
+// Income vs. expenses — YTD from full-year transactions, run-rate projection from 90d.
+export function incomeVsExpenses(ctx, yearTxns = []) {
+  const excluded = new Set(
+    (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
+  )
+  const now = new Date()
+
+  const ytd = yearTxns.filter(t => {
+    if (excluded.has(t.category)) return false
+    const d = new Date(t.date)
+    return !isNaN(d.getTime()) && d <= now
+  })
+
+  const ytdIncome = ytd.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0)
+  const ytdExpenses = ytd.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
+  const ytdNet = ytdIncome - ytdExpenses
+  const savingsRate = ytdIncome > 0 ? (ytdNet / ytdIncome) * 100 : null
+
+  // 90d run-rate for projected annual
+  const ctx90 = ctx?.transactions ?? []
+  const income90 = ctx90.filter(t => Number(t.amount) > 0 && !excluded.has(t.category)).reduce((s, t) => s + Number(t.amount), 0)
+  const expense90 = ctx90.filter(t => Number(t.amount) < 0 && !excluded.has(t.category)).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
+
+  return {
+    hasData: ytd.length > 0,
+    ytdIncome,
+    ytdExpenses,
+    ytdNet,
+    savingsRate,
+    projectedAnnualIncome: (income90 / 90) * 365,
+    projectedAnnualExpenses: (expense90 / 90) * 365,
+  }
+}
+
 export { MONTHS }

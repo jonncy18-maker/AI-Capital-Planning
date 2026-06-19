@@ -40,7 +40,7 @@ export default function BudgetActualsChart({ data, mobile }) {
   const max = useMemo(() => {
     let m = 0
     for (const mo of data.months) {
-      m = Math.max(m, mo.budget, mo.actual ?? 0)
+      m = Math.max(m, mo.forecast ?? mo.budget, mo.actual ?? 0)
     }
     return m || 1
   }, [data])
@@ -69,13 +69,15 @@ export default function BudgetActualsChart({ data, mobile }) {
         {/* Tooltip */}
         {hover != null && (() => {
           const mo = data.months[hover]
-          const variance = mo.actual != null ? mo.actual - mo.budget : null
-          const vpct = mo.budget > 0 && variance != null ? (variance / mo.budget) * 100 : null
+          const planVal = mo.forecast ?? mo.budget
+          const variance = mo.actual != null ? mo.actual - planVal : null
+          const vpct = planVal > 0 && variance != null ? (variance / planVal) * 100 : null
+          const hasForecastOverride = mo.hasOverride && mo.forecast !== mo.budget
           return (
             <div style={{
               position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
               zIndex: 5, background: 'var(--bg-app)', border: '1px solid var(--bd)',
-              borderRadius: 9, padding: '10px 13px', minWidth: 168,
+              borderRadius: 9, padding: '10px 13px', minWidth: 180,
               boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none',
             }}>
               <div style={{
@@ -84,7 +86,10 @@ export default function BudgetActualsChart({ data, mobile }) {
               }}>
                 {mo.label}{mo.isFuture ? ' · forecast' : ''}
               </div>
-              <Row label="Budget" value={fmtMoney(mo.budget)} color="var(--tx-1)" />
+              {hasForecastOverride && (
+                <Row label="Budget (plan)" value={fmtMoney(mo.budget)} color="var(--tx-3)" />
+              )}
+              <Row label={hasForecastOverride ? 'Forecast (override)' : 'Budget'} value={fmtMoney(planVal)} color="var(--tx-1)" />
               {mo.actual != null ? (
                 <Row
                   label="Actual"
@@ -110,7 +115,8 @@ export default function BudgetActualsChart({ data, mobile }) {
         {/* Bars */}
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 4 : 10, height: chartH }}>
           {data.months.map(mo => {
-            const budgetH = (mo.budget / max) * chartH
+            const planVal = mo.forecast ?? mo.budget
+            const budgetH = (planVal / max) * chartH
             const actualH = mo.actual != null ? (mo.actual / max) * chartH : budgetH
             const isHover = hover === mo.month
             const showForecast = mo.actual == null
@@ -202,7 +208,7 @@ function ChartCard({ data, children }) {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <LegendDot color="var(--bar-budget)" label="Budget" />
+          <LegendDot color="var(--bar-budget)" label={data.hasForecastOverrides ? 'Forecast' : 'Budget'} />
           <LegendDot color="var(--green)" label="On target ±10%" />
           <LegendDot color="var(--red)" label="Over" />
           <LegendDot dashed label="Forecast" />

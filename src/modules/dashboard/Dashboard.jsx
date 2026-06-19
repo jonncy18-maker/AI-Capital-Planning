@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   spendByGroup,
   runRateEOY,
@@ -8,6 +8,7 @@ import {
   wealthSummary,
   monthlyBudgetVsActual,
   scenarioImpact,
+  incomeVsExpenses,
 } from '../../lib/dashboard/widgetData.js'
 import { getLatestBriefing, saveBriefing } from '../../lib/db/aiBriefings.js'
 import { getTransactionsByMonth } from '../../lib/db/transactions.js'
@@ -16,7 +17,9 @@ import { summarizeContext } from '../../lib/ai/contextLoader.js'
 import BudgetActualsChart from './BudgetActualsChart.jsx'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 
-const LS_LAYOUT = 'acp.dashboard.layout.v2'
+// v3: changes default hidden list; existing users who had v2 get fresh defaults
+const LS_LAYOUT = 'acp.dashboard.layout.v3'
+const DEFAULT_LAYOUT = { order: [], hidden: ['activity'] }
 
 function fmtMoney(n) { return '$' + Math.round(n || 0).toLocaleString() }
 function fmtK(n) {
@@ -48,6 +51,38 @@ function Empty({ text }) {
   return <div style={{ fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.5 }}>{text}</div>
 }
 
+// ── Income vs. Expenses widget ───────────────────────────────────────────────
+
+function IncomeVsExpensesWidget({ ive }) {
+  if (!ive.hasData) {
+    return <Empty text="Import transactions to see your income vs. expense breakdown." />
+  }
+
+  const hasIncome = ive.ytdIncome > 0
+  return (
+    <>
+      {hasIncome && ive.savingsRate != null ? (
+        <Stat
+          value={Math.round(ive.savingsRate) + '%'}
+          label="SAVINGS RATE · YTD"
+          accent={ive.savingsRate > 0}
+        />
+      ) : (
+        <Stat value={fmtK(ive.ytdExpenses)} label="YTD EXPENSES" />
+      )}
+      <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
+        {hasIncome && <MiniStat value={fmtK(ive.ytdIncome)} label="income YTD" />}
+        <MiniStat value={fmtK(ive.ytdExpenses)} label="expenses YTD" />
+      </div>
+      {ive.ytdNet !== 0 && (
+        <div style={{ marginTop: 8, fontSize: 11.5, fontVariantNumeric: 'tabular-nums', color: ive.ytdNet > 0 ? 'var(--accent)' : 'var(--warn)' }}>
+          {ive.ytdNet > 0 ? '+' : ''}{fmtK(ive.ytdNet)} net
+        </div>
+      )}
+    </>
+  )
+}
+
 // ── Scenario Plan widget ─────────────────────────────────────────────────────
 
 function ScenarioPlanWidget({ si }) {
@@ -56,7 +91,7 @@ function ScenarioPlanWidget({ si }) {
   }
 
   const sign = (n) => (n >= 0 ? '+' : '−') + fmtK(Math.abs(n))
-  const deltaColor = (n) => n > 0 ? 'var(--red)' : n < 0 ? 'var(--green)' : 'var(--tx-2)'
+  const deltaColor = (n) => n > 0 ? 'var(--warn)' : n < 0 ? 'var(--accent)' : 'var(--tx-2)'
 
   if (!si.hasCommitted) {
     return (
@@ -101,7 +136,7 @@ function ScenarioPlanWidget({ si }) {
 
 // ── widget definitions ───────────────────────────────────────────────────────
 
-function buildWidgets(ctx, summary) {
+function buildWidgets(ctx, summary, yearTxns = []) {
   const sg = spendByGroup(ctx)
   const rr = runRateEOY(ctx)
   const bva = budgetVsActual(ctx)
@@ -109,10 +144,160 @@ function buildWidgets(ctx, summary) {
   const cs = commitmentsSummary(ctx)
   const ws = wealthSummary(ctx)
   const si = scenarioImpact(ctx)
+  const ive = incomeVsExpenses(ctx, yearTxns)
+
+  // Budget by group (monthly avg) for spend comparison bars
+  const budgetByGroupMonthly = {}
+  for (const li of (ctx?.budgetLineItems ?? [])) {
+    const g = li.budget_categories?.group || '—'
+    budgetByGroupMonthly[g] = (budgetByGroupMonthly[g] || 0) + Number(li.amount || 0) / 12
+  }
+  const hasBudgetGroups = Object.keys(budgetByGroupMonthly).length > 0
 
   return [
     {
-      id: 'activity', title: '90-Day Activity',
+      id: 'incomeExpenses',
+      title: 'Income vs. Expenses',
+      subtitle: 'Year-to-date flow · savings rate',
+      render: () => <IncomeVsExpensesWidget ive={ive} />,
+    },
+    {
+      id: 'spendGroup',
+      title: 'Spend by Group',
+      subtitle: 'Monthly avg vs. budget plan · last 90 days',
+      render: () => sg.rows.length ? (() => {
+        // Normalize bars against max of both actual-monthly and budget-monthly
+        const sgMax = Math.max(
+          sg.max / 3, // 90d → monthly
+          ...sg.rows.map(r => budgetByGroupMonthly[r.group] ?? 0),
+          1,
+        )
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 2 }}>
+            {sg.rows.map(r => {
+              const actualMonthly = r.total / 3
+              const budgetMonthly = budgetByGroupMonthly[r.group] ?? 0
+              const over = hasBudgetGroups && budgetMonthly > 0 && actualMonthly > budgetMonthly * 1.1
+              return (
+                <div key={r.group}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
+                    <span style={{ color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{r.group}</span>
+                    <span style={{ color: over ? 'var(--warn)' : 'var(--tx-1)', fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtK(actualMonthly)}{hasBudgetGroups && budgetMonthly > 0 ? ` / ${fmtK(budgetMonthly)}` : ''}
+                    </span>
+                  </div>
+                  {/* Actual bar */}
+                  <div style={{ height: 4, background: 'var(--bd-light)', borderRadius: 2, overflow: 'hidden', marginBottom: 2 }}>
+                    <div style={{ width: `${(actualMonthly / sgMax) * 100}%`, height: '100%', background: over ? 'var(--warn)' : 'var(--accent)', borderRadius: 2 }} />
+                  </div>
+                  {/* Budget reference bar */}
+                  {hasBudgetGroups && budgetMonthly > 0 && (
+                    <div style={{ height: 2, background: 'var(--bd-light)', borderRadius: 1, overflow: 'hidden' }}>
+                      <div style={{ width: `${(budgetMonthly / sgMax) * 100}%`, height: '100%', background: 'var(--bar-budget)', borderRadius: 1 }} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {hasBudgetGroups && (
+              <div style={{ fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em' }}>
+                ▮ actual/mo &nbsp; ▮ budget/mo
+              </div>
+            )}
+          </div>
+        )
+      })() : <Empty text="No spending data in the last 90 days." />,
+    },
+    {
+      id: 'spikes',
+      title: 'Cash Flow Spike',
+      subtitle: 'Largest single-month commitment demand ahead',
+      render: () => spike.hasData ? (
+        <>
+          <Stat value={fmtK(spike.amount)} label={`NEXT SPIKE · ${spike.month}`} />
+          <div style={{ marginTop: 14 }}><MiniStat value={fmtMoney(spike.yearTotal)} label="committed this year" /></div>
+        </>
+      ) : <Empty text="No upcoming commitment spikes. Add commitments to forecast cash demands." />,
+    },
+    {
+      id: 'budget',
+      title: 'Spend Pace vs. Budget',
+      subtitle: '90-day run-rate annualized vs. annual plan',
+      render: () => bva.hasBudget ? (() => {
+        const pct = bva.pct
+        const over = pct != null && pct > 105
+        const under = pct != null && pct < 90
+        return (
+          <>
+            <Stat
+              value={pct != null ? Math.round(pct) + '%' : '—'}
+              label="OF ANNUAL BUDGET"
+              accent={!over}
+            />
+            <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
+              <MiniStat value={fmtK(bva.projected)} label="run-rate" />
+              <MiniStat value={fmtK(bva.planned)} label="budget" />
+            </div>
+            {pct != null && (
+              <div style={{ marginTop: 8, fontSize: 11, color: over ? 'var(--warn)' : under ? 'var(--accent)' : 'var(--tx-3)' }}>
+                {over
+                  ? `${Math.round(pct - 100)}% above plan at current pace`
+                  : under
+                    ? `${Math.round(100 - pct)}% below plan at current pace`
+                    : 'On pace with annual budget'}
+              </div>
+            )}
+          </>
+        )
+      })() : <Empty text="No budget yet. Generate one in the Budget Builder to track plan vs. actual." />,
+    },
+    {
+      id: 'runrate',
+      title: 'Year-End Projection',
+      subtitle: 'At current 90-day spending pace through Dec 31',
+      render: () => summary.transactionCount ? (
+        <>
+          <Stat value={fmtK(rr.projectedRemaining)} label={`REMAINING · ${rr.daysLeft} DAYS LEFT`} />
+          <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
+            <MiniStat value={fmtK(rr.annualized)} label="annualized" />
+            <MiniStat value={fmtMoney(Math.round(rr.dailyRate))} label="per day" />
+          </div>
+        </>
+      ) : <Empty text="Import transactions to see your year-end projection." />,
+    },
+    {
+      id: 'commitments',
+      title: 'Commitments',
+      subtitle: 'Active long-term obligations this year',
+      render: () => cs.totalCount ? (
+        <>
+          <Stat value={cs.activeCount.toLocaleString()} label="ACTIVE" />
+          <div style={{ marginTop: 14 }}><MiniStat value={fmtMoney(cs.yearTotal)} label="this year" /></div>
+        </>
+      ) : <Empty text="No commitments tracked. Add long-term obligations to forecast them." />,
+    },
+    {
+      id: 'wealth',
+      title: 'Wealth Trajectory',
+      subtitle: 'Net worth from latest snapshot',
+      render: () => ws.hasData ? (
+        <>
+          <Stat value={fmtK(ws.netWorth)} label="NET WORTH" />
+          <div style={{ marginTop: 14 }}><MiniStat value={fmtK(ws.investable)} label="investable" /></div>
+        </>
+      ) : <Empty text="Add a net worth snapshot to track your trajectory." />,
+    },
+    {
+      id: 'scenarioPlan',
+      title: 'Scenario Plan',
+      subtitle: 'Committed decisions layered on forecast',
+      render: () => <ScenarioPlanWidget si={si} />,
+    },
+    {
+      id: 'activity',
+      title: '90-Day Activity',
+      subtitle: 'Transactions, spend & income · last 90 days',
+      optional: true,
       render: () => (
         <>
           <Stat value={summary.transactionCount.toLocaleString()} label="TRANSACTIONS" />
@@ -122,76 +307,6 @@ function buildWidgets(ctx, summary) {
           </div>
         </>
       ),
-    },
-    {
-      id: 'spendGroup', title: 'Spend by Group',
-      render: () => sg.rows.length ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 2 }}>
-          {sg.rows.map(r => (
-            <div key={r.group}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 3 }}>
-                <span style={{ color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{r.group}</span>
-                <span style={{ color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums' }}>{fmtK(r.total)}</span>
-              </div>
-              <div style={{ height: 4, background: 'var(--bd-light)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ width: `${sg.max ? (r.total / sg.max) * 100 : 0}%`, height: '100%', background: 'var(--accent)' }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : <Empty text="No spending data in the last 90 days." />,
-    },
-    {
-      id: 'spikes', title: 'Cash Flow Spike',
-      render: () => spike.hasData ? (
-        <>
-          <Stat value={fmtK(spike.amount)} label={`NEXT SPIKE · ${spike.month}`} />
-          <div style={{ marginTop: 14 }}><MiniStat value={fmtMoney(spike.yearTotal)} label="committed this year" /></div>
-        </>
-      ) : <Empty text="No upcoming commitment spikes. Add commitments to forecast cash demands." />,
-    },
-    {
-      id: 'budget', title: 'Budget vs. Projected',
-      render: () => bva.hasBudget ? (
-        <>
-          <Stat value={bva.pct != null ? Math.round(bva.pct) + '%' : '—'} label="OF PLAN (RUN-RATE)" accent={bva.pct == null || bva.pct <= 105} />
-          <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
-            <MiniStat value={fmtK(bva.planned)} label="planned" />
-            <MiniStat value={fmtK(bva.projected)} label="projected" />
-          </div>
-        </>
-      ) : <Empty text="No budget yet. Generate one in the Budget Builder to track plan vs. actual." />,
-    },
-    {
-      id: 'runrate', title: 'Run-Rate EOY',
-      render: () => summary.transactionCount ? (
-        <>
-          <Stat value={fmtK(rr.annualized)} label="ANNUALIZED SPEND" />
-          <div style={{ marginTop: 14 }}><MiniStat value={fmtMoney(rr.projectedRemaining)} label={`${rr.daysLeft}d left this year`} /></div>
-        </>
-      ) : <Empty text="Import transactions to see your run-rate projection." />,
-    },
-    {
-      id: 'commitments', title: 'Commitments',
-      render: () => cs.totalCount ? (
-        <>
-          <Stat value={cs.activeCount.toLocaleString()} label="ACTIVE" />
-          <div style={{ marginTop: 14 }}><MiniStat value={fmtMoney(cs.yearTotal)} label="this year" /></div>
-        </>
-      ) : <Empty text="No commitments tracked. Add long-term obligations to forecast them." />,
-    },
-    {
-      id: 'wealth', title: 'Wealth Trajectory',
-      render: () => ws.hasData ? (
-        <>
-          <Stat value={fmtK(ws.netWorth)} label="NET WORTH" />
-          <div style={{ marginTop: 14 }}><MiniStat value={fmtK(ws.investable)} label="investable" /></div>
-        </>
-      ) : <Empty text="Add a net worth snapshot to track your trajectory." />,
-    },
-    {
-      id: 'scenarioPlan', title: 'Scenario Plan',
-      render: () => <ScenarioPlanWidget si={si} />,
     },
   ]
 }
@@ -236,7 +351,10 @@ function BriefingWidget({ userId, ctx, briefing, onGenerated }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ color: 'var(--accent)', fontSize: 13 }}>✦</span>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>AI Briefing</span>
+          <div>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>AI Briefing</span>
+            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 1 }}>On-demand narrative of your financial position</div>
+          </div>
           {briefing?.generated_at && (
             <span style={{ fontSize: 10.5, color: 'var(--tx-3)' }}>
               · {new Date(briefing.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -268,13 +386,23 @@ function BriefingWidget({ userId, ctx, briefing, onGenerated }) {
 export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [] }) {
   const [briefing, setBriefing] = useState(null)
   const [configure, setConfigure] = useState(false)
+  const [configMenu, setConfigMenu] = useState(false)
+  const [addReports, setAddReports] = useState(false)
   const [dragId, setDragId] = useState(null)
   const [activePeriod, setActivePeriod] = useState(periodDefault)
   const [yearTxns, setYearTxns] = useState([])
+  const menuRef = useRef(null)
 
-  // Full-year transactions power the Monthly Budget vs Actuals chart. The shared
-  // AI context only holds the trailing 90 days, so the chart loads the wider
-  // window itself (current calendar year).
+  // Close configure dropdown when clicking outside
+  useEffect(() => {
+    if (!configMenu) return
+    function handler(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setConfigMenu(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [configMenu])
+
   useEffect(() => {
     if (!userId) return
     let cancelled = false
@@ -287,10 +415,9 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
 
   const monthly = useMemo(() => monthlyBudgetVsActual(context, yearTxns), [context, yearTxns])
 
-  // Persisted layout: { order: [...ids], hidden: [...ids] }
   const [layout, setLayout] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(LS_LAYOUT)) || { order: [], hidden: [] } }
-    catch { return { order: [], hidden: [] } }
+    try { return JSON.parse(localStorage.getItem(LS_LAYOUT)) || DEFAULT_LAYOUT }
+    catch { return DEFAULT_LAYOUT }
   })
   const persist = useCallback((next) => {
     setLayout(next)
@@ -306,17 +433,12 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
     return () => { cancelled = true }
   }, [userId])
 
-  // Every dashboard block — the full-width chart and AI briefing plus the stat
-  // widgets — lives in one list so all of them are draggable and hideable.
   const blocks = useMemo(() => [
     { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: () => <BudgetActualsChart data={monthly} mobile={mobile} /> },
     { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: () => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} /> },
-    ...buildWidgets(context, summary),
-  ], [context, summary, monthly, mobile, userId, briefing])
+    ...buildWidgets(context, summary, yearTxns),
+  ], [context, summary, yearTxns, monthly, mobile, userId, briefing])
 
-  // Apply the saved order; full-width blocks not yet in a saved order lead, then
-  // saved order, then any other new blocks. After the first drag the persisted
-  // order contains every id, so this default only applies before any reordering.
   const ordered = useMemo(() => {
     const byId = Object.fromEntries(blocks.map(b => [b.id, b]))
     const seen = new Set()
@@ -353,24 +475,62 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   }
 
   const visible = ordered.filter(w => !hidden.has(w.id))
+  const optionalBlocks = blocks.filter(b => b.optional)
 
   return (
     <div style={{ maxWidth: 1120 }}>
-      {/* Header */}
       <ModuleHeader
         mobile={mobile}
         icon="◉"
         title="Dashboard"
-        subtitle="Your command center — plan vs. actuals, cash, and trajectory at a glance."
+        subtitle="Plan vs. actuals, income, and trajectory at a glance."
         actions={(
-          <button onClick={() => setConfigure(c => !c)} style={{
-            background: configure ? 'var(--accent-bg)' : 'none',
-            border: configure ? '1px solid var(--accent-bd)' : '1px solid var(--bd)',
-            borderRadius: 8, padding: '8px 14px', fontFamily: "'DM Mono', monospace",
-            fontSize: 10, letterSpacing: '0.05em', color: configure ? 'var(--accent)' : 'var(--tx-2)', cursor: 'pointer',
-          }}>
-            {configure ? '✓ DONE' : '⊞ CONFIGURE'}
-          </button>
+          configure ? (
+            <button onClick={() => setConfigure(false)} style={{
+              background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
+              borderRadius: 8, padding: '8px 14px', fontFamily: "'DM Mono', monospace",
+              fontSize: 10, letterSpacing: '0.05em', color: 'var(--accent)', cursor: 'pointer',
+            }}>
+              ✓ DONE
+            </button>
+          ) : (
+            <div ref={menuRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => { setConfigMenu(m => !m); setAddReports(false) }}
+                style={{
+                  background: (configMenu || addReports) ? 'var(--accent-bg)' : 'none',
+                  border: (configMenu || addReports) ? '1px solid var(--accent-bd)' : '1px solid var(--bd)',
+                  borderRadius: 8, padding: '8px 14px', fontFamily: "'DM Mono', monospace",
+                  fontSize: 10, letterSpacing: '0.05em',
+                  color: (configMenu || addReports) ? 'var(--accent)' : 'var(--tx-2)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                ⊞ CONFIGURE <span style={{ fontSize: 8, opacity: 0.7 }}>▾</span>
+              </button>
+              {configMenu && (
+                <div style={{
+                  position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30,
+                  background: 'var(--bg-card)', border: '1px solid var(--bd)',
+                  borderRadius: 10, padding: '6px 0', minWidth: 200,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                }}>
+                  <MenuItem
+                    icon="⊞"
+                    label="Customize Layout"
+                    desc="Drag, reorder, show or hide cards"
+                    onClick={() => { setConfigure(true); setConfigMenu(false) }}
+                  />
+                  <MenuItem
+                    icon="+"
+                    label="Add Reports"
+                    desc="Show optional data panels"
+                    onClick={() => { setAddReports(r => !r); setConfigMenu(false) }}
+                  />
+                </div>
+              )}
+            </div>
+          )
         )}
       />
 
@@ -391,14 +551,46 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
         </div>
       )}
 
+      {/* Add Reports panel */}
+      {addReports && (
+        <div style={{ border: '1px solid var(--bd)', borderRadius: 12, padding: '14px 18px', marginBottom: 18, background: 'var(--bg-card)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>Optional Reports</div>
+            <button onClick={() => setAddReports(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 14 }}>✕</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {optionalBlocks.map(b => {
+              const isHidden = hidden.has(b.id)
+              return (
+                <div key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--bd-light)' }}>
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx-1)' }}>{b.title}</div>
+                    {b.subtitle && <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 1 }}>{b.subtitle}</div>}
+                  </div>
+                  <button
+                    onClick={() => toggleHidden(b.id)}
+                    style={{
+                      padding: '5px 12px', borderRadius: 7, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                      background: isHidden ? 'var(--accent)' : 'transparent',
+                      color: isHidden ? 'var(--accent-tx-on)' : 'var(--tx-3)',
+                      border: isHidden ? 'none' : '1px solid var(--bd)',
+                    }}
+                  >
+                    {isHidden ? '+ Add' : '− Remove'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {configure && (
         <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', letterSpacing: '0.04em', marginBottom: 14 }}>
           DRAG TO REARRANGE · TAP THE EYE TO SHOW/HIDE
         </div>
       )}
 
-      {/* Unified block grid — full-width chart & briefing and the stat widgets,
-          all draggable + hideable. Full-width blocks span every column. */}
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
         {(configure ? ordered : visible).map(b => {
           const isHidden = hidden.has(b.id)
@@ -443,10 +635,13 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
                 transition: 'border-color .15s, opacity .15s',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx-2)' }}>{b.title}</div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>{b.title}</div>
+                  {b.subtitle && <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 2, lineHeight: 1.4 }}>{b.subtitle}</div>}
+                </div>
                 {configure && (
-                  <button onClick={() => toggleHidden(b.id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13 }}>
+                  <button onClick={() => toggleHidden(b.id)} title={isHidden ? 'Show' : 'Hide'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 13, flexShrink: 0, marginLeft: 8 }}>
                     {isHidden ? '◌' : '⏿'}
                   </button>
                 )}
@@ -455,6 +650,27 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+function MenuItem({ icon, label, desc, onClick }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px',
+        cursor: 'pointer', background: hov ? 'var(--hover)' : 'transparent',
+      }}
+    >
+      <span style={{ fontSize: 13, color: 'var(--accent)', marginTop: 1, width: 16 }}>{icon}</span>
+      <div>
+        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--tx-1)' }}>{label}</div>
+        <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 1 }}>{desc}</div>
       </div>
     </div>
   )
