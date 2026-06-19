@@ -326,13 +326,14 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns }) {
     return <Empty text="No budget or spending data for this year yet." />
   }
 
+  const varRatio = (ctx?.varianceThreshold ?? 10) / 100
   const max = sgy.max
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 2 }}>
         {sgy.rows.map(r => {
-          const over    = r.budget > 0 && r.projected > r.budget * 1.1
-          const under   = r.budget > 0 && r.projected < r.budget * 0.9
+          const over    = r.budget > 0 && r.projected > r.budget * (1 + varRatio)
+          const under   = r.budget > 0 && r.projected < r.budget * (1 - varRatio)
           const onTrack = r.budget > 0 && !over && !under
           const actualColor = over ? 'var(--warn)' : onTrack ? 'var(--green)' : 'var(--accent)'
           const isHover = hover === r.group
@@ -435,7 +436,7 @@ function SgLegend({ color, label }) {
 
 // ── Spend vs. Budget widget ──────────────────────────────────────────────────
 
-function BvaWidget({ bva, rr }) {
+function BvaWidget({ bva, rr, varThreshold = 10 }) {
   const [projHovered, setProjHovered] = useState(false)
 
   if (!bva.hasBudget) {
@@ -443,8 +444,8 @@ function BvaWidget({ bva, rr }) {
   }
 
   const pct = bva.pct
-  const over  = pct != null && pct > 110
-  const under = pct != null && pct < 90
+  const over  = pct != null && pct > 100 + varThreshold
+  const under = pct != null && pct < 100 - varThreshold
   const mainColor   = over ? 'var(--tx-1)' : 'var(--accent)'
   const statusColor = over ? 'var(--warn)' : under ? 'var(--accent)' : 'var(--green)'
   const statusText  = over
@@ -652,7 +653,7 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = []) {
       id: 'budget',
       title: 'Spend vs. Budget',
       subtitle: 'Full-year actual + forecast vs. annual plan',
-      render: () => <BvaWidget bva={bva} rr={rr} />,
+      render: () => <BvaWidget bva={bva} rr={rr} varThreshold={ctx?.varianceThreshold ?? 10} />,
     },
     {
       id: 'runrate',

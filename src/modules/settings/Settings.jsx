@@ -131,6 +131,10 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
   const [goalPct, setGoalPct] = useState(
     profile?.savings_goal_pct != null ? String(profile.savings_goal_pct) : ''
   )
+  // Variance threshold
+  const [varianceThreshold, setVarianceThreshold] = useState(
+    profile?.variance_threshold ?? 10
+  )
   // Tax profile (gross→net estimator inputs)
   const tp = profile?.tax_profile || {}
   const [filingStatus, setFilingStatus] = useState(tp.filingStatus || 'single')
@@ -244,6 +248,7 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
       savingsGoalAmount: parseFloat(goalAmount) || null,
       savingsGoalPct: parseFloat(goalPct) || null,
       savingsGoalType: goalType,
+      varianceThreshold,
       taxProfile: {
         filingStatus,
         state: taxState || null,
@@ -516,6 +521,46 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
             </div>
           )
         })()}
+      </div>
+
+      {/* Section 4: Budget Variance Threshold */}
+      <div style={card}>
+        <div style={cardTitle}>ANALYSIS PREFERENCES</div>
+        <div style={{
+          fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)',
+          letterSpacing: '0.06em', marginBottom: 8,
+        }}>
+          BUDGET VARIANCE THRESHOLD
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--tx-2)', marginBottom: 16, lineHeight: 1.5 }}>
+          The ±% band that counts as "on track." Spending within this range of budget
+          won't trigger over/under warnings across the dashboard.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <input
+            type="range"
+            min="1"
+            max="25"
+            step="1"
+            value={varianceThreshold}
+            onChange={e => setVarianceThreshold(Number(e.target.value))}
+            style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer' }}
+          />
+          <div style={{
+            fontFamily: "'DM Mono', monospace", fontSize: 20,
+            color: 'var(--accent)', minWidth: 48, textAlign: 'right', lineHeight: 1,
+          }}>
+            ±{varianceThreshold}%
+          </div>
+        </div>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          fontFamily: "'DM Mono', monospace", fontSize: 8.5,
+          color: 'var(--tx-4)', marginTop: 6,
+        }}>
+          <span>1% (strict)</span>
+          <span>25% (lenient)</span>
+        </div>
       </div>
       </div>{/* ───────── end PLANNING TAB ───────── */}
 
