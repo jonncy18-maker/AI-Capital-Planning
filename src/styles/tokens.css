@@ -26,6 +26,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
   --field: #0E1318;
   --hover: rgba(255, 255, 255, 0.03);
   --bar-budget: rgba(56, 132, 220, 0.45);
+  --bar-budget-tx: #5B9BE8;
   --forecast-fill: rgba(130, 80, 210, 0.15);
   --forecast-bd: rgba(150, 100, 230, 0.55);
   --teal: #00C2A8;
@@ -53,6 +54,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
   --field: #F7FAFC;
   --hover: rgba(0, 0, 0, 0.025);
   --bar-budget: rgba(40, 110, 200, 0.38);
+  --bar-budget-tx: #2C6FC8;
   --forecast-fill: rgba(130, 80, 210, 0.12);
   --forecast-bd: rgba(120, 80, 200, 0.55);
   --teal: #0A7A6A;

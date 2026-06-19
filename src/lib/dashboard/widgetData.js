@@ -22,6 +22,101 @@ export function spendByGroup(ctx, topN = 6) {
   return { rows: rows.slice(0, topN), max, totalGroups: rows.length }
 }
 
+// Spend by group for the full year: actual (YTD, real transactions) + forecast
+// (budget/override for the remaining months) compared against the annual budget.
+// Past months contribute their real actuals; the current and future months
+// contribute the planned/forecast amount — so each group's bar reads as the
+// best full-year estimate (actual-so-far + plan-for-the-rest) against budget.
+export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
+  const lineItems = ctx?.budgetLineItems ?? []
+  const overrides = ctx?.forecastOverrides ?? []
+  const year = ctx?.thisYear ?? new Date().getFullYear()
+  const categories = ctx?.categories ?? []
+  const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
+
+  const now = new Date()
+  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+
+  // category_id → group (from line items first, then the category table).
+  const catGroup = {}
+  for (const c of categories) if (c.id) catGroup[c.id] = c.group || 'Uncategorized'
+  for (const li of lineItems) {
+    if (li.category_id) catGroup[li.category_id] = li.budget_categories?.group || catGroup[li.category_id] || 'Uncategorized'
+  }
+
+  // Budget by group by month, plus per-category month budget for override math.
+  const budgetByGroupMonth = {}
+  const catMonthBudget = {}
+  for (const li of lineItems) {
+    const g = li.budget_categories?.group || 'Uncategorized'
+    const m = (li.month ?? 1) - 1
+    if (m < 0 || m > 11) continue
+    if (!budgetByGroupMonth[g]) budgetByGroupMonth[g] = Array(12).fill(0)
+    budgetByGroupMonth[g][m] += Number(li.amount || 0)
+    const catId = li.category_id
+    if (catId) {
+      if (!catMonthBudget[catId]) catMonthBudget[catId] = Array(12).fill(0)
+      catMonthBudget[catId][m] += Number(li.amount || 0)
+    }
+  }
+
+  // Forecast = override ?? budget. Apply each override on top of its group/month.
+  const forecastByGroupMonth = {}
+  for (const g of Object.keys(budgetByGroupMonth)) forecastByGroupMonth[g] = [...budgetByGroupMonth[g]]
+  for (const ov of overrides) {
+    const catId = ov.category_id
+    const m = (ov.month ?? 1) - 1
+    if (m < 0 || m > 11 || !catId) continue
+    const g = ov.budget_categories?.group || catGroup[catId] || 'Uncategorized'
+    if (!forecastByGroupMonth[g]) forecastByGroupMonth[g] = Array(12).fill(0)
+    const budgetContrib = catMonthBudget[catId]?.[m] ?? 0
+    forecastByGroupMonth[g][m] = forecastByGroupMonth[g][m] - budgetContrib + Number(ov.amount || 0)
+  }
+
+  // Actual expenses by group by month from the full-year transactions.
+  const actualByGroupMonth = {}
+  for (const t of yearTxns) {
+    const amt = Number(t.amount) || 0
+    if (amt >= 0) continue // expenses only
+    if (excluded.has(t.category)) continue
+    const d = new Date(t.date)
+    if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
+    const g = t.group || 'Uncategorized'
+    const m = d.getMonth()
+    if (!actualByGroupMonth[g]) actualByGroupMonth[g] = Array(12).fill(0)
+    actualByGroupMonth[g][m] += Math.abs(amt)
+  }
+
+  const groups = new Set([
+    ...Object.keys(budgetByGroupMonth),
+    ...Object.keys(actualByGroupMonth),
+  ])
+
+  const rows = []
+  for (const g of groups) {
+    const budgetMonths = budgetByGroupMonth[g] || Array(12).fill(0)
+    const forecastMonths = forecastByGroupMonth[g] || budgetMonths
+    const actualMonths = actualByGroupMonth[g] || Array(12).fill(0)
+    let actual = 0
+    let forecast = 0
+    let budget = 0
+    for (let m = 0; m < 12; m++) {
+      budget += budgetMonths[m]
+      if (m <= currentMonth) actual += actualMonths[m]
+      else forecast += forecastMonths[m]
+    }
+    const projected = actual + forecast
+    if (budget < 1 && projected < 1) continue
+    rows.push({ group: g, actual, forecast, projected, budget })
+  }
+
+  rows.sort((a, b) => b.projected - a.projected)
+  const top = rows.slice(0, topN)
+  const max = top.reduce((m, r) => Math.max(m, r.projected, r.budget), 0) || 1
+
+  return { rows: top, max, totalGroups: rows.length, hasBudget: lineItems.length > 0 }
+}
+
 // Run-rate end-of-year projection from the trailing 90-day spend.
 export function runRateEOY(ctx) {
   const txns = ctx?.transactions ?? []
@@ -261,12 +356,47 @@ export function incomeVsExpenses(ctx, yearTxns = []) {
   const income90 = ctx90.filter(t => Number(t.amount) > 0 && !excluded.has(t.category)).reduce((s, t) => s + Number(t.amount), 0)
   const expense90 = ctx90.filter(t => Number(t.amount) < 0 && !excluded.has(t.category)).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
 
+  // ── Full-year = actual-so-far + forecast-for-the-rest ───────────────────────
+  // Expenses: blend per-month actuals with the budget/override forecast (reuse
+  // monthlyBudgetVsActual's month model). Income: actuals to date plus the
+  // average of completed months projected across the remaining months.
+  const mbva = monthlyBudgetVsActual(ctx, yearTxns)
+  const currentMonth = mbva.currentMonth
+  const fullYearExpenses = mbva.months.reduce(
+    (s, mo) => s + (mo.actual != null ? mo.actual : mo.forecast), 0
+  )
+
+  const incomeByMonth = Array(12).fill(0)
+  for (const t of yearTxns) {
+    const amt = Number(t.amount) || 0
+    if (amt <= 0) continue
+    if (excluded.has(t.category)) continue
+    const d = new Date(t.date)
+    if (Number.isNaN(d.getTime()) || d.getFullYear() !== now.getFullYear()) continue
+    incomeByMonth[d.getMonth()] += amt
+  }
+  // Average over completed months (everything before the current one) so a
+  // partially-elapsed current month doesn't drag the projection down.
+  let completedIncome = 0
+  for (let m = 0; m < currentMonth; m++) completedIncome += incomeByMonth[m]
+  const avgMonthlyIncome = currentMonth > 0 ? completedIncome / currentMonth
+    : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
+  const remainingMonths = Math.max(11 - currentMonth, 0)
+  const fullYearIncome = ytdIncome + avgMonthlyIncome * remainingMonths
+
+  const fullYearNet = fullYearIncome - fullYearExpenses
+  const fullYearSavingsRate = fullYearIncome > 0 ? (fullYearNet / fullYearIncome) * 100 : null
+
   return {
     hasData: ytd.length > 0,
     ytdIncome,
     ytdExpenses,
     ytdNet,
     savingsRate,
+    fullYearIncome,
+    fullYearExpenses,
+    fullYearNet,
+    fullYearSavingsRate,
     projectedAnnualIncome: (income90 / 90) * 365,
     projectedAnnualExpenses: (expense90 / 90) * 365,
   }
