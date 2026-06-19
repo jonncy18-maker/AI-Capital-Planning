@@ -11,6 +11,7 @@ import AIPrefsButton from './AIPrefsButton.jsx'
 import ImportFlow from '../import/ImportFlow.jsx'
 import Dashboard from '../dashboard/Dashboard.jsx'
 import CashFlow from '../cashflow/CashFlow.jsx'
+import CreditCards from '../creditcards/CreditCards.jsx'
 import Scenarios from '../scenarios/Scenarios.jsx'
 import Budget from '../budget/Budget.jsx'
 import Forecast from '../forecast/Forecast.jsx'
@@ -134,6 +135,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
           />
         )
       case 'cashflow':    return <CashFlow userId={user.id} mobile={mobile} />
+      case 'creditcards': return <CreditCards />
       case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} reloadSignal={dataNonce} context={aiContext} onDataChange={() => { setDataNonce(n => n + 1); reloadAiContext() }} openScenarioId={openScenarioId} />
       case 'budget':      return <Budget userId={user.id} mobile={mobile} />
       case 'forecast':    return <Forecast userId={user.id} mobile={mobile} />
