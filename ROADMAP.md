@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-06-17 (Phases 5–10 built)
+**Last updated:** 2026-06-19 (Phases 0–11 largely built; in daily use)
 
 ### Done so far
 - **Phase 0 complete** — Vite + React SPA, GitHub Pages deploy (auto on push to `main`), Supabase project live, client configured.
@@ -40,22 +40,12 @@
   - `src/modules/cashflow/CashFlow.jsx` — full 12-month rolling calendar; month cards with spike detection, configurable threshold, click-to-expand category breakdown, trailing 4-quarter summary, loading/error/empty states.
   - `src/lib/db/transactions.js` — added `getTransactionsByMonth(userId, fromDate, toDate)` for date-range queries used by the calendar.
   - **CSV import batching fix** — `importTransactions` now upserts in 500-row batches (handles 1000+ row files) and uses count-before/count-after to accurately measure inserts instead of relying on the unreliable `ignoreDuplicates` return value.
-
-### Known follow-ups / gotchas
-- **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
-- **Retire the browser-side path:** `src/lib/anthropic.js` (direct browser call via `VITE_ANTHROPIC_API_KEY`) is now superseded by the Edge Function and should not be used. Keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty; rotate the key if it was ever exposed.
-- **Apply migration 003** in Supabase SQL Editor (`supabase/migrations/003_import_logs.sql`) before import logging will work. The import itself succeeds without it; logging fails silently (non-fatal).
-- **Test with real Monarch CSV** — dedup logic and parser logic are written but not tested against an actual 12–24 month export.
-- **budget_categories seed is per-user** — seeded on first import via `seedDefaultCategories(userId)`.
-- Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
-
 - **Phase 5 complete** — Scenario Planner:
   - `src/lib/db/scenarios.js` — full data layer: `getScenarios`, `createScenario`, `deleteScenario`, `promoteToCommitted`, `getAdjustments`, `addAdjustment`, `deleteAdjustment`.
   - `src/modules/scenarios/Scenarios.jsx` — full module: two-panel layout (scenario list + detail), scenario creation form, adjustment input (category/month/year/delta/label), promote-to-committed flow, Adjustments and Comparison View tabs, view mode toggle (Baseline / Actual Plan / Scenarios), responsive mobile layout.
   - `src/lib/ai/contextLoader.js` — scenarios (with adjustments) now loaded into AI context and included in the context brief sent to the AI.
   - `src/lib/ai/sendMessage.js` — system prompt updated to reference scenario planning capability.
   - AppShell wired: `userId` and `mobile` passed to Scenarios module.
-
 - **Phase 6 complete** — Annual Budget Builder:
   - `src/lib/budget/patternAnalyzer.js` — pure historical pattern analyzer: classifies each category Fixed/Flexible/Non-Monthly from frequency + coefficient of variation, annualizes the observed window, and generates draft `budget_line_items` (Non-Monthly distributed by historical month histogram).
   - `src/lib/db/budgetLineItems.js` — `getBudgetLineItems`, `getBudgetYears`, `saveBudgetForYear` (delete-then-insert per year/version), `updateLineItemAmount`, `deleteLineItem`.
@@ -69,49 +59,44 @@
   - `src/lib/db/wealthSnapshots.js` — snapshot CRUD; `contextLoader` reuses `getLatestWealthSnapshot`.
   - `src/modules/wealth/Wealth.jsx` — net worth snapshot form, SVG trajectory chart (baseline vs. commitment-drained), assumption sliders (contribution / return / horizon / retirement target), commitment-impact toggle, snapshot history.
 - **Phase 9 complete** — Dashboard widgets + AI Briefing:
-  - `src/lib/dashboard/widgetData.js` — pure derivations (spend by group, run-rate EOY, budget vs. projected, cash-flow spike, commitments summary, wealth summary).
+  - `src/lib/dashboard/widgetData.js` — pure derivations: `monthlyBudgetVsActual`, `spendByGroupYear`, `spendByCategoryForGroup`, `incomeVsExpenses`, `yearProjection`, `budgetVsActual`, `cashFlowSpike`, `commitmentsSummary`, `wealthSummary`, `scenarioImpact`.
   - `src/lib/db/aiBriefings.js` — `getLatestBriefing` / `saveBriefing` (cached per `module_context`).
   - `src/modules/dashboard/Dashboard.jsx` — all predefined widgets wired to live context; AI Briefing widget (on-demand, cached to `ai_briefings`); configure mode with drag-reorder + show/hide persisted to localStorage.
   - `contextLoader` now also loads current-year `budget_line_items` + budget years; brief + summary expanded accordingly.
 - **Phase 10 (mostly complete)** — Onboarding: 5-step flow already live (`src/modules/onboarding/Onboarding.jsx`) — welcome, 3-part priority conversation, data-path choice, CSV upload + baseline, completion → dashboard. Category confirmation handled in `ImportFlow`. Remaining: in-onboarding commitment setup + auto budget-generation step (both available as first-class modules now).
+- **Dashboard enhancement pass (this session):**
+  - **Monthly Budget vs. Actuals chart** (`src/modules/dashboard/BudgetActualsChart.jsx`) — full 12-month bar chart with budget vs. actual per month, forecast overrides, TODAY marker, variance threshold chip (adjustable 1–25%, persisted to `user_profiles`), full-year on-track pill, and tooltip on hover.
+  - **Income vs. Expenses redesign** — all 12 months shown as a bar chart (solid teal/orange for actuals, dashed for forecast), TODAY marker, full-year KPIs (savings rate, income, expenses, net) below chart, YTD row. Mirrors the BVA chart layout.
+  - **Post-tax income forecast** — `incomeVsExpenses` now computes `salary/12` as the base monthly forecast, adds bonus in `bonus_month` only, subtracts estimated taxes at the effective rate on `salary + bonus`, monthly benefits deduction, and monthly 401k contribution. Falls back to a rolling transaction average when no salary profile is set.
+  - **Spend by Group widget** (`SpendByGroupWidget`) — full-year actual + forecast stacked bar vs. budget bar per group, hover tooltip, click-to-drill-down modal (`SpendGroupDetail`) showing category-level breakdown with its own bar chart.
+  - **Settings additions** — bonus month selector (Jan–Dec), benefits toggle (flat $ vs. % of gross), 401k % + on-bonus checkbox, live take-home readout showing each deduction line. Variance threshold slider. All saved to `user_profiles`.
+  - **Collapse/expand** — every dashboard card has a ▾/▸ chevron; a global ▾ COLLAPSE / ▸ EXPAND button in the header actions collapses or expands all visible cards at once. State persisted to localStorage.
+  - **Bug fix** — `BvaWidget` referenced `IveTooltip`, `TooltipHeader`, `TooltipRow` without defining them, causing a `ReferenceError` on first render that crashed the entire React tree and produced a blank page. Added the three missing component definitions.
+  - **Schema additions** — `user_profiles` gained 8 new nullable columns: `variance_threshold`, `bonus_month`, `benefits_amount`, `benefits_pct`, `four01k_pct`, `four01k_on_bonus`, `annual_income` (already existed), `annual_bonus` (already existed).
 
-### Known build note (this session)
-- Local `vite build` in this sandbox uses **rolldown-vite 8.0.16**, whose tree-shaker drops the entry module's `render()` side effect, producing an app-less bundle (affects the whole repo equally, including previously-shipped modules). Building with `rollupOptions.treeshake: false` produces a correct bundle (all 101 modules + entry present). Source verified correct via ESLint + the treeshake-off build. Did **not** alter the committed `vite.config.js` since this is a sandbox toolchain artifact and production deploys have been working.
+### Known follow-ups / gotchas
+- **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
+- **Retire the browser-side path:** `src/lib/anthropic.js` (direct browser call via `VITE_ANTHROPIC_API_KEY`) is now superseded by the Edge Function and should not be used. Keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty; rotate the key if it was ever exposed.
+- **Apply migration 003** in Supabase SQL Editor (`supabase/migrations/003_import_logs.sql`) before import logging will work. The import itself succeeds without it; logging fails silently (non-fatal).
+- **Apply schema additions for income/settings** — `variance_threshold`, `bonus_month`, `benefits_amount`, `benefits_pct`, `four01k_pct`, `four01k_on_bonus` columns must exist in `user_profiles` for Settings save and income forecast to work. Add via SQL Editor if the migration wasn't applied.
+- **Test with real Monarch CSV** — dedup logic and parser logic are written but not tested against an actual 12–24 month export.
+- **No error boundary** — unhandled React render errors still produce a blank page. Add one soon.
+- Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
 
-### Recommended next session — Phase 11: Polish and Pre-Launch (10-step plan)
+### Recommended next session
 
-Ordered by "what unblocks the most." Steps 1, 2, 10 need Supabase/GitHub
-account access; steps 4, 5, 6, 8, 9 are pure code.
+**Reliability**
+1. **Add React error boundary** — wrap `<AppShell>` (or `App.jsx`) so render crashes show a fallback UI instead of a blank page. One component to write and one place to add it.
+2. **Apply outstanding DB migrations** — `003_import_logs.sql` + the `user_profiles` income/settings columns. Verify by running the Settings save and checking no 400 errors.
+3. **Deploy + verify `ai-chat` Edge Function** — set `ANTHROPIC_API_KEY` in Supabase secrets; confirm command bar and AI briefing return real responses.
 
-**Foundation — make what's built actually work**
-1. **Deploy + verify the `ai-chat` Edge Function** and set `ANTHROPIC_API_KEY`
-   in Supabase. Every AI feature (command bar, briefing) returns a
-   "can't reach service" message until this is live. Highest leverage.
-2. **Apply migration `003_import_logs.sql`** in Supabase; confirm import
-   logging writes.
-3. **Real-data test of the CSV pipeline** — run an actual 12–24 month Monarch
-   export through parse → dedup → unmapped-category screen → insert. Validates
-   parser, dedup key, and category map together.
+**Data quality**
+4. **Real Monarch CSV end-to-end test** — run an actual 12–24 month export through parse → dedup → unmapped-category screen → insert. Validates the whole import pipeline.
+5. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars are correct vs. hand-calculated take-home.
 
-**Close the functional wiring gaps**
-4. **Wire commitments into Cash Flow Timing** — `schedule.js` helper exists but
-   `CashFlow.jsx` doesn't consume it; future commitment spikes don't show on
-   the calendar yet (Phase 4/7 gap).
-5. **Pull Non-Monthly budget line items into Cash Flow by month** — remaining
-   unchecked Phase 4 item; makes the calendar reflect planned outflows, not
-   just historical txns.
-6. **Wire per-module AI context** — scope the command bar's context to the
-   active module so answers match what's on screen.
-
-**Polish + pre-launch**
-7. **Mobile QA pass** across all modules at the 760/1100 breakpoints.
-8. **Error-handling & empty-state audit** — failed imports, AI errors, no-data
-   states in every module.
-9. **Security cleanup** — delete the superseded browser-side
-   `src/lib/anthropic.js` path, confirm `VITE_ANTHROPIC_API_KEY` is empty,
-   rotate the key if ever exposed.
-10. **Make the repo public** once the proxy is confirmed, then do a final
-    ROADMAP reconciliation pass.
+**Polish**
+6. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; pay special attention to the new 12-month bar charts.
+7. **Security cleanup** — delete `src/lib/anthropic.js`, confirm `VITE_ANTHROPIC_API_KEY` is empty in GitHub secrets.
 
 ---
 
@@ -128,7 +113,7 @@ account access; steps 4, 5, 6, 8, 9 are pure code.
 - [x] Confirm Anthropic API model string (verify current `claude-sonnet-4-6`) ✓
 - [x] Verify Supabase free tier limits (500MB storage — confirmed sufficient) ✓
 
-**Exit criteria:** App builds and deploys to GitHub Pages. Supabase project live. No product features yet.
+**Exit criteria:** App builds and deploys to GitHub Pages. Supabase project live. No product features yet. ✓
 
 ---
 
@@ -278,14 +263,18 @@ account access; steps 4, 5, 6, 8, 9 are pure code.
 *Goal: Dashboard becomes a real control center, not just a navigation hub.*
 
 - [x] Build and wire all pre-defined widgets to live Supabase data:
-  - [x] Monthly spend by group
+  - [x] Monthly Budget vs. Actuals chart (12-month bars, variance threshold, full-year pill, forecast overrides)
+  - [x] Income vs. Expenses (12-month chart, post-tax forecast, full-year KPIs)
+  - [x] Spend by Group (full-year actual + forecast vs. budget per group, drill-down modal)
   - [x] Cash flow spike (next upcoming commitment spike)
   - [x] Budget vs. projected (run-rate) trajectory
   - [x] Run-rate EOY projection
   - [x] Long-Term Commitments summary
   - [x] Wealth Trajectory snapshot
+  - [x] Scenario Plan summary
 - [x] Build AI Briefing widget (on-demand narrative generation, cached in `ai_briefings` table)
 - [x] Build widget add/remove/rearrange functionality (drag-to-configure + show/hide, persisted to localStorage)
+- [x] Build widget collapse/expand (per-card chevron + global toggle, persisted to localStorage)
 - [ ] Build AI-generated custom widget save flow — deferred
 - [ ] Build widget-level AI context (command bar response scoped to widget in focus) — deferred
 
@@ -313,11 +302,13 @@ account access; steps 4, 5, 6, 8, 9 are pure code.
 ## Phase 11 — Polish and Pre-Launch
 *Goal: Production-ready for personal daily use.*
 
+- [ ] Add React error boundary (wrap AppShell; render crashes currently produce a blank page)
 - [ ] Full mobile QA pass (all modules, all breakpoints)
 - [ ] Performance audit (Supabase query optimization, AI context payload size)
 - [ ] Error handling audit (failed imports, API errors, empty states)
 - [ ] AI response quality review (context prompt tuning)
 - [x] API key proxy (shields Anthropic API key — required before any public access) — built in Phase 3 as a **Supabase Edge Function** (`supabase/functions/ai-chat`), not Netlify. Remaining: confirm deployed + secret set in production.
+- [ ] Security cleanup: delete superseded `src/lib/anthropic.js`, confirm `VITE_ANTHROPIC_API_KEY` is empty in GitHub secrets
 - [ ] Make repo public (after proxy is confirmed working)
 - [ ] Final ROADMAP.md update (check off completed phases, note any scope changes)
 
@@ -345,6 +336,7 @@ account access; steps 4, 5, 6, 8, 9 are pure code.
 - Remitly / Western Union supplemental transfer data
 - Google Sheets sync
 - Social Security and tax modeling (Wealth Trajectory expansion)
+- Vitest unit tests for `widgetData.js`, `patternAnalyzer.js`, `schedule.js`, scenario delta math
 
 ---
 
