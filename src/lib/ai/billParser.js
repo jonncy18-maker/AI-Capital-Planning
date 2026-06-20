@@ -1,4 +1,5 @@
-import { callClaude } from '../anthropic.js'
+import { supabase } from '../supabase.js'
+import { AI_MODEL_FAMILIES } from './models.js'
 import { readXlsx } from '../xlsx/xlsxReader.js'
 
 // Convert xlsx sheets to a compact, readable text representation for Claude.
@@ -54,11 +55,21 @@ Return ONLY a JSON array. No explanation. No markdown. No wrapper object. Start 
 Spreadsheet content:
 ${text}`
 
-  const raw = await callClaude({
-    systemPrompt: SYSTEM,
-    messages: [{ role: 'user', content: userPrompt }],
-    maxTokens: 2048,
+  // Route through the ai-chat Edge Function (same path as the rest of the app),
+  // which holds the Anthropic key server-side. The browser never sees the key.
+  const { data, error } = await supabase.functions.invoke('ai-chat', {
+    body: {
+      system: SYSTEM,
+      messages: [{ role: 'user', content: userPrompt }],
+      maxTokens: 2048,
+      modelFamily: AI_MODEL_FAMILIES.assistant,
+    },
   })
+
+  if (error) throw new Error(`Could not reach the AI service: ${error.message}`)
+  if (data?.error) throw new Error(data.error)
+
+  const raw = data?.text ?? ''
 
   // Extract JSON array robustly — Claude may emit minor surrounding text
   const match = raw.match(/\[[\s\S]*\]/)
