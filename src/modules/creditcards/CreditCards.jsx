@@ -958,8 +958,15 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
     setParseError(null)
     try {
       const toImport = parsedSelections.filter(s => s.selected)
-      for (const { editedName, selected, account_name, ...cardData } of toImport) {
-        await upsertCreditCard(userId, { ...cardData, name: editedName || cardData.name, display_order: 0 })
+      for (const { editedName, selected, account_name, earn_rates, ...cardData } of toImport) {
+        const savedCard = await upsertCreditCard(userId, { ...cardData, name: editedName || cardData.name, display_order: 0 })
+        if (earn_rates && savedCard?.id) {
+          await Promise.all(
+            Object.entries(earn_rates).map(([slug, rate]) =>
+              upsertEarnRate(userId, savedCard.id, slug, rate)
+            )
+          )
+        }
       }
       setParsedSelections(null)
       await onCardsChanged()
