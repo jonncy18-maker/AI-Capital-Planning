@@ -568,7 +568,6 @@ function AccountForm({ initial, onSave, onCancel, onDelete }) {
   )
 }
 
-<<<<<<< HEAD
 // ─── Parse Review Panel ───────────────────────────────────────────────────────
 
 function ParseReviewPanel({ selections, onToggle, onNameEdit, onImport, onDismiss, importing }) {
@@ -685,8 +684,6 @@ function ParseReviewPanel({ selections, onToggle, onNameEdit, onImport, onDismis
   )
 }
 
-=======
->>>>>>> origin/main
 // ─── Main Module ──────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -713,7 +710,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [editingBill, setEditingBill] = useState(null)   // bill object or 'new'
   const [editingAccount, setEditingAccount] = useState(null)
 
-<<<<<<< HEAD
   // File upload + AI parse state
   const fileInputRef = useRef(null)
   const [parsedSelections, setParsedSelections] = useState(null) // null = inactive
@@ -721,8 +717,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [parseError, setParseError] = useState(null)
   const [importingParsed, setImportingParsed] = useState(false)
 
-=======
->>>>>>> origin/main
   // ── Load data ───────────────────────────────────────────────────────────────
 
   const reload = useCallback(async () => {
@@ -832,7 +826,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     await reload()
   }
 
-<<<<<<< HEAD
   async function handleFileUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -868,8 +861,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     }
   }
 
-=======
->>>>>>> origin/main
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -967,7 +958,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <MonoLabel>ALL BILLS ({bills.length})</MonoLabel>
-<<<<<<< HEAD
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 ref={fileInputRef}
@@ -1034,19 +1024,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             />
           )}
 
-=======
-            <button
-              onClick={() => setEditingBill('new')}
-              style={{
-                background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none',
-                borderRadius: 7, padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-              }}
-            >
-              + Add Bill
-            </button>
-          </div>
-
->>>>>>> origin/main
           {editingBill === 'new' && (
             <BillForm
               accounts={accounts}
