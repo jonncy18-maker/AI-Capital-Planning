@@ -18,6 +18,10 @@ import BudgetActualsChart from './BudgetActualsChart.jsx'
 import SpendGroupDetail from './SpendGroupDetail.jsx'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
+import { getCreditCards, getPointsBalances, getCCSettings, getEarnRates, buildEarnRateMap } from '../../lib/db/creditCards.js'
+import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import { computePointsForecast, estimateTotalValue, estimateMonthlyEarnRate } from '../../lib/creditcards/pointsEngine.js'
+import { supabase } from '../../lib/supabase.js'
 
 // v3: changes default hidden list; existing users who had v2 get fresh defaults
 const LS_LAYOUT = 'acp.dashboard.layout.v3'
@@ -721,6 +725,75 @@ function ScenarioPlanWidget({ si }) {
   )
 }
 
+// ── Points Summary widget ────────────────────────────────────────────────────
+
+function PointsSummaryWidget({ userId }) {
+  const [data, setData] = useState(null)
+  const year = new Date().getFullYear()
+
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    async function load() {
+      try {
+        const [cards, balances, settings, rates, cats] = await Promise.all([
+          getCreditCards(userId),
+          getPointsBalances(userId),
+          getCCSettings(userId),
+          getEarnRates(userId),
+          getBudgetCategories(userId),
+        ])
+        if (!cancelled && cards.length > 0) {
+          const [{ data: lineItems }, { data: overrides }] = await Promise.all([
+            supabase.from('budget_line_items').select('*').eq('user_id', userId).eq('budget_year', year),
+            supabase.from('forecast_overrides').select('*').eq('user_id', userId).eq('budget_year', year),
+          ])
+          const earnRateMap = buildEarnRateMap(rates)
+          const { monthlyForecast } = computePointsForecast({
+            cards, earnRateMap, budgetCategories: cats,
+            lineItems: lineItems ?? [], overrides: overrides ?? [],
+            pointsBalances: balances, redemptions: [],
+            coveragePct: settings.coveragePct, optimizationPct: settings.optimizationPct, year,
+          })
+          if (!cancelled) {
+            setData({
+              cards,
+              totalPts: Object.values(balances).reduce((s, b) => s + (b?.balance ?? 0), 0),
+              totalValue: estimateTotalValue(cards, balances),
+              monthlyRate: estimateMonthlyEarnRate(monthlyForecast),
+            })
+          }
+        }
+      } catch { /* widget-level failure is silent */ }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [userId, year])
+
+  if (!data) return <Empty text="Set up credit cards to see points summary." />
+
+  return (
+    <>
+      <Stat value={data.totalPts.toLocaleString()} label="TOTAL POINTS" />
+      <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
+        <MiniStat value={'$' + Math.round(data.totalValue).toLocaleString()} label="est. value" />
+        <MiniStat value={data.monthlyRate.toLocaleString()} label="pts/mo forecast" />
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+        {data.cards.map(c => (
+          <div key={c.id} style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-3)',
+          }}>
+            <div style={{ width: 6, height: 6, borderRadius: 1, background: c.color || '#3B82F6' }} />
+            {c.name}
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
 // ── widget definitions ───────────────────────────────────────────────────────
 
 function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = false) {
@@ -966,6 +1039,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   const blocks = useMemo(() => [
     { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
     { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
+    { id: 'creditPoints', title: 'Credit Card Points', subtitle: 'Balance · earning rate · estimated value', render: () => <PointsSummaryWidget userId={userId} /> },
     ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile),
   ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing, onThresholdChange])
 
