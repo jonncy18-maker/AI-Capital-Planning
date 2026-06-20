@@ -919,6 +919,10 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [accountParseError, setAccountParseError] = useState(null)
   const [importingParsedAccounts, setImportingParsedAccounts] = useState(false)
 
+  // Collapsible group state — all collapsed by default (empty = all false)
+  const [openBillGroups, setOpenBillGroups] = useState({})
+  const [openAccountGroups, setOpenAccountGroups] = useState({})
+
   // ── Load data ───────────────────────────────────────────────────────────────
 
   const reload = useCallback(async () => {
@@ -1292,91 +1296,117 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             </div>
           )}
 
-          {bills.map(bill => {
-            const isEditing = editingBill?.id === bill.id
-            const accountName = accounts.find(a => a.id === bill.debits_from_account_id)?.name
-            const typeColor = BILL_TYPE_COLORS[bill.bill_type] ?? BILL_TYPE_COLORS.other
-            return (
-              <div key={bill.id} style={{ marginBottom: 8 }}>
-                {isEditing ? (
-                  <BillForm
-                    initial={bill}
-                    accounts={accounts}
-                    budgetCategories={budgetCategories}
-                    onSave={handleSaveBill}
-                    onCancel={() => setEditingBill(null)}
-                    onDelete={handleDeleteBill}
-                  />
-                ) : (
-                  <div
-                    onClick={() => setEditingBill(bill)}
+          {BILL_TYPES
+            .map(t => ({ ...t, color: BILL_TYPE_COLORS[t.id], bills: bills.filter(b => b.bill_type === t.id) }))
+            .filter(g => g.bills.length > 0)
+            .map(group => {
+              const isOpen = !!openBillGroups[group.id]
+              return (
+                <div key={group.id} style={{ marginBottom: 10 }}>
+                  {/* Group header */}
+                  <button
+                    onClick={() => setOpenBillGroups(prev => ({ ...prev, [group.id]: !prev[group.id] }))}
                     style={{
-                      display: 'flex', alignItems: 'stretch', gap: 0,
-                      border: '1px solid var(--bd)', borderRadius: 12,
-                      background: 'var(--bg-card)', cursor: 'pointer',
-                      overflow: 'hidden',
-                      transition: 'border-color 0.15s, box-shadow 0.15s',
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '9px 14px', marginBottom: isOpen ? 8 : 0,
+                      background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                      borderRadius: isOpen ? '10px 10px 0 0' : 10,
+                      cursor: 'pointer', textAlign: 'left',
+                      transition: 'border-color 0.15s',
                     }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.borderColor = typeColor
-                      e.currentTarget.style.boxShadow = `0 2px 12px ${typeColor}18`
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.borderColor = 'var(--bd)'
-                      e.currentTarget.style.boxShadow = 'none'
-                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = group.color}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--bd)'}
                   >
-                    {/* Color accent bar */}
-                    <div style={{ width: 4, flexShrink: 0, background: typeColor }} />
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: group.color, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: 'var(--tx-1)', fontFamily: 'Inter, sans-serif' }}>
+                      {group.label}
+                    </span>
+                    <span style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
+                      padding: '2px 7px', borderRadius: 10,
+                      background: `${group.color}18`, color: group.color, border: `1px solid ${group.color}30`,
+                    }}>
+                      {group.bills.length}
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--tx-3)', marginLeft: 2 }}>{isOpen ? '▲' : '▼'}</span>
+                  </button>
 
-                    {/* Card body */}
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', minWidth: 0 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, marginBottom: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {bill.name}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                          <span style={{
-                            fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
-                            padding: '2px 6px', borderRadius: 4,
-                            background: `${typeColor}18`, color: typeColor, border: `1px solid ${typeColor}30`,
-                          }}>
-                            {BILL_TYPE_LABELS[bill.bill_type]}
-                          </span>
-                          <MonoLabel style={{ fontSize: 9, color: 'var(--tx-3)' }}>·</MonoLabel>
-                          <MonoLabel style={{ fontSize: 9 }}>DUE {ordinal(bill.due_day).toUpperCase()}</MonoLabel>
-                          {bill.pay_day !== bill.due_day && (
-                            <><MonoLabel style={{ fontSize: 9, color: 'var(--tx-3)' }}>·</MonoLabel>
-                            <MonoLabel style={{ fontSize: 9 }}>PAY {ordinal(bill.pay_day).toUpperCase()}</MonoLabel></>
-                          )}
-                          {accountName && (
-                            <><MonoLabel style={{ fontSize: 9, color: 'var(--tx-3)' }}>·</MonoLabel>
-                            <MonoLabel style={{ fontSize: 9 }}>{accountName}</MonoLabel></>
-                          )}
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
-                        <Badge label={bill.payment_method === 'auto' ? 'AUTO' : 'MANUAL'} variant={bill.payment_method === 'auto' ? 'auto' : 'manual'} />
-                        {bill.forecast_category_id != null ? (
-                          <span style={{
-                            fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--accent)',
-                            letterSpacing: '0.04em',
-                          }}>↗ FORECAST</span>
-                        ) : bill.fixed_amount != null ? (
-                          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: 'var(--tx-1)', lineHeight: 1 }}>
-                            {fmt(bill.fixed_amount)}
+                  {/* Group items */}
+                  {isOpen && (
+                    <div style={{
+                      border: '1px solid var(--bd)', borderTop: 'none',
+                      borderRadius: '0 0 10px 10px', overflow: 'hidden',
+                    }}>
+                      {group.bills.map((bill, i) => {
+                        const isEditing = editingBill?.id === bill.id
+                        const accountName = accounts.find(a => a.id === bill.debits_from_account_id)?.name
+                        const typeColor = group.color
+                        return (
+                          <div key={bill.id} style={{ borderTop: i > 0 ? '1px solid var(--bd-light)' : 'none' }}>
+                            {isEditing ? (
+                              <div style={{ padding: 12 }}>
+                                <BillForm
+                                  initial={bill}
+                                  accounts={accounts}
+                                  budgetCategories={budgetCategories}
+                                  onSave={handleSaveBill}
+                                  onCancel={() => setEditingBill(null)}
+                                  onDelete={handleDeleteBill}
+                                />
+                              </div>
+                            ) : (
+                              <div
+                                onClick={() => setEditingBill(bill)}
+                                style={{
+                                  display: 'flex', alignItems: 'stretch', gap: 0,
+                                  background: 'var(--bg-card)', cursor: 'pointer',
+                                  transition: 'background 0.12s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = `${typeColor}08`}
+                                onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}
+                              >
+                                <div style={{ width: 3, flexShrink: 0, background: typeColor }} />
+                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', minWidth: 0 }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {bill.name}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                      <MonoLabel style={{ fontSize: 9 }}>DUE {ordinal(bill.due_day).toUpperCase()}</MonoLabel>
+                                      {bill.pay_day !== bill.due_day && (
+                                        <><MonoLabel style={{ fontSize: 9, color: 'var(--tx-3)' }}>·</MonoLabel>
+                                        <MonoLabel style={{ fontSize: 9 }}>PAY {ordinal(bill.pay_day).toUpperCase()}</MonoLabel></>
+                                      )}
+                                      {accountName && (
+                                        <><MonoLabel style={{ fontSize: 9, color: 'var(--tx-3)' }}>·</MonoLabel>
+                                        <MonoLabel style={{ fontSize: 9 }}>{accountName}</MonoLabel></>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+                                    <Badge label={bill.payment_method === 'auto' ? 'AUTO' : 'MANUAL'} variant={bill.payment_method === 'auto' ? 'auto' : 'manual'} />
+                                    {bill.forecast_category_id != null ? (
+                                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--accent)', letterSpacing: '0.04em' }}>↗ FORECAST</span>
+                                    ) : bill.fixed_amount != null ? (
+                                      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: 'var(--tx-1)', lineHeight: 1 }}>
+                                        {fmt(bill.fixed_amount)}
+                                      </div>
+                                    ) : (
+                                      <MonoLabel style={{ fontSize: 9, fontStyle: 'italic' }}>Variable</MonoLabel>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <MonoLabel style={{ fontSize: 9, fontStyle: 'italic' }}>Variable</MonoLabel>
-                        )}
-                      </div>
+                        )
+                      })}
                     </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+                  )}
+                </div>
+              )
+            })
+          }
         </div>
       )}
 
@@ -1469,75 +1499,114 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             </div>
           )}
 
-          {accounts.map(account => {
-            const isEditing = editingAccount?.id === account.id
-            const meta = ACCOUNT_TYPE_META[account.type] ?? ACCOUNT_TYPE_META.other
-            return (
-              <div key={account.id} style={{ marginBottom: 8 }}>
-                {isEditing ? (
-                  <AccountForm
-                    initial={account}
-                    onSave={handleSaveAccount}
-                    onCancel={() => setEditingAccount(null)}
-                    onDelete={handleDeleteAccount}
-                  />
-                ) : (
-                  <div
-                    onClick={() => setEditingAccount(account)}
+          {Object.entries(ACCOUNT_TYPE_META)
+            .map(([type, meta]) => ({ type, meta, accounts: accounts.filter(a => a.type === type) }))
+            .filter(g => g.accounts.length > 0)
+            .map(group => {
+              const isOpen = !!openAccountGroups[group.type]
+              return (
+                <div key={group.type} style={{ marginBottom: 10 }}>
+                  {/* Group header */}
+                  <button
+                    onClick={() => setOpenAccountGroups(prev => ({ ...prev, [group.type]: !prev[group.type] }))}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 14,
-                      padding: '13px 16px', marginBottom: 0,
-                      border: '1px solid var(--bd)', borderRadius: 12,
-                      background: 'var(--bg-card)', cursor: 'pointer',
-                      transition: 'border-color 0.15s, box-shadow 0.15s',
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '9px 14px', marginBottom: isOpen ? 0 : 0,
+                      background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                      borderRadius: isOpen ? '10px 10px 0 0' : 10,
+                      cursor: 'pointer', textAlign: 'left',
+                      transition: 'border-color 0.15s',
                     }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.borderColor = meta.color
-                      e.currentTarget.style.boxShadow = `0 2px 12px ${meta.color}18`
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.borderColor = 'var(--bd)'
-                      e.currentTarget.style.boxShadow = 'none'
-                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = group.meta.color}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--bd)'}
                   >
-                    {/* Type icon badge */}
                     <div style={{
-                      width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-                      background: `${meta.color}15`, border: `1px solid ${meta.color}30`,
+                      width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                      background: `${group.meta.color}18`, border: `1px solid ${group.meta.color}30`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 17, color: meta.color,
+                      fontSize: 12, color: group.meta.color,
                     }}>
-                      {meta.icon}
+                      {group.meta.icon}
                     </div>
+                    <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: 'var(--tx-1)', fontFamily: 'Inter, sans-serif' }}>
+                      {group.meta.label}
+                    </span>
+                    <span style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
+                      padding: '2px 7px', borderRadius: 10,
+                      background: `${group.meta.color}18`, color: group.meta.color, border: `1px solid ${group.meta.color}30`,
+                    }}>
+                      {group.accounts.length}
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--tx-3)', marginLeft: 2 }}>{isOpen ? '▲' : '▼'}</span>
+                  </button>
 
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, marginBottom: 4 }}>
-                        {account.name}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{
-                          fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
-                          padding: '2px 6px', borderRadius: 4,
-                          background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25`,
-                        }}>
-                          {meta.label.toUpperCase()}
-                        </span>
-                        {account.is_primary_checking && (
-                          <span style={{
-                            fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
-                            padding: '2px 6px', borderRadius: 4,
-                            background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
-                          }}>
-                            ★ PRIMARY
-                          </span>
-                        )}
-                      </div>
+                  {/* Group items */}
+                  {isOpen && (
+                    <div style={{
+                      border: '1px solid var(--bd)', borderTop: 'none',
+                      borderRadius: '0 0 10px 10px', overflow: 'hidden',
+                    }}>
+                      {group.accounts.map((account, i) => {
+                        const isEditing = editingAccount?.id === account.id
+                        return (
+                          <div key={account.id} style={{ borderTop: i > 0 ? '1px solid var(--bd-light)' : 'none' }}>
+                            {isEditing ? (
+                              <div style={{ padding: 12 }}>
+                                <AccountForm
+                                  initial={account}
+                                  onSave={handleSaveAccount}
+                                  onCancel={() => setEditingAccount(null)}
+                                  onDelete={handleDeleteAccount}
+                                />
+                              </div>
+                            ) : (
+                              <div
+                                onClick={() => setEditingAccount(account)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 14,
+                                  padding: '13px 16px',
+                                  background: 'var(--bg-card)', cursor: 'pointer',
+                                  transition: 'background 0.12s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = `${group.meta.color}08`}
+                                onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}
+                              >
+                                <div style={{
+                                  width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+                                  background: `${group.meta.color}15`, border: `1px solid ${group.meta.color}30`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: 16, color: group.meta.color,
+                                }}>
+                                  {group.meta.icon}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, marginBottom: 4 }}>
+                                    {account.name}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    {account.is_primary_checking && (
+                                      <span style={{
+                                        fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
+                                        padding: '2px 6px', borderRadius: 4,
+                                        background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
+                                      }}>
+                                        ★ PRIMARY
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+                  )}
+                </div>
+              )
+            })
+          }
         </div>
       )}
     </div>
