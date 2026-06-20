@@ -135,7 +135,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
           />
         )
       case 'payperiods':  return <PayPeriodPlanner userId={user.id} mobile={mobile} />
-      case 'creditcards': return <CreditCards />
+      case 'creditcards': return <CreditCards userId={user.id} mobile={mobile} />
       case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} reloadSignal={dataNonce} context={aiContext} onDataChange={() => { setDataNonce(n => n + 1); reloadAiContext() }} openScenarioId={openScenarioId} />
       case 'budget':      return <Budget userId={user.id} mobile={mobile} />
       case 'forecast':    return <Forecast userId={user.id} mobile={mobile} />
