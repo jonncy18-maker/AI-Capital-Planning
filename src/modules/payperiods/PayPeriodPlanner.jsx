@@ -849,8 +849,8 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     setParseError(null)
     try {
       const toImport = parsedSelections.filter(s => s.selected)
-      for (const sel of toImport) {
-        await upsertBill(userId, { ...sel, name: sel.editedName })
+      for (const { editedName, selected, ...billData } of toImport) {
+        await upsertBill(userId, { ...billData, name: editedName })
       }
       setParsedSelections(null)
       await reload()
