@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import ModuleHeader from '../common/ModuleHeader.jsx'
+import { parseCreditCardsFromFile, parseCreditCardsFromTransactions } from '../../lib/ai/creditCardParser.js'
 import {
   getCreditCards, upsertCreditCard, deleteCreditCard,
   getEarnRates, upsertEarnRate,
+  getDistinctTransactionAccounts,
   getPointsBalances, upsertPointsBalance,
   getPointRedemptions, upsertPointRedemption, deletePointRedemption,
   getCCSettings, updateCCSettings,
@@ -764,6 +766,96 @@ function EarnRatesEditor({ card, earnRateMap, onSave }) {
   )
 }
 
+// ─── Card Import Review Panel ─────────────────────────────────────────────────
+
+function CardParseReviewPanel({ selections, onToggle, onNameEdit, onImport, onDismiss, importing, source }) {
+  const selectedCount = selections.filter(s => s.selected).length
+
+  return (
+    <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 10, background: 'var(--bg-card)', marginBottom: 16, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', background: 'var(--bg-app)', borderBottom: '1px solid var(--bd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>
+            {source === 'file' ? '✦ AI detected from file' : '✦ AI detected from your transactions'}
+          </div>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', marginTop: 2 }}>
+            Review and confirm which cards to import. You can edit names before importing.
+          </div>
+        </div>
+        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--accent)' }}>
+          {selectedCount} / {selections.length} selected
+        </span>
+      </div>
+
+      <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+        {selections.map((s, i) => (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+            borderBottom: i < selections.length - 1 ? '0.5px solid var(--bd-light)' : 'none',
+            opacity: s.selected ? 1 : 0.45,
+          }}>
+            <input type="checkbox" checked={s.selected} onChange={() => onToggle(i)} style={{ flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <input
+                type="text"
+                value={s.editedName}
+                onChange={e => onNameEdit(i, e.target.value)}
+                style={{
+                  width: '100%', background: 'transparent', border: 'none',
+                  fontFamily: "'DM Mono', monospace", fontSize: 12, color: 'var(--tx-1)',
+                  outline: 'none', fontWeight: 600,
+                }}
+              />
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-3)', marginTop: 2 }}>
+                {[s.issuer, s.network ? NETWORK_LABELS[s.network] : null, s.points_program, s.last_four ? `····${s.last_four}` : null].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
+              {s.annual_fee ? (
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-3)' }}>
+                  ${s.annual_fee}/yr
+                </span>
+              ) : null}
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-3)' }}>
+                {s.points_value_cents}¢/pt
+              </span>
+              {s.is_default && (
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, padding: '1px 5px', borderRadius: 3, background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)' }}>DEFAULT</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--bd)', display: 'flex', gap: 8 }}>
+        <button
+          onClick={onImport}
+          disabled={selectedCount === 0 || importing}
+          style={{
+            flex: 1, padding: '9px 0', borderRadius: 7, fontSize: 12, fontWeight: 600,
+            cursor: selectedCount === 0 || importing ? 'not-allowed' : 'pointer',
+            background: selectedCount > 0 ? 'var(--accent)' : 'var(--bg-app)',
+            color: selectedCount > 0 ? 'var(--accent-tx-on)' : 'var(--tx-3)',
+            border: selectedCount === 0 ? '1px solid var(--bd)' : 'none',
+            opacity: importing ? 0.6 : 1,
+          }}
+        >
+          {importing ? 'Importing…' : `Import ${selectedCount} Card${selectedCount !== 1 ? 's' : ''}`}
+        </button>
+        <button
+          onClick={onDismiss}
+          style={{
+            padding: '9px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+            background: 'none', border: '1px solid var(--bd)', color: 'var(--tx-2)', cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged, onEarnRateSaved }) {
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState(null)
@@ -771,6 +863,17 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
   const [expandedEarnRates, setExpandedEarnRates] = useState({})
   const [expandedCatMap, setExpandedCatMap] = useState(false)
   const [catMapSaving, setCatMapSaving] = useState({})
+
+  // File import state
+  const fileInputRef = useRef(null)
+  const [parsedSelections, setParsedSelections] = useState(null)
+  const [parseLoading, setParseLoading] = useState(false)
+  const [parseError, setParseError] = useState(null)
+  const [parseSource, setParseSource] = useState(null) // 'file' | 'transactions'
+  const [importingCards, setImportingCards] = useState(false)
+
+  // Transaction detection state
+  const [txnDetecting, setTxnDetecting] = useState(false)
 
   async function saveCard(form) {
     setSaving(true)
@@ -809,6 +912,64 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
     }
   }
 
+  async function handleFileUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setParseLoading(true)
+    setParseError(null)
+    setParsedSelections(null)
+    setParseSource('file')
+    try {
+      const results = await parseCreditCardsFromFile(file)
+      setParsedSelections(results.map(c => ({ ...c, selected: true, editedName: c.name })))
+    } catch (err) {
+      setParseError(err.message)
+    } finally {
+      setParseLoading(false)
+    }
+  }
+
+  async function handleDetectFromTransactions() {
+    setTxnDetecting(true)
+    setParseError(null)
+    setParsedSelections(null)
+    setParseSource('transactions')
+    try {
+      const accounts = await getDistinctTransactionAccounts(userId)
+      const results = await parseCreditCardsFromTransactions(accounts)
+      // Pre-deselect any card name that already exists
+      const existingNames = new Set(cards.map(c => c.name.toLowerCase()))
+      setParsedSelections(results.map(c => ({
+        ...c,
+        selected: !existingNames.has(c.name.toLowerCase()),
+        editedName: c.name,
+      })))
+    } catch (err) {
+      setParseError(err.message)
+    } finally {
+      setTxnDetecting(false)
+    }
+  }
+
+  async function handleImportCards() {
+    if (!parsedSelections) return
+    setImportingCards(true)
+    setParseError(null)
+    try {
+      const toImport = parsedSelections.filter(s => s.selected)
+      for (const { editedName, selected, account_name, ...cardData } of toImport) {
+        await upsertCreditCard(userId, { ...cardData, name: editedName || cardData.name, display_order: 0 })
+      }
+      setParsedSelections(null)
+      await onCardsChanged()
+    } catch (e) {
+      setParseError(e.message)
+    } finally {
+      setImportingCards(false)
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
@@ -816,8 +977,35 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <SectionTitle>Your Cards</SectionTitle>
-          {!showAdd && <Btn small variant="primary" onClick={() => setShowAdd(true)}>+ Add Card</Btn>}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Btn small onClick={handleDetectFromTransactions} disabled={txnDetecting || parseLoading}>
+              {txnDetecting ? '⟳ Detecting…' : '⟳ Detect from Transactions'}
+            </Btn>
+            <Btn small onClick={() => fileInputRef.current?.click()} disabled={txnDetecting || parseLoading}>
+              {parseLoading ? '⟳ Parsing…' : '↑ Import from File'}
+            </Btn>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFileUpload} />
+            {!showAdd && <Btn small variant="primary" onClick={() => setShowAdd(true)}>+ Add Card</Btn>}
+          </div>
         </div>
+
+        {parseError && (
+          <div style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 8, background: 'var(--warn-bg)', border: '1px solid var(--warn)', fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--warn)' }}>
+            {parseError}
+          </div>
+        )}
+
+        {parsedSelections && (
+          <CardParseReviewPanel
+            selections={parsedSelections}
+            source={parseSource}
+            onToggle={i => setParsedSelections(prev => prev.map((s, idx) => idx === i ? { ...s, selected: !s.selected } : s))}
+            onNameEdit={(i, v) => setParsedSelections(prev => prev.map((s, idx) => idx === i ? { ...s, editedName: v } : s))}
+            onImport={handleImportCards}
+            onDismiss={() => setParsedSelections(null)}
+            importing={importingCards}
+          />
+        )}
 
         {showAdd && (
           <div style={{ marginBottom: 16 }}>

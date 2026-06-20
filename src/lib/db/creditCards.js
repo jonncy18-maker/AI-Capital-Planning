@@ -138,6 +138,36 @@ export async function deletePointRedemption(id) {
   if (error) throw error
 }
 
+// ─── Transaction account detection ───────────────────────────────────────────
+
+// Returns distinct account names from transactions with their transaction counts,
+// for the AI to classify as credit cards. Caller passes result to parseCreditCardsFromTransactions.
+export async function getDistinctTransactionAccounts(userId) {
+  const { data, error } = await supabase
+    .rpc('get_distinct_accounts', { p_user_id: userId })
+    .catch(() => ({ data: null, error: { message: 'rpc not available' } }))
+
+  if (!error && data) return data
+
+  // Fallback: fetch via select (less efficient but always works)
+  const { data: txns, error: txnErr } = await supabase
+    .from('transactions')
+    .select('account')
+    .eq('user_id', userId)
+    .not('account', 'is', null)
+
+  if (txnErr) throw txnErr
+
+  const counts = {}
+  for (const t of (txns ?? [])) {
+    counts[t.account] = (counts[t.account] ?? 0) + 1
+  }
+
+  return Object.entries(counts)
+    .map(([account, txn_count]) => ({ account, txn_count }))
+    .sort((a, b) => b.txn_count - a.txn_count)
+}
+
 // ─── CC Settings (from user_profiles) ────────────────────────────────────────
 
 export async function getCCSettings(userId) {
