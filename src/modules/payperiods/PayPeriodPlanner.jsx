@@ -29,6 +29,22 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
 
 const BILL_TYPE_LABELS = Object.fromEntries(BILL_TYPES.map(t => [t.id, t.label]))
 
+const BILL_TYPE_COLORS = {
+  credit_card:  '#F59E0B',
+  loan:         '#3B82F6',
+  rent:         '#10B981',
+  investment:   '#8B5CF6',
+  subscription: '#06B6D4',
+  other:        '#9CA3AF',
+}
+
+const ACCOUNT_TYPE_META = {
+  checking:   { icon: '◈', color: '#3B82F6', label: 'Checking' },
+  savings:    { icon: '◉', color: '#10B981', label: 'Savings' },
+  investment: { icon: '◆', color: '#8B5CF6', label: 'Investment' },
+  other:      { icon: '○', color: '#9CA3AF', label: 'Other' },
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const fmt = n =>
@@ -1189,8 +1205,11 @@ export default function PayPeriodPlanner({ userId, mobile }) {
       {/* ── Bills Tab ── */}
       {tab === 'bills' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <MonoLabel>ALL BILLS ({bills.length})</MonoLabel>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-1)' }}>Bills</div>
+              <MonoLabel style={{ marginTop: 2 }}>{bills.length} RECURRING</MonoLabel>
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 ref={fileInputRef}
@@ -1276,8 +1295,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
           {bills.map(bill => {
             const isEditing = editingBill?.id === bill.id
             const accountName = accounts.find(a => a.id === bill.debits_from_account_id)?.name
+            const typeColor = BILL_TYPE_COLORS[bill.bill_type] ?? BILL_TYPE_COLORS.other
             return (
-              <div key={bill.id}>
+              <div key={bill.id} style={{ marginBottom: 8 }}>
                 {isEditing ? (
                   <BillForm
                     initial={bill}
@@ -1291,40 +1311,66 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   <div
                     onClick={() => setEditingBill(bill)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '12px 14px', marginBottom: 6,
-                      border: '1px solid var(--bd)', borderRadius: 9,
+                      display: 'flex', alignItems: 'stretch', gap: 0,
+                      border: '1px solid var(--bd)', borderRadius: 12,
                       background: 'var(--bg-card)', cursor: 'pointer',
-                      transition: 'border-color 0.15s',
+                      overflow: 'hidden',
+                      transition: 'border-color 0.15s, box-shadow 0.15s',
                     }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-bd)'}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--bd)'}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = typeColor
+                      e.currentTarget.style.boxShadow = `0 2px 12px ${typeColor}18`
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = 'var(--bd)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }}
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 500 }}>{bill.name}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                        <MonoLabel style={{ fontSize: 9 }}>{BILL_TYPE_LABELS[bill.bill_type]}</MonoLabel>
-                        <MonoLabel style={{ fontSize: 9 }}>·</MonoLabel>
-                        <MonoLabel style={{ fontSize: 9 }}>Due {ordinal(bill.due_day)}</MonoLabel>
-                        {bill.pay_day !== bill.due_day && (
-                          <><MonoLabel style={{ fontSize: 9 }}>·</MonoLabel><MonoLabel style={{ fontSize: 9 }}>Pay {ordinal(bill.pay_day)}</MonoLabel></>
-                        )}
-                        {accountName && (
-                          <><MonoLabel style={{ fontSize: 9 }}>·</MonoLabel><MonoLabel style={{ fontSize: 9 }}>{accountName}</MonoLabel></>
+                    {/* Color accent bar */}
+                    <div style={{ width: 4, flexShrink: 0, background: typeColor }} />
+
+                    {/* Card body */}
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', minWidth: 0 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, marginBottom: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {bill.name}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
+                            padding: '2px 6px', borderRadius: 4,
+                            background: `${typeColor}18`, color: typeColor, border: `1px solid ${typeColor}30`,
+                          }}>
+                            {BILL_TYPE_LABELS[bill.bill_type]}
+                          </span>
+                          <MonoLabel style={{ fontSize: 9, color: 'var(--tx-3)' }}>·</MonoLabel>
+                          <MonoLabel style={{ fontSize: 9 }}>DUE {ordinal(bill.due_day).toUpperCase()}</MonoLabel>
+                          {bill.pay_day !== bill.due_day && (
+                            <><MonoLabel style={{ fontSize: 9, color: 'var(--tx-3)' }}>·</MonoLabel>
+                            <MonoLabel style={{ fontSize: 9 }}>PAY {ordinal(bill.pay_day).toUpperCase()}</MonoLabel></>
+                          )}
+                          {accountName && (
+                            <><MonoLabel style={{ fontSize: 9, color: 'var(--tx-3)' }}>·</MonoLabel>
+                            <MonoLabel style={{ fontSize: 9 }}>{accountName}</MonoLabel></>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+                        <Badge label={bill.payment_method === 'auto' ? 'AUTO' : 'MANUAL'} variant={bill.payment_method === 'auto' ? 'auto' : 'manual'} />
+                        {bill.forecast_category_id != null ? (
+                          <span style={{
+                            fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--accent)',
+                            letterSpacing: '0.04em',
+                          }}>↗ FORECAST</span>
+                        ) : bill.fixed_amount != null ? (
+                          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: 'var(--tx-1)', lineHeight: 1 }}>
+                            {fmt(bill.fixed_amount)}
+                          </div>
+                        ) : (
+                          <MonoLabel style={{ fontSize: 9, fontStyle: 'italic' }}>Variable</MonoLabel>
                         )}
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                      <Badge label={bill.payment_method === 'auto' ? 'AUTO' : 'MANUAL'} variant={bill.payment_method === 'auto' ? 'auto' : 'manual'} />
-                      {bill.forecast_category_id != null ? (
-                        <MonoLabel style={{ fontSize: 9, color: 'var(--accent)', fontStyle: 'italic' }}>↗ Forecast</MonoLabel>
-                      ) : bill.fixed_amount != null ? (
-                        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: 'var(--tx-1)' }}>
-                          {fmt(bill.fixed_amount)}
-                        </div>
-                      ) : (
-                        <MonoLabel style={{ fontSize: 9, fontStyle: 'italic' }}>Variable</MonoLabel>
-                      )}
                     </div>
                   </div>
                 )}
@@ -1337,8 +1383,11 @@ export default function PayPeriodPlanner({ userId, mobile }) {
       {/* ── Accounts Tab ── */}
       {tab === 'accounts' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <MonoLabel>ACCOUNTS ({accounts.length})</MonoLabel>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-1)' }}>Accounts</div>
+              <MonoLabel style={{ marginTop: 2 }}>{accounts.length} LINKED</MonoLabel>
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 ref={accountFileInputRef}
@@ -1422,8 +1471,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
 
           {accounts.map(account => {
             const isEditing = editingAccount?.id === account.id
+            const meta = ACCOUNT_TYPE_META[account.type] ?? ACCOUNT_TYPE_META.other
             return (
-              <div key={account.id}>
+              <div key={account.id} style={{ marginBottom: 8 }}>
                 {isEditing ? (
                   <AccountForm
                     initial={account}
@@ -1435,21 +1485,51 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   <div
                     onClick={() => setEditingAccount(account)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '12px 14px', marginBottom: 6,
-                      border: '1px solid var(--bd)', borderRadius: 9,
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      padding: '13px 16px', marginBottom: 0,
+                      border: '1px solid var(--bd)', borderRadius: 12,
                       background: 'var(--bg-card)', cursor: 'pointer',
-                      transition: 'border-color 0.15s',
+                      transition: 'border-color 0.15s, box-shadow 0.15s',
                     }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-bd)'}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--bd)'}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = meta.color
+                      e.currentTarget.style.boxShadow = `0 2px 12px ${meta.color}18`
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = 'var(--bd)'
+                      e.currentTarget.style.boxShadow = 'none'
+                    }}
                   >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 500 }}>{account.name}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                        <MonoLabel style={{ fontSize: 9, textTransform: 'capitalize' }}>{account.type}</MonoLabel>
+                    {/* Type icon badge */}
+                    <div style={{
+                      width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+                      background: `${meta.color}15`, border: `1px solid ${meta.color}30`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 17, color: meta.color,
+                    }}>
+                      {meta.icon}
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, marginBottom: 4 }}>
+                        {account.name}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
+                          padding: '2px 6px', borderRadius: 4,
+                          background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25`,
+                        }}>
+                          {meta.label.toUpperCase()}
+                        </span>
                         {account.is_primary_checking && (
-                          <><MonoLabel style={{ fontSize: 9 }}>·</MonoLabel><MonoLabel style={{ fontSize: 9, color: 'var(--accent)' }}>PRIMARY CHECKING</MonoLabel></>
+                          <span style={{
+                            fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.05em',
+                            padding: '2px 6px', borderRadius: 4,
+                            background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
+                          }}>
+                            ★ PRIMARY
+                          </span>
                         )}
                       </div>
                     </div>
