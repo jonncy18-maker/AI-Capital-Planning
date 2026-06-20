@@ -12,6 +12,7 @@ import { getProfile } from '../../lib/db/profile.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
+import TrendsTab from './TrendsTab.jsx'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -883,6 +884,7 @@ const TABS = [
   { id: 'schedule', label: 'SCHEDULE' },
   { id: 'bills',    label: 'BILLS' },
   { id: 'accounts', label: 'ACCOUNTS' },
+  { id: 'trends',   label: 'TRENDS' },
 ]
 
 export default function PayPeriodPlanner({ userId, mobile }) {
@@ -1608,6 +1610,11 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             })
           }
         </div>
+      )}
+
+      {/* ── Trends Tab ── */}
+      {tab === 'trends' && (
+        <TrendsTab userId={userId} bills={bills} payDay2={payDay2} mobile={mobile} />
       )}
     </div>
   )

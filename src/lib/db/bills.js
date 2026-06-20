@@ -86,6 +86,17 @@ export async function getBillAmountsForBill(billId) {
   return data ?? []
 }
 
+export async function getBillAmountsRange(userId, startYear, endYear) {
+  const { data, error } = await supabase
+    .from('bill_amounts')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('year', startYear)
+    .lte('year', endYear)
+  if (error) throw error
+  return data ?? []
+}
+
 export async function upsertBillAmount(userId, billId, year, month, amount, notes = null) {
   const { data, error } = await supabase
     .from('bill_amounts')
