@@ -5,9 +5,11 @@ import {
   getBills, upsertBill, deleteBill,
   getBillAmounts, upsertBillAmount,
   getAccountBalances, upsertAccountBalance,
+  getForecastAmountsForBills,
   splitBillsByPeriod,
 } from '../../lib/db/bills.js'
 import { getProfile } from '../../lib/db/profile.js'
+import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
 
@@ -107,10 +109,9 @@ function Badge({ label, variant = 'neutral' }) {
 
 // ─── Period Card ──────────────────────────────────────────────────────────────
 
-function PeriodCard({ period, label, payDay, bills, amountsMap, primaryChecking, balancesMap, onAmountChange, onBalanceChange, mobile }) {
+function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, primaryChecking, balancesMap, onAmountChange, onBalanceChange, mobile }) {
   const total = bills.reduce((sum, b) => {
-    const amt = amountsMap[b.id] ?? b.fixed_amount
-    return sum + (amt ? Number(amt) : 0)
+    return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
 
   const balanceKey = primaryChecking ? `${primaryChecking.id}-${period}` : null
@@ -142,8 +143,12 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, primaryChecking,
           </div>
         ) : (
           bills.map(bill => {
-            const isVariable = bill.fixed_amount == null
-            const amount = amountsMap[bill.id] ?? (bill.fixed_amount != null ? bill.fixed_amount : null)
+            const isForecastLinked = bill.forecast_category_id != null
+            const forecastAmount = forecastAmountsMap[bill.id] ?? null
+            const hasManualOverride = amountsMap[bill.id] != null
+            const showForecastBadge = isForecastLinked && forecastAmount != null && !hasManualOverride
+            const amount = bill.resolvedAmount
+            const showInput = !showForecastBadge && bill.fixed_amount == null
             return (
               <div
                 key={bill.id}
@@ -161,7 +166,20 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, primaryChecking,
                     <Badge label={bill.payment_method === 'auto' ? 'AUTO' : 'MANUAL'} variant={bill.payment_method === 'auto' ? 'auto' : 'manual'} />
                   </div>
                 </div>
-                {isVariable ? (
+                {showForecastBadge ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: 'var(--tx-1)' }}>
+                      {fmt(amount)}
+                    </div>
+                    <span style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.05em',
+                      padding: '2px 5px', borderRadius: 3,
+                      background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
+                    }}>
+                      FORECAST
+                    </span>
+                  </div>
+                ) : showInput ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)' }}>$</span>
                     <input
@@ -259,10 +277,12 @@ const EMPTY_BILL = {
   payment_method: 'manual', fixed_amount: null, debits_from_account_id: null,
 }
 
-function BillForm({ initial, accounts, onSave, onCancel, onDelete }) {
+function BillForm({ initial, accounts, budgetCategories = [], onSave, onCancel, onDelete }) {
   const [form, setForm] = useState(initial || EMPTY_BILL)
   const [isFixed, setIsFixed] = useState(initial ? initial.fixed_amount != null : false)
   const [fixedInput, setFixedInput] = useState(initial?.fixed_amount != null ? String(initial.fixed_amount) : '')
+  const [forecastCategoryId, setForecastCategoryId] = useState(initial?.forecast_category_id ?? null)
+  const [forecastDivisor, setForecastDivisor] = useState(initial?.forecast_divisor ?? 1)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -285,6 +305,8 @@ function BillForm({ initial, accounts, onSave, onCancel, onDelete }) {
         due_day: Number(form.due_day),
         pay_day: Number(payDay),
         fixed_amount: isFixed && fixedInput ? Number(fixedInput) : null,
+        forecast_category_id: forecastCategoryId || null,
+        forecast_divisor: forecastCategoryId ? Math.max(1, forecastDivisor || 1) : 1,
       })
     } catch (e) {
       setErr(e.message)
@@ -438,6 +460,47 @@ function BillForm({ initial, accounts, onSave, onCancel, onDelete }) {
             <option value="">— Select account —</option>
             {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
+        </div>
+      )}
+
+      {/* Forecast link */}
+      {budgetCategories.length > 0 && (
+        <div style={{ ...fieldGap, borderTop: '1px solid var(--bd)', paddingTop: 14 }}>
+          <label style={labelStyle}>LINK TO FORECAST (OPTIONAL)</label>
+          <select
+            style={{ ...inputStyle, cursor: 'pointer' }}
+            value={forecastCategoryId || ''}
+            onChange={e => setForecastCategoryId(e.target.value || null)}
+          >
+            <option value="">— No forecast link —</option>
+            {budgetCategories.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.group ? `${c.group} › ${c.category}` : c.category}
+              </option>
+            ))}
+          </select>
+          {forecastCategoryId && (
+            <div style={{ marginTop: 10 }}>
+              <label style={labelStyle}>DIVIDE MONTHLY FORECAST BY</label>
+              <input
+                style={inputStyle} type="number" min="1"
+                value={forecastDivisor}
+                onChange={e => setForecastDivisor(Math.max(1, parseInt(e.target.value) || 1))}
+              />
+              <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 5, lineHeight: 1.5 }}>
+                Use 2 to split the monthly forecast amount across 2 pay periods, 1 for a single monthly payment.
+              </div>
+            </div>
+          )}
+          {forecastCategoryId && (
+            <div style={{
+              marginTop: 10, padding: '8px 10px', borderRadius: 7,
+              background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
+              fontSize: 11, color: 'var(--accent)', lineHeight: 1.5,
+            }}>
+              Amount will be pulled from your forecast budget each month. Set a fixed amount above as a fallback when no forecast data exists.
+            </div>
+          )}
         </div>
       )}
 
@@ -815,8 +878,10 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [profile, setProfile] = useState(null)
   const [bills, setBills] = useState([])
   const [accounts, setAccounts] = useState([])
-  const [amountsMap, setAmountsMap] = useState({})    // billId → amount (for current navMonth)
-  const [balancesMap, setBalancesMap] = useState({})  // `accountId-periodHalf` → balance
+  const [budgetCategories, setBudgetCategories] = useState([])
+  const [amountsMap, setAmountsMap] = useState({})         // billId → manual amount (for current navMonth)
+  const [forecastAmountsMap, setForecastAmountsMap] = useState({}) // billId → forecast-derived amount
+  const [balancesMap, setBalancesMap] = useState({})       // `accountId-periodHalf` → balance
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -843,14 +908,16 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const reload = useCallback(async () => {
     if (!userId) return
     try {
-      const [prof, fetchedBills, fetchedAccounts] = await Promise.all([
+      const [prof, fetchedBills, fetchedAccounts, fetchedCategories] = await Promise.all([
         getProfile(userId),
         getBills(userId),
         getAccounts(userId),
+        getBudgetCategories(userId),
       ])
       setProfile(prof)
       setBills(fetchedBills)
       setAccounts(fetchedAccounts)
+      setBudgetCategories(fetchedCategories)
     } catch (e) {
       setError(e.message)
     }
@@ -861,7 +928,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     reload().finally(() => setLoading(false))
   }, [reload])
 
-  // Reload amounts + balances when nav month changes
+  // Reload amounts, balances, and forecast-derived amounts when nav month changes
   useEffect(() => {
     if (!userId) return
     Promise.all([
@@ -873,6 +940,14 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     }).catch(() => {})
   }, [userId, navYear, navMonth])
 
+  // Reload forecast amounts whenever bills or nav month changes
+  useEffect(() => {
+    if (!userId || bills.length === 0) return
+    getForecastAmountsForBills(userId, navYear, navMonth, bills)
+      .then(map => setForecastAmountsMap(map))
+      .catch(() => {})
+  }, [userId, navYear, navMonth, bills])
+
   // ── Derived values ──────────────────────────────────────────────────────────
 
   const payDay1 = profile?.pay_day_1 ?? 15
@@ -880,7 +955,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const hasPaySchedule = profile?.pay_frequency != null
 
   // Split bills: period 1 = pay_day < pay_day_2, period 2 = pay_day >= pay_day_2
-  const { period1, period2 } = splitBillsByPeriod(bills, amountsMap, payDay2 - 1)
+  const { period1, period2 } = splitBillsByPeriod(bills, amountsMap, payDay2 - 1, forecastAmountsMap)
 
   const primaryChecking = accounts.find(a => a.is_primary_checking && a.type === 'checking') ?? null
 
@@ -1086,6 +1161,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                 payDay={payDay2 - 1}
                 bills={period1}
                 amountsMap={amountsMap}
+                forecastAmountsMap={forecastAmountsMap}
                 primaryChecking={primaryChecking}
                 balancesMap={balancesMap}
                 onAmountChange={handleAmountChange}
@@ -1098,6 +1174,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                 payDay={31}
                 bills={period2}
                 amountsMap={amountsMap}
+                forecastAmountsMap={forecastAmountsMap}
                 primaryChecking={primaryChecking}
                 balancesMap={balancesMap}
                 onAmountChange={handleAmountChange}
@@ -1183,6 +1260,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
           {editingBill === 'new' && (
             <BillForm
               accounts={accounts}
+              budgetCategories={budgetCategories}
               onSave={handleSaveBill}
               onCancel={() => setEditingBill(null)}
               onDelete={handleDeleteBill}
@@ -1204,6 +1282,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   <BillForm
                     initial={bill}
                     accounts={accounts}
+                    budgetCategories={budgetCategories}
                     onSave={handleSaveBill}
                     onCancel={() => setEditingBill(null)}
                     onDelete={handleDeleteBill}
@@ -1237,7 +1316,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       <Badge label={bill.payment_method === 'auto' ? 'AUTO' : 'MANUAL'} variant={bill.payment_method === 'auto' ? 'auto' : 'manual'} />
-                      {bill.fixed_amount != null ? (
+                      {bill.forecast_category_id != null ? (
+                        <MonoLabel style={{ fontSize: 9, color: 'var(--accent)', fontStyle: 'italic' }}>↗ Forecast</MonoLabel>
+                      ) : bill.fixed_amount != null ? (
                         <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: 'var(--tx-1)' }}>
                           {fmt(bill.fixed_amount)}
                         </div>

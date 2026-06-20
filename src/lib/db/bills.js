@@ -132,11 +132,61 @@ export async function upsertAccountBalance(userId, accountId, year, month, perio
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Returns the effective amount for a bill in a given month:
-// uses bill_amounts entry if present, otherwise falls back to fixed_amount.
-export function resolveBillAmount(bill, billAmountsMap) {
-  const key = bill.id
-  if (billAmountsMap[key] != null) return billAmountsMap[key]
+// Fetch the effective monthly forecast amount for each bill that has a
+// forecast_category_id. Returns a map of billId → derived amount (after divisor).
+// Resolution: forecast_override ?? sum(budget_line_items) for that category+month.
+export async function getForecastAmountsForBills(userId, year, month, bills) {
+  const linkedBills = bills.filter(b => b.forecast_category_id)
+  if (linkedBills.length === 0) return {}
+
+  const categoryIds = [...new Set(linkedBills.map(b => b.forecast_category_id))]
+
+  const [{ data: lineItems, error: liErr }, { data: overrides, error: ovErr }] = await Promise.all([
+    supabase
+      .from('budget_line_items')
+      .select('category_id, amount')
+      .eq('user_id', userId)
+      .eq('budget_year', year)
+      .eq('month', month)
+      .in('category_id', categoryIds),
+    supabase
+      .from('forecast_overrides')
+      .select('category_id, amount')
+      .eq('user_id', userId)
+      .eq('budget_year', year)
+      .eq('month', month)
+      .in('category_id', categoryIds),
+  ])
+  if (liErr) throw liErr
+  if (ovErr) throw ovErr
+
+  // Sum budget_line_items per category
+  const lineItemTotals = {}
+  for (const li of (lineItems ?? [])) {
+    lineItemTotals[li.category_id] = (lineItemTotals[li.category_id] ?? 0) + Number(li.amount)
+  }
+
+  // Override map (a single override row replaces the whole sum)
+  const overrideMap = {}
+  for (const ov of (overrides ?? [])) {
+    overrideMap[ov.category_id] = Number(ov.amount)
+  }
+
+  const result = {}
+  for (const bill of linkedBills) {
+    const monthly = overrideMap[bill.forecast_category_id] ?? lineItemTotals[bill.forecast_category_id] ?? null
+    if (monthly != null) {
+      result[bill.id] = monthly / Math.max(1, bill.forecast_divisor ?? 1)
+    }
+  }
+  return result
+}
+
+// Returns the effective amount for a bill in a given month.
+// Priority: manual bill_amounts entry → forecast-derived → fixed_amount → null (variable).
+export function resolveBillAmount(bill, billAmountsMap, forecastAmountsMap = {}) {
+  if (billAmountsMap[bill.id] != null) return billAmountsMap[bill.id]
+  if (forecastAmountsMap[bill.id] != null) return forecastAmountsMap[bill.id]
   return bill.fixed_amount ?? null
 }
 
@@ -144,12 +194,12 @@ export function resolveBillAmount(bill, billAmountsMap) {
 // the two semi-monthly periods defined by the user's pay schedule.
 // period 1: bills whose pay_day <= midpoint (default 15)
 // period 2: bills whose pay_day > midpoint
-export function splitBillsByPeriod(bills, billAmountsMap, midpoint = 15) {
+export function splitBillsByPeriod(bills, billAmountsMap, midpoint = 15, forecastAmountsMap = {}) {
   const period1 = []
   const period2 = []
 
   for (const bill of bills) {
-    const amount = resolveBillAmount(bill, billAmountsMap)
+    const amount = resolveBillAmount(bill, billAmountsMap, forecastAmountsMap)
     const entry = { ...bill, resolvedAmount: amount }
     if (bill.pay_day <= midpoint) {
       period1.push(entry)
