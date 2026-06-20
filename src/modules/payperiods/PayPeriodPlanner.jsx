@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import {
   getAccounts, upsertAccount, deleteAccount,
@@ -8,6 +8,7 @@ import {
   splitBillsByPeriod,
 } from '../../lib/db/bills.js'
 import { getProfile } from '../../lib/db/profile.js'
+import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -567,6 +568,125 @@ function AccountForm({ initial, onSave, onCancel, onDelete }) {
   )
 }
 
+<<<<<<< HEAD
+// ─── Parse Review Panel ───────────────────────────────────────────────────────
+
+function ParseReviewPanel({ selections, onToggle, onNameEdit, onImport, onDismiss, importing }) {
+  const selectedCount = selections.filter(s => s.selected).length
+
+  return (
+    <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 10, background: 'var(--bg-card)', marginBottom: 20, overflow: 'hidden' }}>
+      <div style={{
+        padding: '14px 16px', borderBottom: '1px solid var(--bd)', background: 'var(--bg-app)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
+      }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)' }}>
+            AI detected {selections.length} recurring bill{selections.length !== 1 ? 's' : ''}
+          </div>
+          <MonoLabel style={{ marginTop: 4 }}>Review and select which to import</MonoLabel>
+        </div>
+        <button
+          onClick={onDismiss}
+          style={{
+            flexShrink: 0, background: 'none', border: '1px solid var(--bd)', cursor: 'pointer',
+            color: 'var(--tx-2)', fontFamily: "'DM Mono', monospace", fontSize: 10,
+            letterSpacing: '0.04em', borderRadius: 7, padding: '5px 10px',
+          }}
+        >
+          Dismiss
+        </button>
+      </div>
+
+      <div style={{ padding: '0 16px' }}>
+        {selections.length === 0 ? (
+          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--tx-3)', fontSize: 13 }}>
+            No recurring bills detected. Try a different file.
+          </div>
+        ) : (
+          selections.map((sel, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 0', borderBottom: '0.5px solid var(--bd-light)',
+                opacity: sel.selected ? 1 : 0.45,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sel.selected}
+                onChange={() => onToggle(i)}
+                style={{ accentColor: 'var(--accent)', width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <input
+                  value={sel.editedName}
+                  onChange={e => onNameEdit(i, e.target.value)}
+                  style={{
+                    width: '100%', background: 'transparent', border: 'none', outline: 'none',
+                    fontSize: 13, color: 'var(--tx-1)', fontWeight: 500,
+                    fontFamily: 'Inter, sans-serif',
+                  }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
+                  <MonoLabel style={{ fontSize: 9 }}>{BILL_TYPE_LABELS[sel.bill_type] || sel.bill_type}</MonoLabel>
+                  <MonoLabel style={{ fontSize: 9 }}>·</MonoLabel>
+                  <MonoLabel style={{ fontSize: 9 }}>Due {ordinal(sel.due_day)}</MonoLabel>
+                  {sel.pay_day !== sel.due_day && (
+                    <><MonoLabel style={{ fontSize: 9 }}>·</MonoLabel><MonoLabel style={{ fontSize: 9 }}>Pay {ordinal(sel.pay_day)}</MonoLabel></>
+                  )}
+                </div>
+              </div>
+              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Badge
+                  label={sel.payment_method === 'auto' ? 'AUTO' : 'MANUAL'}
+                  variant={sel.payment_method === 'auto' ? 'auto' : 'manual'}
+                />
+                {sel.fixed_amount != null ? (
+                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: 'var(--tx-1)', minWidth: 60, textAlign: 'right' }}>
+                    {fmt(sel.fixed_amount)}
+                  </div>
+                ) : (
+                  <MonoLabel style={{ fontSize: 9, fontStyle: 'italic', minWidth: 48, textAlign: 'right' }}>Variable</MonoLabel>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div style={{ padding: '14px 16px', borderTop: '1px solid var(--bd)', display: 'flex', gap: 8 }}>
+        <button
+          onClick={onImport}
+          disabled={selectedCount === 0 || importing}
+          style={{
+            flex: 1, padding: '9px 0', borderRadius: 7, fontSize: 12, fontWeight: 600,
+            cursor: selectedCount === 0 || importing ? 'not-allowed' : 'pointer',
+            background: selectedCount === 0 ? 'var(--bg-app)' : 'var(--accent)',
+            color: selectedCount === 0 ? 'var(--tx-3)' : 'var(--accent-tx-on)',
+            border: selectedCount === 0 ? '1px solid var(--bd)' : 'none',
+            opacity: importing ? 0.6 : 1,
+          }}
+        >
+          {importing ? 'Importing…' : `Import ${selectedCount} Bill${selectedCount !== 1 ? 's' : ''}`}
+        </button>
+        <button
+          onClick={onDismiss}
+          style={{
+            padding: '9px 16px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
+            background: 'none', color: 'var(--tx-2)', border: '1px solid var(--bd)',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+=======
+>>>>>>> origin/main
 // ─── Main Module ──────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -593,6 +713,16 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [editingBill, setEditingBill] = useState(null)   // bill object or 'new'
   const [editingAccount, setEditingAccount] = useState(null)
 
+<<<<<<< HEAD
+  // File upload + AI parse state
+  const fileInputRef = useRef(null)
+  const [parsedSelections, setParsedSelections] = useState(null) // null = inactive
+  const [parseLoading, setParseLoading] = useState(false)
+  const [parseError, setParseError] = useState(null)
+  const [importingParsed, setImportingParsed] = useState(false)
+
+=======
+>>>>>>> origin/main
   // ── Load data ───────────────────────────────────────────────────────────────
 
   const reload = useCallback(async () => {
@@ -702,6 +832,44 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     await reload()
   }
 
+<<<<<<< HEAD
+  async function handleFileUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setParseLoading(true)
+    setParseError(null)
+    setParsedSelections(null)
+    try {
+      const results = await parseBillsFromFile(file)
+      setParsedSelections(results.map(b => ({ ...b, selected: true, editedName: b.name })))
+    } catch (err) {
+      setParseError(err.message)
+    } finally {
+      setParseLoading(false)
+    }
+  }
+
+  async function handleImportParsed() {
+    if (!parsedSelections) return
+    setImportingParsed(true)
+    setParseError(null)
+    try {
+      const toImport = parsedSelections.filter(s => s.selected)
+      for (const sel of toImport) {
+        await upsertBill(userId, { ...sel, name: sel.editedName })
+      }
+      setParsedSelections(null)
+      await reload()
+    } catch (e) {
+      setParseError(e.message)
+    } finally {
+      setImportingParsed(false)
+    }
+  }
+
+=======
+>>>>>>> origin/main
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -799,6 +967,74 @@ export default function PayPeriodPlanner({ userId, mobile }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <MonoLabel>ALL BILLS ({bills.length})</MonoLabel>
+<<<<<<< HEAD
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileUpload}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={parseLoading}
+                style={{
+                  background: 'none', border: '1px solid var(--bd)', borderRadius: 7,
+                  padding: '7px 14px', cursor: parseLoading ? 'not-allowed' : 'pointer',
+                  fontSize: 12, color: 'var(--tx-2)',
+                  opacity: parseLoading ? 0.6 : 1,
+                }}
+              >
+                {parseLoading ? 'Parsing…' : '↑ Upload File'}
+              </button>
+              <button
+                onClick={() => setEditingBill('new')}
+                style={{
+                  background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none',
+                  borderRadius: 7, padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                }}
+              >
+                + Add Bill
+              </button>
+            </div>
+          </div>
+
+          {parseLoading && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '14px 16px', borderRadius: 9, marginBottom: 16,
+              border: '1px solid var(--accent-bd)', background: 'var(--accent-bg)',
+            }}>
+              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+              <div style={{ fontSize: 13, color: 'var(--accent)' }}>Reading file and extracting bills with AI…</div>
+            </div>
+          )}
+
+          {parseError && (
+            <div style={{
+              padding: '12px 14px', borderRadius: 9, marginBottom: 16,
+              border: '1px solid var(--warn)', background: 'var(--warn-bg)',
+              fontSize: 13, color: 'var(--warn)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10,
+            }}>
+              <span>{parseError}</span>
+              <button onClick={() => setParseError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--warn)', fontSize: 14, flexShrink: 0, lineHeight: 1 }}>✕</button>
+            </div>
+          )}
+
+          {parsedSelections !== null && (
+            <ParseReviewPanel
+              selections={parsedSelections}
+              onToggle={i => setParsedSelections(prev => prev.map((s, idx) => idx === i ? { ...s, selected: !s.selected } : s))}
+              onNameEdit={(i, name) => setParsedSelections(prev => prev.map((s, idx) => idx === i ? { ...s, editedName: name } : s))}
+              onImport={handleImportParsed}
+              onDismiss={() => { setParsedSelections(null); setParseError(null) }}
+              importing={importingParsed}
+            />
+          )}
+
+=======
             <button
               onClick={() => setEditingBill('new')}
               style={{
@@ -810,6 +1046,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             </button>
           </div>
 
+>>>>>>> origin/main
           {editingBill === 'new' && (
             <BillForm
               accounts={accounts}
