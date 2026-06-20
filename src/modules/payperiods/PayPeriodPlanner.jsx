@@ -9,6 +9,7 @@ import {
 } from '../../lib/db/bills.js'
 import { getProfile } from '../../lib/db/profile.js'
 import { parseBillsFromFile } from '../../lib/ai/billParser.js'
+import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -684,6 +685,119 @@ function ParseReviewPanel({ selections, onToggle, onNameEdit, onImport, onDismis
   )
 }
 
+// ─── Account Parse Review Panel ──────────────────────────────────────────────
+
+const ACCOUNT_TYPE_LABELS = { checking: 'Checking', savings: 'Savings', investment: 'Investment', other: 'Other' }
+
+function AccountParseReviewPanel({ selections, onToggle, onNameEdit, onPrimaryToggle, onImport, onDismiss, importing }) {
+  const selectedCount = selections.filter(s => s.selected).length
+
+  return (
+    <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 10, background: 'var(--bg-card)', marginBottom: 20, overflow: 'hidden' }}>
+      <div style={{
+        padding: '14px 16px', borderBottom: '1px solid var(--bd)', background: 'var(--bg-app)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
+      }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)' }}>
+            AI detected {selections.length} account{selections.length !== 1 ? 's' : ''}
+          </div>
+          <MonoLabel style={{ marginTop: 4 }}>Review — check ★ to mark your primary checking account</MonoLabel>
+        </div>
+        <button
+          onClick={onDismiss}
+          style={{
+            flexShrink: 0, background: 'none', border: '1px solid var(--bd)', cursor: 'pointer',
+            color: 'var(--tx-2)', fontFamily: "'DM Mono', monospace", fontSize: 10,
+            letterSpacing: '0.04em', borderRadius: 7, padding: '5px 10px',
+          }}
+        >
+          Dismiss
+        </button>
+      </div>
+
+      <div style={{ padding: '0 16px' }}>
+        {selections.length === 0 ? (
+          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--tx-3)', fontSize: 13 }}>
+            No accounts detected. Try a different file.
+          </div>
+        ) : (
+          selections.map((sel, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 0', borderBottom: '0.5px solid var(--bd-light)',
+                opacity: sel.selected ? 1 : 0.45,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sel.selected}
+                onChange={() => onToggle(i)}
+                style={{ accentColor: 'var(--accent)', width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <input
+                  value={sel.editedName}
+                  onChange={e => onNameEdit(i, e.target.value)}
+                  style={{
+                    width: '100%', background: 'transparent', border: 'none', outline: 'none',
+                    fontSize: 13, color: 'var(--tx-1)', fontWeight: 500,
+                    fontFamily: 'Inter, sans-serif',
+                  }}
+                />
+                <MonoLabel style={{ fontSize: 9, marginTop: 3, textTransform: 'capitalize' }}>
+                  {ACCOUNT_TYPE_LABELS[sel.type] || sel.type}
+                </MonoLabel>
+              </div>
+              <button
+                onClick={() => onPrimaryToggle(i)}
+                title="Mark as primary checking account"
+                style={{
+                  flexShrink: 0, background: sel.is_primary_checking ? 'var(--accent-bg)' : 'none',
+                  border: `1px solid ${sel.is_primary_checking ? 'var(--accent-bd)' : 'var(--bd)'}`,
+                  borderRadius: 6, padding: '4px 8px', cursor: 'pointer',
+                  fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.04em',
+                  color: sel.is_primary_checking ? 'var(--accent)' : 'var(--tx-3)',
+                }}
+              >
+                ★ PRIMARY
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div style={{ padding: '14px 16px', borderTop: '1px solid var(--bd)', display: 'flex', gap: 8 }}>
+        <button
+          onClick={onImport}
+          disabled={selectedCount === 0 || importing}
+          style={{
+            flex: 1, padding: '9px 0', borderRadius: 7, fontSize: 12, fontWeight: 600,
+            cursor: selectedCount === 0 || importing ? 'not-allowed' : 'pointer',
+            background: selectedCount === 0 ? 'var(--bg-app)' : 'var(--accent)',
+            color: selectedCount === 0 ? 'var(--tx-3)' : 'var(--accent-tx-on)',
+            border: selectedCount === 0 ? '1px solid var(--bd)' : 'none',
+            opacity: importing ? 0.6 : 1,
+          }}
+        >
+          {importing ? 'Importing…' : `Import ${selectedCount} Account${selectedCount !== 1 ? 's' : ''}`}
+        </button>
+        <button
+          onClick={onDismiss}
+          style={{
+            padding: '9px 16px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
+            background: 'none', color: 'var(--tx-2)', border: '1px solid var(--bd)',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Module ──────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -710,12 +824,19 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [editingBill, setEditingBill] = useState(null)   // bill object or 'new'
   const [editingAccount, setEditingAccount] = useState(null)
 
-  // File upload + AI parse state
+  // Bill upload + AI parse state
   const fileInputRef = useRef(null)
   const [parsedSelections, setParsedSelections] = useState(null) // null = inactive
   const [parseLoading, setParseLoading] = useState(false)
   const [parseError, setParseError] = useState(null)
   const [importingParsed, setImportingParsed] = useState(false)
+
+  // Account upload + AI parse state
+  const accountFileInputRef = useRef(null)
+  const [parsedAccounts, setParsedAccounts] = useState(null) // null = inactive
+  const [accountParseLoading, setAccountParseLoading] = useState(false)
+  const [accountParseError, setAccountParseError] = useState(null)
+  const [importingParsedAccounts, setImportingParsedAccounts] = useState(false)
 
   // ── Load data ───────────────────────────────────────────────────────────────
 
@@ -824,6 +945,41 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     await deleteAccount(id)
     setEditingAccount(null)
     await reload()
+  }
+
+  async function handleAccountFileUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setAccountParseLoading(true)
+    setAccountParseError(null)
+    setParsedAccounts(null)
+    try {
+      const results = await parseAccountsFromFile(file)
+      setParsedAccounts(results.map(a => ({ ...a, selected: true, editedName: a.name })))
+    } catch (err) {
+      setAccountParseError(err.message)
+    } finally {
+      setAccountParseLoading(false)
+    }
+  }
+
+  async function handleImportParsedAccounts() {
+    if (!parsedAccounts) return
+    setImportingParsedAccounts(true)
+    setAccountParseError(null)
+    try {
+      const toImport = parsedAccounts.filter(a => a.selected)
+      for (const { editedName, selected, ...accountData } of toImport) {
+        await upsertAccount(userId, { ...accountData, name: editedName })
+      }
+      setParsedAccounts(null)
+      await reload()
+    } catch (e) {
+      setAccountParseError(e.message)
+    } finally {
+      setImportingParsedAccounts(false)
+    }
   }
 
   async function handleFileUpload(e) {
@@ -1102,16 +1258,72 @@ export default function PayPeriodPlanner({ userId, mobile }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <MonoLabel>ACCOUNTS ({accounts.length})</MonoLabel>
-            <button
-              onClick={() => setEditingAccount('new')}
-              style={{
-                background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none',
-                borderRadius: 7, padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-              }}
-            >
-              + Add Account
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                ref={accountFileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleAccountFileUpload}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={() => accountFileInputRef.current?.click()}
+                disabled={accountParseLoading}
+                style={{
+                  background: 'none', border: '1px solid var(--bd)', borderRadius: 7,
+                  padding: '7px 14px', cursor: accountParseLoading ? 'not-allowed' : 'pointer',
+                  fontSize: 12, color: 'var(--tx-2)',
+                  opacity: accountParseLoading ? 0.6 : 1,
+                }}
+              >
+                {accountParseLoading ? 'Parsing…' : '↑ Upload File'}
+              </button>
+              <button
+                onClick={() => setEditingAccount('new')}
+                style={{
+                  background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none',
+                  borderRadius: 7, padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                }}
+              >
+                + Add Account
+              </button>
+            </div>
           </div>
+
+          {accountParseLoading && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '14px 16px', borderRadius: 9, marginBottom: 16,
+              border: '1px solid var(--accent-bd)', background: 'var(--accent-bg)',
+            }}>
+              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+              <div style={{ fontSize: 13, color: 'var(--accent)' }}>Reading file and detecting accounts with AI…</div>
+            </div>
+          )}
+
+          {accountParseError && (
+            <div style={{
+              padding: '12px 14px', borderRadius: 9, marginBottom: 16,
+              border: '1px solid var(--warn)', background: 'var(--warn-bg)',
+              fontSize: 13, color: 'var(--warn)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10,
+            }}>
+              <span>{accountParseError}</span>
+              <button onClick={() => setAccountParseError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--warn)', fontSize: 14, flexShrink: 0, lineHeight: 1 }}>✕</button>
+            </div>
+          )}
+
+          {parsedAccounts !== null && (
+            <AccountParseReviewPanel
+              selections={parsedAccounts}
+              onToggle={i => setParsedAccounts(prev => prev.map((a, idx) => idx === i ? { ...a, selected: !a.selected } : a))}
+              onNameEdit={(i, name) => setParsedAccounts(prev => prev.map((a, idx) => idx === i ? { ...a, editedName: name } : a))}
+              onPrimaryToggle={i => setParsedAccounts(prev => prev.map((a, idx) => ({ ...a, is_primary_checking: idx === i ? !a.is_primary_checking : false })))}
+              onImport={handleImportParsedAccounts}
+              onDismiss={() => { setParsedAccounts(null); setAccountParseError(null) }}
+              importing={importingParsedAccounts}
+            />
+          )}
 
           {editingAccount === 'new' && (
             <AccountForm
