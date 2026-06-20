@@ -12,6 +12,7 @@ import { getProfile } from '../../lib/db/profile.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
+import { parseBillAmountsFromFile } from '../../lib/ai/billAmountsParser.js'
 import TrendsTab from './TrendsTab.jsx'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -921,6 +922,13 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [accountParseError, setAccountParseError] = useState(null)
   const [importingParsedAccounts, setImportingParsedAccounts] = useState(false)
 
+  // Historical bill amounts upload state
+  const amountsFileInputRef = useRef(null)
+  const [parsedAmountRows, setParsedAmountRows] = useState(null) // null = inactive
+  const [amountsParseLoading, setAmountsParseLoading] = useState(false)
+  const [amountsParseError, setAmountsParseError] = useState(null)
+  const [importingAmounts, setImportingAmounts] = useState(false)
+
   // Collapsible group state — all collapsed by default (empty = all false)
   const [openBillGroups, setOpenBillGroups] = useState({})
   const [openAccountGroups, setOpenAccountGroups] = useState({})
@@ -1017,6 +1025,52 @@ export default function PayPeriodPlanner({ userId, mobile }) {
       await upsertAccountBalance(userId, primaryChecking.id, navYear, navMonth, periodHalf, Number(value))
     } catch (e) {
       console.error('Failed to save balance:', e)
+    }
+  }
+
+  function autoMatchBill(parsedName) {
+    const lower = parsedName.toLowerCase()
+    return bills.find(b =>
+      b.name.toLowerCase().includes(lower) || lower.includes(b.name.toLowerCase())
+    ) ?? null
+  }
+
+  async function handleAmountsFileUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setAmountsParseLoading(true)
+    setAmountsParseError(null)
+    setParsedAmountRows(null)
+    try {
+      const rows = await parseBillAmountsFromFile(file)
+      setParsedAmountRows(rows.map(r => {
+        const matched = autoMatchBill(r.billName)
+        return { ...r, selected: matched != null, matchedBillId: matched?.id ?? null }
+      }))
+    } catch (err) {
+      setAmountsParseError(err.message)
+    } finally {
+      setAmountsParseLoading(false)
+    }
+  }
+
+  async function handleImportAmounts() {
+    const toImport = (parsedAmountRows ?? []).filter(r => r.selected && r.matchedBillId)
+    if (toImport.length === 0) return
+    setImportingAmounts(true)
+    setAmountsParseError(null)
+    try {
+      for (const r of toImport) {
+        await upsertBillAmount(userId, r.matchedBillId, r.year, r.month, r.amount)
+      }
+      setParsedAmountRows(null)
+      const amounts = await getBillAmounts(userId, navYear, navMonth)
+      setAmountsMap(buildAmountsMap(amounts))
+    } catch (e) {
+      setAmountsParseError(e.message)
+    } finally {
+      setImportingAmounts(false)
     }
   }
 
@@ -1159,14 +1213,205 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             </div>
           )}
 
-          {/* Month nav */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-            <button onClick={prevMonth} style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', color: 'var(--tx-2)', fontSize: 14 }}>‹</button>
-            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18, color: 'var(--tx-1)', minWidth: 140, textAlign: 'center' }}>
-              {MONTH_NAMES[navMonth - 1]} {navYear}
+          {/* Month nav + Upload History */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <button onClick={prevMonth} style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', color: 'var(--tx-2)', fontSize: 14 }}>‹</button>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18, color: 'var(--tx-1)', minWidth: 140, textAlign: 'center' }}>
+                {MONTH_NAMES[navMonth - 1]} {navYear}
+              </div>
+              <button onClick={nextMonth} style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', color: 'var(--tx-2)', fontSize: 14 }}>›</button>
             </div>
-            <button onClick={nextMonth} style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', color: 'var(--tx-2)', fontSize: 14 }}>›</button>
+            <div>
+              <input
+                ref={amountsFileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleAmountsFileUpload}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={() => amountsFileInputRef.current?.click()}
+                disabled={amountsParseLoading}
+                style={{
+                  background: 'none', border: '1px solid var(--bd)', borderRadius: 7,
+                  padding: '7px 14px', cursor: amountsParseLoading ? 'not-allowed' : 'pointer',
+                  fontSize: 12, color: 'var(--tx-2)', opacity: amountsParseLoading ? 0.6 : 1,
+                }}
+              >
+                {amountsParseLoading ? 'Parsing…' : '↑ Upload History'}
+              </button>
+            </div>
           </div>
+
+          {/* Historical amounts review panel */}
+          {parsedAmountRows && (() => {
+            const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            const readyCount = parsedAmountRows.filter(r => r.selected && r.matchedBillId).length
+            return (
+              <div style={{
+                border: '1px solid var(--bd)', borderRadius: 11,
+                padding: '16px 18px', marginBottom: 20,
+                background: 'var(--bg-card)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-1)' }}>Import Historical Amounts</div>
+                    <MonoLabel style={{ marginTop: 2 }}>
+                      {readyCount} OF {parsedAmountRows.length} SELECTED
+                    </MonoLabel>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button
+                      onClick={() => { setParsedAmountRows(null); setAmountsParseError(null) }}
+                      style={{
+                        background: 'none', border: '1px solid var(--bd)', borderRadius: 7,
+                        padding: '7px 14px', cursor: 'pointer', fontSize: 12, color: 'var(--tx-2)',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleImportAmounts}
+                      disabled={importingAmounts || readyCount === 0}
+                      style={{
+                        background: readyCount > 0 ? 'var(--accent)' : 'var(--bg-card)',
+                        color: readyCount > 0 ? 'var(--accent-tx-on)' : 'var(--tx-3)',
+                        border: '1px solid var(--bd)', borderRadius: 7,
+                        padding: '7px 14px', cursor: (importingAmounts || readyCount === 0) ? 'not-allowed' : 'pointer',
+                        fontSize: 12, fontWeight: 600, opacity: importingAmounts ? 0.6 : 1,
+                      }}
+                    >
+                      {importingAmounts ? 'Importing…' : `Import ${readyCount}`}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Column headers */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: mobile ? '20px 1fr auto auto' : '20px 1fr 1fr auto auto',
+                  gap: '6px 10px', alignItems: 'center',
+                  fontFamily: "'DM Mono', monospace", fontSize: 8.5,
+                  color: 'var(--tx-3)', letterSpacing: '0.06em',
+                  textTransform: 'uppercase', marginBottom: 6,
+                  padding: '0 4px',
+                }}>
+                  <span />
+                  <span>Parsed Name</span>
+                  {!mobile && <span>Match to Bill</span>}
+                  <span>Period</span>
+                  <span style={{ textAlign: 'right' }}>Amount</span>
+                </div>
+
+                {/* Rows */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {parsedAmountRows.map((row, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: mobile ? '20px 1fr auto auto' : '20px 1fr 1fr auto auto',
+                        gap: '6px 10px', alignItems: 'center',
+                        padding: '7px 4px', borderRadius: 7,
+                        background: row.matchedBillId ? 'transparent' : 'var(--warn-bg)',
+                        opacity: row.selected ? 1 : 0.55,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!(row.selected && row.matchedBillId)}
+                        disabled={!row.matchedBillId}
+                        onChange={e => setParsedAmountRows(prev =>
+                          prev.map((r, j) => j === i ? { ...r, selected: e.target.checked } : r)
+                        )}
+                        style={{ accentColor: 'var(--accent)', cursor: row.matchedBillId ? 'pointer' : 'not-allowed' }}
+                      />
+                      <span style={{
+                        fontSize: 13, color: 'var(--tx-2)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {row.billName}
+                      </span>
+                      {mobile ? null : (
+                        <select
+                          value={row.matchedBillId ?? ''}
+                          onChange={e => setParsedAmountRows(prev =>
+                            prev.map((r, j) => j === i
+                              ? { ...r, matchedBillId: e.target.value || null, selected: !!e.target.value }
+                              : r
+                            )
+                          )}
+                          style={{
+                            fontSize: 12, background: 'var(--bg-app)', color: 'var(--tx-1)',
+                            border: '1px solid var(--bd)', borderRadius: 6, padding: '4px 6px',
+                          }}
+                        >
+                          <option value="">— select bill —</option>
+                          {bills.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      )}
+                      <span style={{
+                        fontSize: 11, color: 'var(--tx-3)', whiteSpace: 'nowrap',
+                        fontFamily: "'DM Mono', monospace",
+                      }}>
+                        {MONTH_ABBR[row.month - 1]} {row.year}
+                      </span>
+                      <span style={{
+                        fontSize: 13, fontVariantNumeric: 'tabular-nums',
+                        color: 'var(--tx-1)', textAlign: 'right', whiteSpace: 'nowrap',
+                      }}>
+                        ${row.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))}
+                  {/* Mobile: show bill selector below each unmatched row */}
+                  {mobile && parsedAmountRows.map((row, i) => !row.matchedBillId ? (
+                    <div key={`sel-${i}`} style={{ paddingLeft: 30, marginTop: -1, marginBottom: 4 }}>
+                      <select
+                        value={row.matchedBillId ?? ''}
+                        onChange={e => setParsedAmountRows(prev =>
+                          prev.map((r, j) => j === i
+                            ? { ...r, matchedBillId: e.target.value || null, selected: !!e.target.value }
+                            : r
+                          )
+                        )}
+                        style={{
+                          fontSize: 12, background: 'var(--bg-app)', color: 'var(--tx-1)',
+                          border: '1px solid var(--warn)', borderRadius: 6, padding: '4px 6px', width: '100%',
+                        }}
+                      >
+                        <option value="">— match to bill —</option>
+                        {bills.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </div>
+                  ) : null)}
+                </div>
+
+                {amountsParseError && (
+                  <div style={{
+                    marginTop: 12, padding: '10px 14px',
+                    background: 'var(--warn-bg)', borderRadius: 8, color: 'var(--warn)', fontSize: 13,
+                  }}>
+                    {amountsParseError}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {amountsParseLoading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, color: 'var(--tx-3)', fontSize: 13 }}>
+              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+              Parsing file with AI…
+            </div>
+          )}
+
+          {amountsParseError && !parsedAmountRows && (
+            <div style={{ marginBottom: 16, padding: '10px 14px', background: 'var(--warn-bg)', borderRadius: 8, color: 'var(--warn)', fontSize: 13 }}>
+              {amountsParseError}
+            </div>
+          )}
 
           {bills.length === 0 ? (
             <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--tx-3)', fontSize: 13 }}>
