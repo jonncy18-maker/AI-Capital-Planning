@@ -2366,7 +2366,17 @@ export default function PayPeriodPlanner({ userId, mobile }) {
 
       {/* ── Trends Tab ── */}
       {tab === 'trends' && (
-        <TrendsTab userId={userId} bills={bills} payDay2={payDay2} mobile={mobile} statementsByCard={statementsByCard} />
+        <TrendsTab
+          userId={userId}
+          bills={bills}
+          payDay2={payDay2}
+          mobile={mobile}
+          creditCards={creditCards}
+          budgetCategories={budgetCategories}
+          earnRateMap={earnRateMap}
+          ccCoverage={ccCoverage}
+          ccOptimization={ccOptimization}
+        />
       )}
 
       {/* ── CC Schedule Tab ── */}

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { getBillAmountsRange, getForecastAmountsForBills, splitBillsByPeriod } from '../../lib/db/bills.js'
-import { projectedBillAmounts } from '../../lib/cashflow/cashflowEngine.js'
+import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
+import { getForecastOverrides } from '../../lib/db/forecastOverrides.js'
+import { routeForecastToCards, computeStatementForecast, projectedBillAmounts } from '../../lib/cashflow/cashflowEngine.js'
 
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const P1_COLOR = 'var(--accent)'
@@ -55,14 +57,24 @@ function StatCard({ label, value, subLabel, mobile }) {
   )
 }
 
-export default function TrendsTab({ userId, bills, payDay2, mobile, statementsByCard = {} }) {
+export default function TrendsTab({
+  userId, bills, payDay2, mobile,
+  creditCards = [], budgetCategories = [], earnRateMap = {},
+  ccCoverage = 80, ccOptimization = 100,
+}) {
   const [chartData, setChartData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [hover, setHover] = useState(null)
 
   const midpoint = (payDay2 ?? 30) - 1
-  const billsKey = bills.map(b => `${b.id}:${b.fixed_amount}:${b.forecast_category_id}:${b.forecast_divisor}:${b.pay_day}`).join('|')
+  // Keys that drive a recompute. credit_card_id is included so re-linking a bill
+  // to a card refreshes its projected statement amount; the card/category/earn-rate
+  // keys keep the credit-card statement projection in sync with its inputs.
+  const billsKey = bills.map(b => `${b.id}:${b.fixed_amount}:${b.forecast_category_id}:${b.forecast_divisor}:${b.pay_day}:${b.credit_card_id}`).join('|')
+  const cardsKey = creditCards.map(c => `${c.id}:${c.statement_close_day}:${c.due_days_after_close}:${c.is_default}`).join('|')
+  const catsKey = budgetCategories.map(c => `${c.id}:${c.is_active}:${c.cc_category}:${c.cash_only}:${c.pinned_card_id ?? ''}`).join('|')
+  const earnKey = JSON.stringify(earnRateMap)
 
   useEffect(() => {
     if (!userId) return
@@ -108,10 +120,12 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
         amountIndex[row.year][row.month][row.bill_id] = row.amount
       }
 
-      // Most recent actual per bill (for variable bill forecast fallback)
-      const sorted = [...rawAmounts].sort((a, b) =>
-        a.year !== b.year ? b.year - a.year : b.month - a.month
-      )
+      // Most recent actual per bill (for variable bill forecast fallback).
+      // Only consider entries up to the current month — a future-dated actual is
+      // not a "last known" value and shouldn't seed other future months.
+      const sorted = [...rawAmounts]
+        .filter(r => r.year < currentYear || (r.year === currentYear && r.month <= currentMonth))
+        .sort((a, b) => (a.year !== b.year ? b.year - a.year : b.month - a.month))
       const lastKnownAmounts = {}
       for (const row of sorted) {
         if (lastKnownAmounts[row.bill_id] === undefined && row.amount != null) {
@@ -137,6 +151,37 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
         await Promise.all(futureSlots.map(async s => {
           const result = await getForecastAmountsForBills(userId, s.year, s.month, bills)
           forecastResults[`${s.year}-${s.month}`] = result
+        }))
+      }
+
+      // Project credit-card statement amounts for every year the forecast window
+      // spans. The Schedule tab's statementsByCard only covers its nav year, but
+      // the trends window can reach into adjacent years (and follows the real
+      // current month, not nav state), so compute across all future slot-years.
+      //
+      // Statements are merged per card across years rather than indexed by close
+      // year: a statement's DUE date can fall in a different year than it closes
+      // (e.g. a December statement paid in January), and projectedBillAmounts
+      // matches purely on due date.
+      const statementsByCard = {}
+      const futureYears = [...new Set(futureSlots.map(s => s.year))]
+      if (futureYears.length > 0 && creditCards.length > 0 && bills.some(b => b.credit_card_id)) {
+        await Promise.all(futureYears.map(async year => {
+          const [lineItems, overrides] = await Promise.all([
+            getBudgetLineItems(userId, { year }),
+            getForecastOverrides(userId, year),
+          ])
+          const cashflow = routeForecastToCards({
+            budgetCategories, lineItems, overrides,
+            cards: creditCards, earnRateMap,
+            coveragePct: ccCoverage, optimizationPct: ccOptimization,
+          })
+          const stmts = computeStatementForecast({
+            cardDollarsByMonth: cashflow.cardDollarsByMonth, cards: creditCards, year,
+          })
+          for (const cardId of Object.keys(stmts)) {
+            statementsByCard[cardId] = (statementsByCard[cardId] ?? []).concat(stmts[cardId])
+          }
         }))
       }
 
@@ -175,7 +220,7 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
       .finally(() => { if (!cancelled) setLoading(false) })
 
     return () => { cancelled = true }
-  }, [userId, billsKey, payDay2]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId, billsKey, payDay2, cardsKey, catsKey, earnKey, ccCoverage, ccOptimization]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Loading / error / empty states ──────────────────────────────────────────
 
