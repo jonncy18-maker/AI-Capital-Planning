@@ -881,6 +881,31 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
   const [suggesting, setSuggesting] = useState(false)
   const [suggestError, setSuggestError] = useState(null)
 
+  // Lifted category edit state — enables Save All across all rows
+  const [catEdits, setCatEdits] = useState({})
+  const [savingAllCats, setSavingAllCats] = useState(false)
+
+  // Your Cards section collapse
+  const [expandedCards, setExpandedCards] = useState(true)
+
+  const getCatCcCat = cat => catEdits[cat.id]?.ccCat ?? (cat.cc_category || '')
+  const getCatCashOnly = cat => catEdits[cat.id]?.cashOnly ?? !!cat.cash_only
+  const isCatDirty = cat => getCatCcCat(cat) !== (cat.cc_category || '') || getCatCashOnly(cat) !== !!cat.cash_only
+
+  useEffect(() => {
+    if (Object.keys(suggestions).length === 0) return
+    setCatEdits(prev => {
+      const next = { ...prev }
+      for (const [catId, ccCat] of Object.entries(suggestions)) {
+        const cat = budgetCategories.find(c => c.id === catId)
+        if (cat && !cat.cc_category && !prev[catId]) {
+          next[catId] = { ccCat, cashOnly: !!cat.cash_only }
+        }
+      }
+      return next
+    })
+  }, [suggestions])
+
   async function saveCard(form) {
     setSaving(true)
     try {
@@ -913,9 +938,32 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
         .from('budget_categories')
         .update({ cc_category: ccCategory || null, cash_only: cashOnly })
         .eq('id', catId)
+      setCatEdits(prev => { const next = { ...prev }; delete next[catId]; return next })
       await onCategoriesChanged()
     } finally {
       setCatMapSaving(prev => ({ ...prev, [catId]: false }))
+    }
+  }
+
+  async function handleSaveAllCats() {
+    const dirty = budgetCategories.filter(c => c.is_active && isCatDirty(c))
+    if (!dirty.length) return
+    setSavingAllCats(true)
+    setSuggestError(null)
+    try {
+      await Promise.all(
+        dirty.map(cat =>
+          supabase.from('budget_categories')
+            .update({ cc_category: getCatCcCat(cat) || null, cash_only: getCatCashOnly(cat) })
+            .eq('id', cat.id)
+        )
+      )
+      setCatEdits({})
+      await onCategoriesChanged()
+    } catch (err) {
+      setSuggestError(err.message)
+    } finally {
+      setSavingAllCats(false)
     }
   }
 
@@ -947,6 +995,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
         )
       )
       setSuggestions({})
+      setCatEdits({})
       await onCategoriesChanged()
     } catch (err) {
       setSuggestError(err.message)
@@ -963,6 +1012,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
     setParseError(null)
     setParsedSelections(null)
     setParseSource('file')
+    setExpandedCards(true)
     try {
       const results = await parseCreditCardsFromFile(file)
       setParsedSelections(results.map(c => ({ ...c, selected: true, editedName: c.name })))
@@ -978,6 +1028,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
     setParseError(null)
     setParsedSelections(null)
     setParseSource('transactions')
+    setExpandedCards(true)
     try {
       const accounts = await getDistinctTransactionAccounts(userId)
       const results = await parseCreditCardsFromTransactions(accounts)
@@ -1035,10 +1086,14 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
               {parseLoading ? '⟳ Parsing…' : '↑ Import from File'}
             </Btn>
             <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFileUpload} />
-            {!showAdd && <Btn small variant="primary" onClick={() => setShowAdd(true)}>+ Add Card</Btn>}
+            {!showAdd && <Btn small variant="primary" onClick={() => { setShowAdd(true); setExpandedCards(true) }}>+ Add Card</Btn>}
+            <Btn small onClick={() => setExpandedCards(v => !v)}>
+              {expandedCards ? '▴ Collapse' : '▾ Expand'}
+            </Btn>
           </div>
         </div>
 
+        {expandedCards && (<>
         {parseError && (
           <div style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 8, background: 'var(--warn-bg)', border: '1px solid var(--warn)', fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--warn)' }}>
             {parseError}
@@ -1116,6 +1171,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
             ))}
           </div>
         )}
+        </>)}
       </div>
 
       {/* Budget Category → CC Category mapping */}
@@ -1123,6 +1179,11 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <SectionTitle>Category Mapping</SectionTitle>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {budgetCategories.filter(c => c.is_active && isCatDirty(c)).length > 0 && (
+              <Btn small variant="primary" onClick={handleSaveAllCats} disabled={savingAllCats}>
+                {savingAllCats ? '…' : `Save All (${budgetCategories.filter(c => c.is_active && isCatDirty(c)).length})`}
+              </Btn>
+            )}
             {Object.keys(suggestions).length > 0 && (
               <Btn small variant="primary" onClick={handleAcceptAllSuggestions} disabled={suggesting}>
                 {suggesting ? '…' : `✓ Accept All (${Object.keys(suggestions).length})`}
@@ -1164,7 +1225,11 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
                       key={cat.id}
                       cat={cat}
                       isLast={i === budgetCategories.filter(c => c.is_active).length - 1}
-                      onSave={(ccCat, cashOnly) => saveCatMapping(cat.id, ccCat, cashOnly)}
+                      ccCat={getCatCcCat(cat)}
+                      cashOnly={getCatCashOnly(cat)}
+                      onCcCatChange={v => setCatEdits(prev => ({ ...prev, [cat.id]: { ...(prev[cat.id] ?? { ccCat: cat.cc_category || '', cashOnly: !!cat.cash_only }), ccCat: v } }))}
+                      onCashOnlyChange={v => setCatEdits(prev => ({ ...prev, [cat.id]: { ...(prev[cat.id] ?? { ccCat: cat.cc_category || '', cashOnly: !!cat.cash_only }), cashOnly: v } }))}
+                      onSave={() => saveCatMapping(cat.id, getCatCcCat(cat), getCatCashOnly(cat))}
                       saving={!!catMapSaving[cat.id]}
                       suggestion={suggestions[cat.id] ?? null}
                     />
@@ -1179,19 +1244,9 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
   )
 }
 
-function CatMappingRow({ cat, isLast, onSave, saving, suggestion }) {
-  const [ccCat, setCcCat] = useState(cat.cc_category || '')
-  const [cashOnly, setCashOnly] = useState(!!cat.cash_only)
+function CatMappingRow({ cat, isLast, ccCat, cashOnly, onCcCatChange, onCashOnlyChange, onSave, saving, suggestion }) {
   const dirty = ccCat !== (cat.cc_category || '') || cashOnly !== !!cat.cash_only
-
-  const isSuggested = !!suggestion && !cat.cc_category
-  const showBadge = isSuggested && ccCat === suggestion
-
-  useEffect(() => {
-    if (suggestion && !cat.cc_category && ccCat === '') {
-      setCcCat(suggestion)
-    }
-  }, [suggestion])
+  const showBadge = !!suggestion && !cat.cc_category && ccCat === suggestion
 
   return (
     <tr style={{
@@ -1204,7 +1259,7 @@ function CatMappingRow({ cat, isLast, onSave, saving, suggestion }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <select
             value={ccCat}
-            onChange={e => setCcCat(e.target.value)}
+            onChange={e => onCcCatChange(e.target.value)}
             style={{ background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-1)', outline: 'none' }}
           >
             <option value="">— unassigned (other) —</option>
@@ -1222,11 +1277,11 @@ function CatMappingRow({ cat, isLast, onSave, saving, suggestion }) {
         </div>
       </td>
       <td style={{ textAlign: 'center', padding: '8px 12px' }}>
-        <input type="checkbox" checked={cashOnly} onChange={e => setCashOnly(e.target.checked)} />
+        <input type="checkbox" checked={cashOnly} onChange={e => onCashOnlyChange(e.target.checked)} />
       </td>
       <td style={{ padding: '8px 14px', textAlign: 'right' }}>
         {dirty && (
-          <Btn small variant="primary" onClick={() => onSave(ccCat, cashOnly)} disabled={saving}>
+          <Btn small variant="primary" onClick={onSave} disabled={saving}>
             {saving ? '…' : 'Save'}
           </Btn>
         )}
