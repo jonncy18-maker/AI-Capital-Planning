@@ -1,10 +1,6 @@
 import { useState, useEffect } from 'react'
-import { getBillAmountsRange, getForecastAmountsForBills, splitBillsByPeriod } from '../../lib/db/bills.js'
-import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
-import { getForecastOverrides } from '../../lib/db/forecastOverrides.js'
-import { routeForecastToCards, computeStatementForecast, projectedBillAmounts } from '../../lib/cashflow/cashflowEngine.js'
+import { loadOutflowSeries } from '../../lib/payperiods/cashSeries.js'
 
-const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const P1_COLOR = 'var(--accent)'
 const P2_COLOR = '#8B5CF6'
 
@@ -67,7 +63,6 @@ export default function TrendsTab({
   const [loadError, setLoadError] = useState(null)
   const [hover, setHover] = useState(null)
 
-  const midpoint = (payDay2 ?? 30) - 1
   // Keys that drive a recompute. credit_card_id is included so re-linking a bill
   // to a card refreshes its projected statement amount; the card/category/earn-rate
   // keys keep the credit-card statement projection in sync with its inputs.
@@ -88,134 +83,11 @@ export default function TrendsTab({
     setLoading(true)
     setLoadError(null)
 
-    async function load() {
-      const now = new Date()
-      const currentYear = now.getFullYear()
-      const currentMonth = now.getMonth() + 1
-
-      const slots = []
-      const fwdMonths = Math.max(3, 12 - currentMonth)
-      for (let offset = -6; offset <= fwdMonths; offset++) {
-        const raw = currentMonth + offset
-        const year = currentYear + Math.floor((raw - 1) / 12)
-        const month = ((raw - 1 + 120) % 12) + 1
-        slots.push({
-          year, month,
-          isFuture: year > currentYear || (year === currentYear && month > currentMonth),
-          isCurrent: year === currentYear && month === currentMonth,
-          label: MONTH_ABBR[month - 1],
-        })
-      }
-
-      const startYear = slots[0].year
-      const endYear = slots[slots.length - 1].year
-
-      const rawAmounts = await getBillAmountsRange(userId, startYear, endYear)
-
-      // Index: amountIndex[year][month][bill_id] = amount
-      const amountIndex = {}
-      for (const row of rawAmounts) {
-        if (!amountIndex[row.year]) amountIndex[row.year] = {}
-        if (!amountIndex[row.year][row.month]) amountIndex[row.year][row.month] = {}
-        amountIndex[row.year][row.month][row.bill_id] = row.amount
-      }
-
-      // Most recent actual per bill (for variable bill forecast fallback).
-      // Only consider entries up to the current month — a future-dated actual is
-      // not a "last known" value and shouldn't seed other future months.
-      const sorted = [...rawAmounts]
-        .filter(r => r.year < currentYear || (r.year === currentYear && r.month <= currentMonth))
-        .sort((a, b) => (a.year !== b.year ? b.year - a.year : b.month - a.month))
-      const lastKnownAmounts = {}
-      for (const row of sorted) {
-        if (lastKnownAmounts[row.bill_id] === undefined && row.amount != null) {
-          lastKnownAmounts[row.bill_id] = row.amount
-        }
-      }
-
-      // Fallback map for variable bills (no fixed_amount) in future months.
-      // Forecast-linked bills are excluded: their projected amount comes solely
-      // from the forecast (budgetForecastMap). When the forecast has no value for
-      // a month, such a bill should read $0 — not carry forward a stale actual.
-      const variableFallbackMap = {}
-      for (const bill of bills) {
-        if (bill.fixed_amount == null && !bill.forecast_category_id && lastKnownAmounts[bill.id] != null) {
-          variableFallbackMap[bill.id] = lastKnownAmounts[bill.id]
-        }
-      }
-
-      // Fetch budget-derived forecast amounts for future slots
-      const futureSlots = slots.filter(s => s.isFuture)
-      const forecastResults = {}
-      if (futureSlots.length > 0 && bills.some(b => b.forecast_category_id)) {
-        await Promise.all(futureSlots.map(async s => {
-          const result = await getForecastAmountsForBills(userId, s.year, s.month, bills)
-          forecastResults[`${s.year}-${s.month}`] = result
-        }))
-      }
-
-      // Project credit-card statement amounts for every year the forecast window
-      // spans. The Schedule tab's statementsByCard only covers its nav year, but
-      // the trends window can reach into adjacent years (and follows the real
-      // current month, not nav state), so compute across all future slot-years.
-      //
-      // Statements are merged per card across years rather than indexed by close
-      // year: a statement's DUE date can fall in a different year than it closes
-      // (e.g. a December statement paid in January), and projectedBillAmounts
-      // matches purely on due date.
-      const statementsByCard = {}
-      const futureYears = [...new Set(futureSlots.map(s => s.year))]
-      if (futureYears.length > 0 && creditCards.length > 0 && bills.some(b => b.credit_card_id)) {
-        await Promise.all(futureYears.map(async year => {
-          const [lineItems, overrides] = await Promise.all([
-            getBudgetLineItems(userId, { year }),
-            getForecastOverrides(userId, year),
-          ])
-          const cashflow = routeForecastToCards({
-            budgetCategories, lineItems, overrides,
-            cards: creditCards, earnRateMap,
-            coveragePct: ccCoverage, optimizationPct: ccOptimization,
-          })
-          const stmts = computeStatementForecast({
-            cardDollarsByMonth: cashflow.cardDollarsByMonth, cards: creditCards, year,
-          })
-          for (const cardId of Object.keys(stmts)) {
-            statementsByCard[cardId] = (statementsByCard[cardId] ?? []).concat(stmts[cardId])
-          }
-        }))
-      }
-
-      const computed = slots.map(slot => {
-        // Always use entered actuals (including $0 overrides) — future entries win over forecast.
-        const billAmountsMap = amountIndex[slot.year]?.[slot.month] ?? {}
-
-        const budgetForecastMap = slot.isFuture
-          ? (forecastResults[`${slot.year}-${slot.month}`] ?? {})
-          : {}
-
-        // For future months, derive CC bill amounts from the statement projection engine,
-        // which reflects the seasonal forecast spend routed to each card.
-        const cardStatementMap = slot.isFuture
-          ? projectedBillAmounts({ bills, statementsByCard, year: slot.year, month: slot.month })
-          : {}
-
-        // Priority: card statement projection > budget-derived forecast > last-known actual
-        const forecastAmountsMap = slot.isFuture
-          ? { ...variableFallbackMap, ...budgetForecastMap, ...cardStatementMap }
-          : {}
-
-        const { period1, period2 } = splitBillsByPeriod(bills, billAmountsMap, midpoint, forecastAmountsMap, cardStatementMap)
-
-        const period1Total = period1.reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
-        const period2Total = period2.reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
-
-        return { ...slot, period1Total, period2Total, period1Bills: period1, period2Bills: period2 }
-      })
-
-      if (!cancelled) setChartData(computed)
-    }
-
-    load()
+    loadOutflowSeries({
+      userId, bills, payDay2,
+      creditCards, budgetCategories, earnRateMap, ccCoverage, ccOptimization,
+    })
+      .then(computed => { if (!cancelled) setChartData(computed) })
       .catch(e => { if (!cancelled) setLoadError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
 

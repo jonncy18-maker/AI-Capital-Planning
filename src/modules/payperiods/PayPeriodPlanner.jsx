@@ -21,6 +21,7 @@ import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
 import { parseBillAmountsFromFile } from '../../lib/ai/billAmountsParser.js'
 import TrendsTab from './TrendsTab.jsx'
+import CashFlowTab from './CashFlowTab.jsx'
 import CCScheduleTab from './CCScheduleTab.jsx'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -995,6 +996,7 @@ const TABS = [
   { id: 'schedule',    label: 'SCHEDULE' },
   { id: 'bills',       label: 'BILLS' },
   { id: 'accounts',    label: 'ACCOUNTS' },
+  { id: 'cash-flow',   label: 'CASH FLOW' },
   { id: 'trends',      label: 'TRENDS' },
   { id: 'cc-schedule', label: 'CC SCHEDULE' },
 ]
@@ -2362,6 +2364,21 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             })
           }
         </div>
+      )}
+
+      {/* ── Cash Flow Tab ── */}
+      {tab === 'cash-flow' && (
+        <CashFlowTab
+          userId={userId}
+          bills={bills}
+          payDay2={payDay2}
+          mobile={mobile}
+          creditCards={creditCards}
+          budgetCategories={budgetCategories}
+          earnRateMap={earnRateMap}
+          ccCoverage={ccCoverage}
+          ccOptimization={ccOptimization}
+        />
       )}
 
       {/* ── Trends Tab ── */}
