@@ -127,7 +127,7 @@ function Badge({ label, variant = 'neutral' }) {
 
 // ─── Period Card ──────────────────────────────────────────────────────────────
 
-function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, primaryChecking, balancesMap, onAmountChange, onBalanceChange, mobile }) {
+function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, mobile }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
@@ -210,6 +210,7 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
                       value={amount ?? ''}
                       placeholder="0"
                       onChange={e => onAmountChange(bill.id, e.target.value)}
+                      onBlur={e => onAmountBlur(bill.id, e.target.value)}
                       style={{
                         width: 90, background: 'var(--bg-app)', border: '1px solid var(--bd)',
                         borderRadius: 6, padding: '5px 8px',
@@ -1041,12 +1042,16 @@ export default function PayPeriodPlanner({ userId, mobile }) {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  async function handleAmountChange(billId, rawValue) {
+  function handleAmountChange(billId, rawValue) {
     const value = rawValue === '' ? null : Number(rawValue)
     setAmountsMap(prev => ({ ...prev, [billId]: value }))
-    if (!userId) return
+  }
+
+  async function handleAmountBlur(billId, rawValue) {
+    const value = rawValue === '' ? null : Number(rawValue)
+    setAmountsMap(prev => ({ ...prev, [billId]: value }))
+    if (!userId || value == null || isNaN(value)) return
     try {
-      if (value == null) return
       await upsertBillAmount(userId, billId, navYear, navMonth, value)
     } catch (e) {
       console.error('Failed to save bill amount:', e)
@@ -1483,6 +1488,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   primaryChecking={primaryChecking}
                   balancesMap={balancesMap}
                   onAmountChange={handleAmountChange}
+                  onAmountBlur={handleAmountBlur}
                   onBalanceChange={handleBalanceChange}
                   mobile={mobile}
                 />
@@ -1496,6 +1502,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   primaryChecking={primaryChecking}
                   balancesMap={balancesMap}
                   onAmountChange={handleAmountChange}
+                  onAmountBlur={handleAmountBlur}
                   onBalanceChange={handleBalanceChange}
                   mobile={mobile}
                 />
