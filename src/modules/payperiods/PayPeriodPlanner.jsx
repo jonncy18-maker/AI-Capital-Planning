@@ -1071,13 +1071,13 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     }
   }
 
-  async function handleSavingsBalanceChange(accountId, rawValue) {
+  async function handleSavingsBalanceChange(accountId, periodHalf, rawValue) {
     const value = rawValue === '' ? '' : rawValue
-    const key = `${accountId}-0`
+    const key = `${accountId}-${periodHalf}`
     setBalancesMap(prev => ({ ...prev, [key]: value }))
     if (value === '' || isNaN(Number(value))) return
     try {
-      await upsertAccountBalance(userId, accountId, navYear, navMonth, 0, Number(value))
+      await upsertAccountBalance(userId, accountId, navYear, navMonth, periodHalf, Number(value))
     } catch (e) {
       console.error('Failed to save savings balance:', e)
     }
@@ -1525,27 +1525,29 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                 const p2CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-2`] ?? 0) : 0
                 const gapP1 = Math.max(0, (autoP1 + manualP1) - p1CheckingBal)
                 const gapP2 = Math.max(0, (autoP2 + manualP2) - p2CheckingBal)
-                const totalAutoReserve = autoP1 + autoP2
 
-                // Hierarchy drawdown
-                const buckets = savingsAccounts.map((sa, i) => ({
-                  account: sa,
-                  balance: Number(balancesMap[`${sa.id}-0`] ?? 0),
-                  autoReserve: i === 0 ? totalAutoReserve : 0,
-                }))
-
+                // Hierarchy drawdown — each period uses its own saved balances independently
                 function drawFrom(bkts, gap) {
                   let rem = gap
                   return bkts.map(b => {
-                    const avail = Math.max(0, b.balance - b.autoReserve - (b.drawnSoFar ?? 0))
+                    const avail = Math.max(0, b.balance - b.autoReserve)
                     const draw = Math.min(avail, rem)
                     rem -= draw
                     return { ...b, draw, avail }
                   })
                 }
-                const p1Draws = drawFrom(buckets, gapP1)
-                const bucketsAfterP1 = buckets.map((b, i) => ({ ...b, drawnSoFar: p1Draws[i]?.draw ?? 0 }))
-                const p2Draws = drawFrom(bucketsAfterP1, gapP2)
+                const p1Buckets = savingsAccounts.map((sa, i) => ({
+                  account: sa,
+                  balance: Number(balancesMap[`${sa.id}-1`] ?? 0),
+                  autoReserve: i === 0 ? autoP1 : 0,
+                }))
+                const p2Buckets = savingsAccounts.map((sa, i) => ({
+                  account: sa,
+                  balance: Number(balancesMap[`${sa.id}-2`] ?? 0),
+                  autoReserve: i === 0 ? autoP2 : 0,
+                }))
+                const p1Draws = drawFrom(p1Buckets, gapP1)
+                const p2Draws = drawFrom(p2Buckets, gapP2)
                 const uncoveredP1 = gapP1 - p1Draws.reduce((s, b) => s + b.draw, 0)
                 const uncoveredP2 = gapP2 - p2Draws.reduce((s, b) => s + b.draw, 0)
                 const totalUncovered = uncoveredP1 + uncoveredP2
@@ -1589,35 +1591,43 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                       {/* Savings balance inputs */}
                       <div style={{ marginBottom: 20 }}>
                         <MonoLabel style={{ marginBottom: 10 }}>SAVINGS BALANCES</MonoLabel>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {savingsAccounts.map((sa, i) => (
-                            <div key={sa.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 500 }}>{sa.name}</div>
-                                {i === 0 && useHierarchy && (
-                                  <div style={{ fontSize: 10, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", marginTop: 1 }}>
-                                    auto reserve: {fmt(totalAutoReserve)}
-                                  </div>
-                                )}
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '6px 12px', alignItems: 'center' }}>
+                          {/* Column headers */}
+                          <div />
+                          {['PERIOD 1', 'PERIOD 2'].map(h => (
+                            <div key={h} style={{
+                              fontFamily: "'DM Mono', monospace", fontSize: 8.5,
+                              color: 'var(--tx-4)', letterSpacing: '0.06em', textAlign: 'center',
+                            }}>{h}</div>
+                          ))}
+                          {savingsAccounts.map((sa, i) => [
+                            <div key={`${sa.id}-name`} style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 500 }}>{sa.name}</div>
+                              {i === 0 && useHierarchy && (
+                                <div style={{ fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", marginTop: 1 }}>
+                                  auto res: {fmt(autoP1)} / {fmt(autoP2)}
+                                </div>
+                              )}
+                            </div>,
+                            ...[1, 2].map(ph => (
+                              <div key={`${sa.id}-${ph}`} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)' }}>$</span>
                                 <input
                                   type="number"
                                   min="0"
-                                  value={balancesMap[`${sa.id}-0`] ?? ''}
+                                  value={balancesMap[`${sa.id}-${ph}`] ?? ''}
                                   placeholder="0"
-                                  onChange={e => handleSavingsBalanceChange(sa.id, e.target.value)}
+                                  onChange={e => handleSavingsBalanceChange(sa.id, ph, e.target.value)}
                                   style={{
-                                    width: 110, background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                                    width: 90, background: 'var(--bg-app)', border: '1px solid var(--bd)',
                                     borderRadius: 6, padding: '5px 8px',
                                     fontFamily: "'DM Mono', monospace", fontSize: 12,
                                     color: 'var(--tx-1)', outline: 'none', textAlign: 'right',
                                   }}
                                 />
                               </div>
-                            </div>
-                          ))}
+                            )),
+                          ])}
                         </div>
                       </div>
 
@@ -1683,9 +1693,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                     return [
                                       <div key={`${sa.id}-n`} style={{ fontSize: 11, color: 'var(--tx-1)', fontWeight: 500, padding: '3px 0' }}>
                                         {sa.name}
-                                        {key === 'p1' && i === 0 && totalAutoReserve > 0 && (
+                                        {i === 0 && (key === 'p1' ? autoP1 : autoP2) > 0 && (
                                           <div style={{ fontSize: 9, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", marginTop: 1 }}>
-                                            auto res: {fmt(totalAutoReserve)}
+                                            auto res: {fmt(key === 'p1' ? autoP1 : autoP2)}
                                           </div>
                                         )}
                                       </div>,
