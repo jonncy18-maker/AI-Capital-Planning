@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { parseCreditCardsFromFile, parseCreditCardsFromTransactions } from '../../lib/ai/creditCardParser.js'
+import { suggestCategoryMappings } from '../../lib/ai/categoryMapper.js'
 import {
   getCreditCards, upsertCreditCard, deleteCreditCard,
   getEarnRates, upsertEarnRate,
@@ -856,7 +857,7 @@ function CardParseReviewPanel({ selections, onToggle, onNameEdit, onImport, onDi
   )
 }
 
-function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged, onEarnRateSaved }) {
+function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged, onEarnRateSaved, onCategoriesChanged }) {
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -874,6 +875,11 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
 
   // Transaction detection state
   const [txnDetecting, setTxnDetecting] = useState(false)
+
+  // AI category mapping state
+  const [suggestions, setSuggestions] = useState({})
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestError, setSuggestError] = useState(null)
 
   async function saveCard(form) {
     setSaving(true)
@@ -907,8 +913,45 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
         .from('budget_categories')
         .update({ cc_category: ccCategory || null, cash_only: cashOnly })
         .eq('id', catId)
+      await onCategoriesChanged()
     } finally {
       setCatMapSaving(prev => ({ ...prev, [catId]: false }))
+    }
+  }
+
+  async function handleSuggestMappings() {
+    setSuggesting(true)
+    setSuggestError(null)
+    setSuggestions({})
+    try {
+      const unmapped = budgetCategories.filter(c => c.is_active && !c.cc_category && !c.cash_only)
+      const result = await suggestCategoryMappings(unmapped)
+      setSuggestions(result)
+      if (!expandedCatMap) setExpandedCatMap(true)
+    } catch (err) {
+      setSuggestError(err.message)
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  async function handleAcceptAllSuggestions() {
+    const entries = Object.entries(suggestions)
+    if (!entries.length) return
+    setSuggesting(true)
+    setSuggestError(null)
+    try {
+      await Promise.all(
+        entries.map(([catId, ccCat]) =>
+          supabase.from('budget_categories').update({ cc_category: ccCat }).eq('id', catId)
+        )
+      )
+      setSuggestions({})
+      await onCategoriesChanged()
+    } catch (err) {
+      setSuggestError(err.message)
+    } finally {
+      setSuggesting(false)
     }
   }
 
@@ -1079,10 +1122,25 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <SectionTitle>Category Mapping</SectionTitle>
-          <Btn small onClick={() => setExpandedCatMap(v => !v)}>
-            {expandedCatMap ? '▴ Collapse' : '▾ Expand'}
-          </Btn>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {Object.keys(suggestions).length > 0 && (
+              <Btn small variant="primary" onClick={handleAcceptAllSuggestions} disabled={suggesting}>
+                {suggesting ? '…' : `✓ Accept All (${Object.keys(suggestions).length})`}
+              </Btn>
+            )}
+            <Btn small onClick={handleSuggestMappings} disabled={suggesting || parseLoading}>
+              {suggesting ? '⟳ Mapping…' : '✦ Auto-map with AI'}
+            </Btn>
+            <Btn small onClick={() => setExpandedCatMap(v => !v)}>
+              {expandedCatMap ? '▴ Collapse' : '▾ Expand'}
+            </Btn>
+          </div>
         </div>
+        {suggestError && (
+          <div style={{ padding: '8px 12px', marginBottom: 10, borderRadius: 7, background: 'var(--warn-bg)', border: '1px solid var(--warn)', fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--warn)' }}>
+            {suggestError}
+          </div>
+        )}
         <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', marginBottom: 12 }}>
           Map each budget category to a credit card reward category so the points engine applies the right earn rate. Mark categories as "Cash Only" to exclude them from card coverage.
         </div>
@@ -1108,6 +1166,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
                       isLast={i === budgetCategories.filter(c => c.is_active).length - 1}
                       onSave={(ccCat, cashOnly) => saveCatMapping(cat.id, ccCat, cashOnly)}
                       saving={!!catMapSaving[cat.id]}
+                      suggestion={suggestions[cat.id] ?? null}
                     />
                   ))}
                 </tbody>
@@ -1120,24 +1179,47 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
   )
 }
 
-function CatMappingRow({ cat, isLast, onSave, saving }) {
+function CatMappingRow({ cat, isLast, onSave, saving, suggestion }) {
   const [ccCat, setCcCat] = useState(cat.cc_category || '')
   const [cashOnly, setCashOnly] = useState(!!cat.cash_only)
   const dirty = ccCat !== (cat.cc_category || '') || cashOnly !== !!cat.cash_only
 
+  const isSuggested = !!suggestion && !cat.cc_category
+  const showBadge = isSuggested && ccCat === suggestion
+
+  useEffect(() => {
+    if (suggestion && !cat.cc_category && ccCat === '') {
+      setCcCat(suggestion)
+    }
+  }, [suggestion])
+
   return (
-    <tr style={{ borderBottom: isLast ? 'none' : '0.5px solid var(--bd-light)' }}>
+    <tr style={{
+      borderBottom: isLast ? 'none' : '0.5px solid var(--bd-light)',
+      background: showBadge ? 'var(--accent-bg)' : 'transparent',
+    }}>
       <td style={{ padding: '8px 14px', color: 'var(--tx-1)' }}>{cat.category}</td>
       <td style={{ padding: '8px 12px', color: 'var(--tx-3)' }}>{cat.group || '—'}</td>
       <td style={{ padding: '8px 12px' }}>
-        <select
-          value={ccCat}
-          onChange={e => setCcCat(e.target.value)}
-          style={{ background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-1)', outline: 'none' }}
-        >
-          <option value="">— unassigned (other) —</option>
-          {CC_CATEGORIES.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
-        </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <select
+            value={ccCat}
+            onChange={e => setCcCat(e.target.value)}
+            style={{ background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-1)', outline: 'none' }}
+          >
+            <option value="">— unassigned (other) —</option>
+            {CC_CATEGORIES.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+          </select>
+          {showBadge && (
+            <span style={{
+              fontFamily: "'DM Mono', monospace", fontSize: 8, padding: '1px 5px',
+              borderRadius: 3, background: 'var(--accent-bg)', color: 'var(--accent)',
+              border: '1px solid var(--accent-bd)', whiteSpace: 'nowrap',
+            }}>
+              AI ✦
+            </span>
+          )}
+        </div>
       </td>
       <td style={{ textAlign: 'center', padding: '8px 12px' }}>
         <input type="checkbox" checked={cashOnly} onChange={e => setCashOnly(e.target.checked)} />
@@ -1399,6 +1481,11 @@ export default function CreditCards({ userId, mobile }) {
     setEarnRates(ratesData)
   }, [userId])
 
+  const reloadCategories = useCallback(async () => {
+    const categoriesData = await getBudgetCategories(userId)
+    setBudgetCategories(categoriesData)
+  }, [userId])
+
   const { monthlyForecast, runningBalance } = useMemo(() => {
     if (cards.length === 0) return { monthlyForecast: [], runningBalance: [] }
     return computePointsForecast({
@@ -1498,6 +1585,7 @@ export default function CreditCards({ userId, mobile }) {
           budgetCategories={budgetCategories}
           onCardsChanged={reloadCards}
           onEarnRateSaved={handleEarnRateSaved}
+          onCategoriesChanged={reloadCategories}
         />
       )}
 
