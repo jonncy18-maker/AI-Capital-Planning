@@ -1614,122 +1614,116 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                         </div>
                       </div>
 
-                      {/* Summary or hierarchy table */}
-                      {!useHierarchy ? (
-                        // Summary table
-                        <div>
-                          <MonoLabel style={{ marginBottom: 10 }}>TRANSFER SUMMARY</MonoLabel>
-                          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr auto auto' : '1fr auto auto', gap: '6px 16px' }}>
-                            {/* Header */}
-                            {['', 'PERIOD 1', 'PERIOD 2'].map((h, i) => (
-                              <div key={i} style={{
-                                fontFamily: "'DM Mono', monospace", fontSize: 8.5,
-                                color: 'var(--tx-4)', letterSpacing: '0.06em', textAlign: i > 0 ? 'right' : 'left',
-                              }}>{h}</div>
-                            ))}
-                            {[
-                              { label: 'Total Due',       p1: autoP1 + manualP1, p2: autoP2 + manualP2, bold: false },
-                              { label: 'Auto',            p1: autoP1,  p2: autoP2,  bold: false, muted: true },
-                              { label: 'Manual',          p1: manualP1, p2: manualP2, bold: false, muted: true },
-                              { label: 'Transfer Needed', p1: gapP1,   p2: gapP2,   bold: true },
-                            ].map(row => (
-                              <>
-                                <div key={row.label + 'l'} style={{
-                                  fontSize: row.bold ? 13 : 12,
-                                  fontWeight: row.bold ? 600 : 400,
-                                  color: row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
-                                  paddingLeft: row.muted ? 10 : 0,
-                                }}>{row.label}</div>
-                                <div key={row.label + 'p1'} style={{
-                                  fontFamily: "'DM Mono', monospace",
-                                  fontSize: row.bold ? 13 : 12, textAlign: 'right',
-                                  fontWeight: row.bold ? 600 : 400,
-                                  color: row.bold && (row.p1 > 0) ? 'var(--warn)' : row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
-                                  fontVariantNumeric: 'tabular-nums',
-                                }}>{fmt(row.p1)}</div>
-                                <div key={row.label + 'p2'} style={{
-                                  fontFamily: "'DM Mono', monospace",
-                                  fontSize: row.bold ? 13 : 12, textAlign: 'right',
-                                  fontWeight: row.bold ? 600 : 400,
-                                  color: row.bold && (row.p2 > 0) ? 'var(--warn)' : row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
-                                  fontVariantNumeric: 'tabular-nums',
-                                }}>{fmt(row.p2)}</div>
-                              </>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        // Hierarchy drawdown table
-                        <div>
-                          <MonoLabel style={{ marginBottom: 10 }}>DRAWDOWN PLAN</MonoLabel>
-                          <div style={{ overflowX: 'auto' }}>
+                      {/* Period 1 / Period 2 panels */}
+                      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 14 }}>
+                        {[
+                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, gap: gapP1, draws: p1Draws },
+                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, gap: gapP2, draws: p2Draws },
+                        ].map(({ key, label, auto, manual, gap, draws }) => (
+                          <div key={key} style={{
+                            border: '1px solid var(--bd)', borderRadius: 8,
+                            padding: '12px 14px', background: 'var(--bg-app)',
+                          }}>
                             <div style={{
-                              display: 'grid',
-                              gridTemplateColumns: mobile
-                                ? '1fr auto auto auto auto'
-                                : '1fr auto auto auto auto auto auto',
-                              gap: '6px 14px', minWidth: mobile ? 340 : 560,
-                            }}>
-                              {/* Column headers */}
-                              {(mobile
-                                ? ['BUCKET', 'BALANCE', 'P1 DRAW', 'P1 LEFT', 'P2 DRAW']
-                                : ['BUCKET', 'BALANCE', 'AUTO RES.', 'P1 DRAW', 'P1 LEFT', 'P2 DRAW', 'P2 LEFT']
-                              ).map((h, i) => (
-                                <div key={h} style={{
-                                  fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)',
-                                  letterSpacing: '0.06em', textAlign: i > 0 ? 'right' : 'left',
-                                  paddingBottom: 4, borderBottom: '1px solid var(--bd)',
-                                }}>{h}</div>
-                              ))}
-                              {/* Bucket rows */}
-                              {savingsAccounts.map((sa, i) => {
-                                const p1 = p1Draws[i]
-                                const p2 = p2Draws[i]
-                                const p1Left = p1.avail - p1.draw
-                                const p2Left = Math.max(0, (Number(balancesMap[`${sa.id}-0`] ?? 0)) - (i === 0 ? totalAutoReserve : 0) - p1.draw - p2.draw)
-                                const cells = mobile
-                                  ? [sa.name, fmt(p1.balance), fmt(p1.draw), fmt(p1Left), fmt(p2.draw)]
-                                  : [sa.name, fmt(p1.balance), i === 0 ? fmt(totalAutoReserve) : '—', fmt(p1.draw), fmt(p1Left), fmt(p2.draw), fmt(p2Left)]
-                                return cells.map((cell, j) => (
-                                  <div key={`${sa.id}-${j}`} style={{
-                                    fontSize: 12, textAlign: j > 0 ? 'right' : 'left',
-                                    color: j === 0 ? 'var(--tx-1)'
-                                      : (j === 2 && i === 0 && !mobile) ? 'var(--tx-3)'
-                                      : ((j === 3 && !mobile) || (j === 2 && mobile)) && (p1.draw > 0) ? 'var(--accent)'
-                                      : ((j === 5 && !mobile) || (j === 4 && mobile)) && (p2.draw > 0) ? 'var(--accent)'
-                                      : 'var(--tx-2)',
-                                    fontFamily: j > 0 ? "'DM Mono', monospace" : 'inherit',
-                                    fontVariantNumeric: 'tabular-nums',
-                                    padding: '4px 0',
-                                    fontWeight: j === 0 ? 500 : 400,
-                                  }}>{cell}</div>
-                                ))
-                              })}
-                            </div>
-                          </div>
+                              fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.07em',
+                              color: 'var(--tx-4)', marginBottom: 10,
+                            }}>{label}</div>
 
-                          {totalUncovered > 0 && (
-                            <div style={{
-                              marginTop: 14, padding: '10px 14px',
-                              background: 'var(--warn-bg)', border: '1px solid var(--warn)',
-                              borderRadius: 8, fontSize: 13, color: 'var(--warn)',
-                              display: 'flex', gap: 8, alignItems: 'center',
-                            }}>
-                              <span>⚠</span>
-                              <span>Not enough in savings — shortfall: <strong>{fmt(totalUncovered)}</strong></span>
-                            </div>
-                          )}
-                          {totalUncovered === 0 && (gapP1 > 0 || gapP2 > 0) && (
-                            <div style={{
-                              marginTop: 14, padding: '10px 14px',
-                              background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
-                              borderRadius: 8, fontSize: 13, color: 'var(--accent)',
-                              display: 'flex', gap: 8, alignItems: 'center',
-                            }}>
-                              <span>✓</span>
-                              <span>Savings covers all transfers for this month.</span>
-                            </div>
-                          )}
+                            {!useHierarchy ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                {[
+                                  { name: 'Total Due',       val: auto + manual },
+                                  { name: 'Auto',            val: auto,   muted: true },
+                                  { name: 'Manual',          val: manual, muted: true },
+                                  { name: 'Transfer Needed', val: gap,    bold: true },
+                                ].map(row => (
+                                  <div key={row.name} style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                                    paddingLeft: row.muted ? 10 : 0,
+                                    borderTop: row.bold ? '1px solid var(--bd)' : 'none',
+                                    paddingTop: row.bold ? 6 : 0,
+                                    marginTop: row.bold ? 4 : 0,
+                                  }}>
+                                    <span style={{
+                                      fontSize: row.bold ? 13 : 12,
+                                      fontWeight: row.bold ? 600 : 400,
+                                      color: row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
+                                    }}>{row.name}</span>
+                                    <span style={{
+                                      fontFamily: "'DM Mono', monospace",
+                                      fontSize: row.bold ? 13 : 12,
+                                      fontWeight: row.bold ? 600 : 400,
+                                      fontVariantNumeric: 'tabular-nums',
+                                      color: row.bold && gap > 0 ? 'var(--warn)' : row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
+                                    }}>{fmt(row.val)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '4px 10px' }}>
+                                  {['BUCKET', 'AVAIL', 'DRAW', 'LEFT'].map((h, i) => (
+                                    <div key={h} style={{
+                                      fontFamily: "'DM Mono', monospace", fontSize: 7.5,
+                                      color: 'var(--tx-4)', letterSpacing: '0.06em',
+                                      textAlign: i > 0 ? 'right' : 'left',
+                                      paddingBottom: 4, borderBottom: '1px solid var(--bd)',
+                                    }}>{h}</div>
+                                  ))}
+                                  {savingsAccounts.map((sa, i) => {
+                                    const d = draws[i]
+                                    const left = Math.max(0, d.avail - d.draw)
+                                    return [
+                                      <div key={`${sa.id}-n`} style={{ fontSize: 11, color: 'var(--tx-1)', fontWeight: 500, padding: '3px 0' }}>
+                                        {sa.name}
+                                        {key === 'p1' && i === 0 && totalAutoReserve > 0 && (
+                                          <div style={{ fontSize: 9, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", marginTop: 1 }}>
+                                            auto res: {fmt(totalAutoReserve)}
+                                          </div>
+                                        )}
+                                      </div>,
+                                      <div key={`${sa.id}-a`} style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textAlign: 'right', color: 'var(--tx-2)', fontVariantNumeric: 'tabular-nums', padding: '3px 0' }}>{fmt(d.avail)}</div>,
+                                      <div key={`${sa.id}-d`} style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textAlign: 'right', fontVariantNumeric: 'tabular-nums', padding: '3px 0', color: d.draw > 0 ? 'var(--accent)' : 'var(--tx-3)' }}>{d.draw > 0 ? fmt(d.draw) : '—'}</div>,
+                                      <div key={`${sa.id}-l`} style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textAlign: 'right', color: 'var(--tx-2)', fontVariantNumeric: 'tabular-nums', padding: '3px 0' }}>{fmt(left)}</div>,
+                                    ]
+                                  })}
+                                </div>
+                                <div style={{ marginTop: 8, borderTop: '1px solid var(--bd)', paddingTop: 6, textAlign: 'right' }}>
+                                  {gap === 0 ? (
+                                    <span style={{ fontSize: 11, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>no transfer needed</span>
+                                  ) : draws.reduce((s, b) => s + b.draw, 0) >= gap ? (
+                                    <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ Covered {fmt(gap)}</span>
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: 'var(--warn)' }}>⚠ Shortfall {fmt(gap - draws.reduce((s, b) => s + b.draw, 0))}</span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Overall banner (hierarchy ON only) */}
+                      {useHierarchy && totalUncovered > 0 && (
+                        <div style={{
+                          marginTop: 14, padding: '10px 14px',
+                          background: 'var(--warn-bg)', border: '1px solid var(--warn)',
+                          borderRadius: 8, fontSize: 13, color: 'var(--warn)',
+                          display: 'flex', gap: 8, alignItems: 'center',
+                        }}>
+                          <span>⚠</span>
+                          <span>Not enough in savings — total shortfall: <strong>{fmt(totalUncovered)}</strong></span>
+                        </div>
+                      )}
+                      {useHierarchy && totalUncovered === 0 && (gapP1 > 0 || gapP2 > 0) && (
+                        <div style={{
+                          marginTop: 14, padding: '10px 14px',
+                          background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
+                          borderRadius: 8, fontSize: 13, color: 'var(--accent)',
+                          display: 'flex', gap: 8, alignItems: 'center',
+                        }}>
+                          <span>✓</span>
+                          <span>Savings covers all transfers for this month.</span>
                         </div>
                       )}
                     </div>
