@@ -119,10 +119,13 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
         }
       }
 
-      // Fallback map for variable bills (no fixed_amount) in future months
+      // Fallback map for variable bills (no fixed_amount) in future months.
+      // Forecast-linked bills are excluded: their projected amount comes solely
+      // from the forecast (budgetForecastMap). When the forecast has no value for
+      // a month, such a bill should read $0 — not carry forward a stale actual.
       const variableFallbackMap = {}
       for (const bill of bills) {
-        if (bill.fixed_amount == null && lastKnownAmounts[bill.id] != null) {
+        if (bill.fixed_amount == null && !bill.forecast_category_id && lastKnownAmounts[bill.id] != null) {
           variableFallbackMap[bill.id] = lastKnownAmounts[bill.id]
         }
       }
