@@ -127,7 +127,7 @@ function Badge({ label, variant = 'neutral' }) {
 
 // ─── Period Card ──────────────────────────────────────────────────────────────
 
-function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, mobile }) {
+function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, mobile }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
@@ -271,6 +271,7 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
               value={checkingBalance}
               placeholder="0"
               onChange={e => onBalanceChange(period, e.target.value)}
+              onBlur={e => onBalanceBlur(period, e.target.value)}
               disabled={!primaryChecking}
               title={!primaryChecking ? 'Add a checking account in the Accounts tab to save balances' : ''}
               style={{
@@ -1058,26 +1059,35 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     }
   }
 
-  async function handleBalanceChange(periodHalf, rawValue) {
+  function handleBalanceChange(periodHalf, rawValue) {
     if (!primaryChecking) return
-    const value = rawValue === '' ? '' : rawValue
     const key = `${primaryChecking.id}-${periodHalf}`
-    setBalancesMap(prev => ({ ...prev, [key]: value }))
-    if (value === '' || isNaN(Number(value))) return
+    setBalancesMap(prev => ({ ...prev, [key]: rawValue }))
+  }
+
+  async function handleBalanceBlur(periodHalf, rawValue) {
+    if (!primaryChecking) return
+    const key = `${primaryChecking.id}-${periodHalf}`
+    setBalancesMap(prev => ({ ...prev, [key]: rawValue }))
+    if (rawValue === '' || isNaN(Number(rawValue))) return
     try {
-      await upsertAccountBalance(userId, primaryChecking.id, navYear, navMonth, periodHalf, Number(value))
+      await upsertAccountBalance(userId, primaryChecking.id, navYear, navMonth, periodHalf, Number(rawValue))
     } catch (e) {
       console.error('Failed to save balance:', e)
     }
   }
 
-  async function handleSavingsBalanceChange(accountId, periodHalf, rawValue) {
-    const value = rawValue === '' ? '' : rawValue
+  function handleSavingsBalanceChange(accountId, periodHalf, rawValue) {
     const key = `${accountId}-${periodHalf}`
-    setBalancesMap(prev => ({ ...prev, [key]: value }))
-    if (value === '' || isNaN(Number(value))) return
+    setBalancesMap(prev => ({ ...prev, [key]: rawValue }))
+  }
+
+  async function handleSavingsBalanceBlur(accountId, periodHalf, rawValue) {
+    const key = `${accountId}-${periodHalf}`
+    setBalancesMap(prev => ({ ...prev, [key]: rawValue }))
+    if (rawValue === '' || isNaN(Number(rawValue))) return
     try {
-      await upsertAccountBalance(userId, accountId, navYear, navMonth, periodHalf, Number(value))
+      await upsertAccountBalance(userId, accountId, navYear, navMonth, periodHalf, Number(rawValue))
     } catch (e) {
       console.error('Failed to save savings balance:', e)
     }
@@ -1490,6 +1500,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   onAmountChange={handleAmountChange}
                   onAmountBlur={handleAmountBlur}
                   onBalanceChange={handleBalanceChange}
+                  onBalanceBlur={handleBalanceBlur}
                   mobile={mobile}
                 />
                 <PeriodCard
@@ -1504,6 +1515,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   onAmountChange={handleAmountChange}
                   onAmountBlur={handleAmountBlur}
                   onBalanceChange={handleBalanceChange}
+                  onBalanceBlur={handleBalanceBlur}
                   mobile={mobile}
                 />
               </div>
@@ -1618,6 +1630,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                   value={balancesMap[`${sa.id}-${ph}`] ?? ''}
                                   placeholder="0"
                                   onChange={e => handleSavingsBalanceChange(sa.id, ph, e.target.value)}
+                                  onBlur={e => handleSavingsBalanceBlur(sa.id, ph, e.target.value)}
                                   style={{
                                     width: 90, background: 'var(--bg-app)', border: '1px solid var(--bd)',
                                     borderRadius: 6, padding: '5px 8px',
