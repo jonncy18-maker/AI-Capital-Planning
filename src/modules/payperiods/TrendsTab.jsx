@@ -138,9 +138,8 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
       }
 
       const computed = slots.map(slot => {
-        const billAmountsMap = slot.isFuture
-          ? {}
-          : (amountIndex[slot.year]?.[slot.month] ?? {})
+        // Always use entered actuals (including $0 overrides) — future entries win over forecast.
+        const billAmountsMap = amountIndex[slot.year]?.[slot.month] ?? {}
 
         const budgetForecastMap = slot.isFuture
           ? (forecastResults[`${slot.year}-${slot.month}`] ?? {})
