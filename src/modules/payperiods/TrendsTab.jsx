@@ -259,7 +259,7 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
                   }}>
                     <span style={{
                       overflow: 'hidden', textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap', maxWidth: 130,
+                      whiteSpace: 'nowrap', flex: 1, minWidth: 0,
                     }}>{b.name}</span>
                     <span style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                       {fmtMoney(b.resolvedAmount)}
@@ -299,7 +299,8 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
             <div style={{
               position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
               zIndex: 5, background: 'var(--bg-app)', border: '1px solid var(--bd)',
-              borderRadius: 9, padding: '10px 13px', minWidth: 200, maxWidth: 270,
+              borderRadius: 9, padding: '10px 13px',
+              minWidth: mobile ? 200 : 380, maxWidth: mobile ? 270 : 560,
               boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none',
             }}>
               <div style={{
@@ -310,20 +311,25 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
                 {slot.label} {slot.year} · {slot.isFuture ? 'FORECAST' : 'HISTORY'}
               </div>
 
-              <PeriodSection
-                color={P1_COLOR}
-                label="PERIOD 1"
-                blist={p1Bills}
-                total={slot.period1Total}
-              />
-              <div style={{ borderTop: '1px solid var(--bd-light)', paddingTop: 8 }}>
-                <PeriodSection
-                  color={P2_COLOR}
-                  label="PERIOD 2"
-                  blist={p2Bills}
-                  total={slot.period2Total}
-                />
-              </div>
+              {mobile ? (
+                <>
+                  <PeriodSection color={P1_COLOR} label="PERIOD 1" blist={p1Bills} total={slot.period1Total} />
+                  <div style={{ borderTop: '1px solid var(--bd-light)', paddingTop: 8 }}>
+                    <PeriodSection color={P2_COLOR} label="PERIOD 2" blist={p2Bills} total={slot.period2Total} />
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: 'flex', marginBottom: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+                    <PeriodSection color={P1_COLOR} label="PERIOD 1" blist={p1Bills} total={slot.period1Total} />
+                  </div>
+                  <div style={{ width: 1, background: 'var(--bd-light)', alignSelf: 'stretch', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0, paddingLeft: 12 }}>
+                    <PeriodSection color={P2_COLOR} label="PERIOD 2" blist={p2Bills} total={slot.period2Total} />
+                  </div>
+                </div>
+              )}
+
               <div style={{
                 display: 'flex', justifyContent: 'space-between',
                 fontSize: 12.5, fontWeight: 700,
