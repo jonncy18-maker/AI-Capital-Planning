@@ -131,6 +131,10 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
+  const autoTotal   = bills.filter(b => b.payment_method === 'auto')
+                           .reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
+  const manualTotal = bills.filter(b => b.payment_method !== 'auto')
+                           .reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
 
   const balanceKey = primaryChecking ? `${primaryChecking.id}-${period}` : null
   const checkingBalance = balanceKey ? (balancesMap[balanceKey] ?? '') : ''
@@ -227,12 +231,34 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
 
       {/* Period summary */}
       <div style={{ padding: '14px 18px', background: 'var(--bg-app)', borderTop: '1px solid var(--bd)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <MonoLabel>TOTAL DUE</MonoLabel>
           <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18, color: 'var(--tx-1)' }}>
             {fmt(total)}
           </div>
         </div>
+        {bills.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10, justifyContent: 'flex-end' }}>
+            {autoTotal > 0 && (
+              <span style={{
+                fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.04em',
+                padding: '2px 7px', borderRadius: 4,
+                background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
+              }}>
+                AUTO {fmt(autoTotal)}
+              </span>
+            )}
+            {manualTotal > 0 && (
+              <span style={{
+                fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.04em',
+                padding: '2px 7px', borderRadius: 4,
+                background: 'var(--bg-card)', color: 'var(--tx-3)', border: '1px solid var(--bd)',
+              }}>
+                MANUAL {fmt(manualTotal)}
+              </span>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <MonoLabel style={{ whiteSpace: 'nowrap' }}>CHECKING BAL.</MonoLabel>
@@ -922,6 +948,18 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [accountParseError, setAccountParseError] = useState(null)
   const [importingParsedAccounts, setImportingParsedAccounts] = useState(false)
 
+  // Savings hierarchy toggle — persisted in localStorage
+  const [useHierarchy, setUseHierarchy] = useState(
+    () => localStorage.getItem('pp_use_hierarchy') === 'true'
+  )
+  function toggleHierarchy() {
+    setUseHierarchy(prev => {
+      const next = !prev
+      localStorage.setItem('pp_use_hierarchy', String(next))
+      return next
+    })
+  }
+
   // Historical bill amounts upload state
   const amountsFileInputRef = useRef(null)
   const [parsedAmountRows, setParsedAmountRows] = useState(null) // null = inactive
@@ -1025,6 +1063,18 @@ export default function PayPeriodPlanner({ userId, mobile }) {
       await upsertAccountBalance(userId, primaryChecking.id, navYear, navMonth, periodHalf, Number(value))
     } catch (e) {
       console.error('Failed to save balance:', e)
+    }
+  }
+
+  async function handleSavingsBalanceChange(accountId, rawValue) {
+    const value = rawValue === '' ? '' : rawValue
+    const key = `${accountId}-0`
+    setBalancesMap(prev => ({ ...prev, [key]: value }))
+    if (value === '' || isNaN(Number(value))) return
+    try {
+      await upsertAccountBalance(userId, accountId, navYear, navMonth, 0, Number(value))
+    } catch (e) {
+      console.error('Failed to save savings balance:', e)
     }
   }
 
@@ -1421,34 +1471,272 @@ export default function PayPeriodPlanner({ userId, mobile }) {
               </button>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-              <PeriodCard
-                period={1}
-                label={`PERIOD 1 · AROUND THE ${ordinal(payDay1).toUpperCase()}`}
-                payDay={payDay2 - 1}
-                bills={period1}
-                amountsMap={amountsMap}
-                forecastAmountsMap={forecastAmountsMap}
-                primaryChecking={primaryChecking}
-                balancesMap={balancesMap}
-                onAmountChange={handleAmountChange}
-                onBalanceChange={handleBalanceChange}
-                mobile={mobile}
-              />
-              <PeriodCard
-                period={2}
-                label={`PERIOD 2 · AROUND THE ${ordinal(payDay2).toUpperCase()}`}
-                payDay={31}
-                bills={period2}
-                amountsMap={amountsMap}
-                forecastAmountsMap={forecastAmountsMap}
-                primaryChecking={primaryChecking}
-                balancesMap={balancesMap}
-                onAmountChange={handleAmountChange}
-                onBalanceChange={handleBalanceChange}
-                mobile={mobile}
-              />
-            </div>
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+                <PeriodCard
+                  period={1}
+                  label={`PERIOD 1 · AROUND THE ${ordinal(payDay1).toUpperCase()}`}
+                  payDay={payDay2 - 1}
+                  bills={period1}
+                  amountsMap={amountsMap}
+                  forecastAmountsMap={forecastAmountsMap}
+                  primaryChecking={primaryChecking}
+                  balancesMap={balancesMap}
+                  onAmountChange={handleAmountChange}
+                  onBalanceChange={handleBalanceChange}
+                  mobile={mobile}
+                />
+                <PeriodCard
+                  period={2}
+                  label={`PERIOD 2 · AROUND THE ${ordinal(payDay2).toUpperCase()}`}
+                  payDay={31}
+                  bills={period2}
+                  amountsMap={amountsMap}
+                  forecastAmountsMap={forecastAmountsMap}
+                  primaryChecking={primaryChecking}
+                  balancesMap={balancesMap}
+                  onAmountChange={handleAmountChange}
+                  onBalanceChange={handleBalanceChange}
+                  mobile={mobile}
+                />
+              </div>
+
+              {/* ── Savings Transfer Plan ── */}
+              {(() => {
+                const savingsAccounts = accounts
+                  .filter(a => a.type === 'savings')
+                  .sort((a, b) => (a.display_order ?? 999) - (b.display_order ?? 999))
+                if (savingsAccounts.length === 0) return null
+
+                // Per-period totals
+                const autoP1   = period1.filter(b => b.payment_method === 'auto').reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
+                const manualP1 = period1.filter(b => b.payment_method !== 'auto').reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
+                const autoP2   = period2.filter(b => b.payment_method === 'auto').reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
+                const manualP2 = period2.filter(b => b.payment_method !== 'auto').reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
+
+                const p1CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-1`] ?? 0) : 0
+                const p2CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-2`] ?? 0) : 0
+                const gapP1 = Math.max(0, (autoP1 + manualP1) - p1CheckingBal)
+                const gapP2 = Math.max(0, (autoP2 + manualP2) - p2CheckingBal)
+                const totalAutoReserve = autoP1 + autoP2
+
+                // Hierarchy drawdown
+                const buckets = savingsAccounts.map((sa, i) => ({
+                  account: sa,
+                  balance: Number(balancesMap[`${sa.id}-0`] ?? 0),
+                  autoReserve: i === 0 ? totalAutoReserve : 0,
+                }))
+
+                function drawFrom(bkts, gap) {
+                  let rem = gap
+                  return bkts.map(b => {
+                    const avail = Math.max(0, b.balance - b.autoReserve - (b.drawnSoFar ?? 0))
+                    const draw = Math.min(avail, rem)
+                    rem -= draw
+                    return { ...b, draw, avail }
+                  })
+                }
+                const p1Draws = drawFrom(buckets, gapP1)
+                const bucketsAfterP1 = buckets.map((b, i) => ({ ...b, drawnSoFar: p1Draws[i]?.draw ?? 0 }))
+                const p2Draws = drawFrom(bucketsAfterP1, gapP2)
+                const uncoveredP1 = gapP1 - p1Draws.reduce((s, b) => s + b.draw, 0)
+                const uncoveredP2 = gapP2 - p2Draws.reduce((s, b) => s + b.draw, 0)
+                const totalUncovered = uncoveredP1 + uncoveredP2
+
+                return (
+                  <div style={{
+                    marginTop: 20, border: '1px solid var(--bd)', borderRadius: 12,
+                    background: 'var(--bg-card)', overflow: 'hidden',
+                  }}>
+                    {/* Header */}
+                    <div style={{
+                      padding: '14px 18px 12px', borderBottom: '1px solid var(--bd)',
+                      background: 'var(--bg-app)',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    }}>
+                      <div>
+                        <MonoLabel>SAVINGS TRANSFER PLAN</MonoLabel>
+                        <div style={{ marginTop: 4, fontSize: 13, color: 'var(--tx-2)' }}>
+                          {MONTH_NAMES[navMonth - 1]} {navYear}
+                        </div>
+                      </div>
+                      <button
+                        onClick={toggleHierarchy}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
+                          background: useHierarchy ? 'var(--accent-bg)' : 'transparent',
+                          border: `1px solid ${useHierarchy ? 'var(--accent-bd)' : 'var(--bd)'}`,
+                        }}
+                      >
+                        <span style={{
+                          fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.05em',
+                          color: useHierarchy ? 'var(--accent)' : 'var(--tx-3)', textTransform: 'uppercase',
+                        }}>
+                          Hierarchy {useHierarchy ? 'ON' : 'OFF'}
+                        </span>
+                      </button>
+                    </div>
+
+                    <div style={{ padding: '16px 18px' }}>
+                      {/* Savings balance inputs */}
+                      <div style={{ marginBottom: 20 }}>
+                        <MonoLabel style={{ marginBottom: 10 }}>SAVINGS BALANCES</MonoLabel>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {savingsAccounts.map((sa, i) => (
+                            <div key={sa.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 500 }}>{sa.name}</div>
+                                {i === 0 && useHierarchy && (
+                                  <div style={{ fontSize: 10, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace", marginTop: 1 }}>
+                                    auto reserve: {fmt(totalAutoReserve)}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)' }}>$</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={balancesMap[`${sa.id}-0`] ?? ''}
+                                  placeholder="0"
+                                  onChange={e => handleSavingsBalanceChange(sa.id, e.target.value)}
+                                  style={{
+                                    width: 110, background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                                    borderRadius: 6, padding: '5px 8px',
+                                    fontFamily: "'DM Mono', monospace", fontSize: 12,
+                                    color: 'var(--tx-1)', outline: 'none', textAlign: 'right',
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Summary or hierarchy table */}
+                      {!useHierarchy ? (
+                        // Summary table
+                        <div>
+                          <MonoLabel style={{ marginBottom: 10 }}>TRANSFER SUMMARY</MonoLabel>
+                          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr auto auto' : '1fr auto auto', gap: '6px 16px' }}>
+                            {/* Header */}
+                            {['', 'PERIOD 1', 'PERIOD 2'].map((h, i) => (
+                              <div key={i} style={{
+                                fontFamily: "'DM Mono', monospace", fontSize: 8.5,
+                                color: 'var(--tx-4)', letterSpacing: '0.06em', textAlign: i > 0 ? 'right' : 'left',
+                              }}>{h}</div>
+                            ))}
+                            {[
+                              { label: 'Total Due',       p1: autoP1 + manualP1, p2: autoP2 + manualP2, bold: false },
+                              { label: 'Auto',            p1: autoP1,  p2: autoP2,  bold: false, muted: true },
+                              { label: 'Manual',          p1: manualP1, p2: manualP2, bold: false, muted: true },
+                              { label: 'Transfer Needed', p1: gapP1,   p2: gapP2,   bold: true },
+                            ].map(row => (
+                              <>
+                                <div key={row.label + 'l'} style={{
+                                  fontSize: row.bold ? 13 : 12,
+                                  fontWeight: row.bold ? 600 : 400,
+                                  color: row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
+                                  paddingLeft: row.muted ? 10 : 0,
+                                }}>{row.label}</div>
+                                <div key={row.label + 'p1'} style={{
+                                  fontFamily: "'DM Mono', monospace",
+                                  fontSize: row.bold ? 13 : 12, textAlign: 'right',
+                                  fontWeight: row.bold ? 600 : 400,
+                                  color: row.bold && (row.p1 > 0) ? 'var(--warn)' : row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
+                                  fontVariantNumeric: 'tabular-nums',
+                                }}>{fmt(row.p1)}</div>
+                                <div key={row.label + 'p2'} style={{
+                                  fontFamily: "'DM Mono', monospace",
+                                  fontSize: row.bold ? 13 : 12, textAlign: 'right',
+                                  fontWeight: row.bold ? 600 : 400,
+                                  color: row.bold && (row.p2 > 0) ? 'var(--warn)' : row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
+                                  fontVariantNumeric: 'tabular-nums',
+                                }}>{fmt(row.p2)}</div>
+                              </>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        // Hierarchy drawdown table
+                        <div>
+                          <MonoLabel style={{ marginBottom: 10 }}>DRAWDOWN PLAN</MonoLabel>
+                          <div style={{ overflowX: 'auto' }}>
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: mobile
+                                ? '1fr auto auto auto auto'
+                                : '1fr auto auto auto auto auto auto',
+                              gap: '6px 14px', minWidth: mobile ? 340 : 560,
+                            }}>
+                              {/* Column headers */}
+                              {(mobile
+                                ? ['BUCKET', 'BALANCE', 'P1 DRAW', 'P1 LEFT', 'P2 DRAW']
+                                : ['BUCKET', 'BALANCE', 'AUTO RES.', 'P1 DRAW', 'P1 LEFT', 'P2 DRAW', 'P2 LEFT']
+                              ).map((h, i) => (
+                                <div key={h} style={{
+                                  fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)',
+                                  letterSpacing: '0.06em', textAlign: i > 0 ? 'right' : 'left',
+                                  paddingBottom: 4, borderBottom: '1px solid var(--bd)',
+                                }}>{h}</div>
+                              ))}
+                              {/* Bucket rows */}
+                              {savingsAccounts.map((sa, i) => {
+                                const p1 = p1Draws[i]
+                                const p2 = p2Draws[i]
+                                const p1Left = p1.avail - p1.draw
+                                const p2Left = Math.max(0, (Number(balancesMap[`${sa.id}-0`] ?? 0)) - (i === 0 ? totalAutoReserve : 0) - p1.draw - p2.draw)
+                                const cells = mobile
+                                  ? [sa.name, fmt(p1.balance), fmt(p1.draw), fmt(p1Left), fmt(p2.draw)]
+                                  : [sa.name, fmt(p1.balance), i === 0 ? fmt(totalAutoReserve) : '—', fmt(p1.draw), fmt(p1Left), fmt(p2.draw), fmt(p2Left)]
+                                return cells.map((cell, j) => (
+                                  <div key={`${sa.id}-${j}`} style={{
+                                    fontSize: 12, textAlign: j > 0 ? 'right' : 'left',
+                                    color: j === 0 ? 'var(--tx-1)'
+                                      : (j === 2 && i === 0 && !mobile) ? 'var(--tx-3)'
+                                      : ((j === 3 && !mobile) || (j === 2 && mobile)) && (p1.draw > 0) ? 'var(--accent)'
+                                      : ((j === 5 && !mobile) || (j === 4 && mobile)) && (p2.draw > 0) ? 'var(--accent)'
+                                      : 'var(--tx-2)',
+                                    fontFamily: j > 0 ? "'DM Mono', monospace" : 'inherit',
+                                    fontVariantNumeric: 'tabular-nums',
+                                    padding: '4px 0',
+                                    fontWeight: j === 0 ? 500 : 400,
+                                  }}>{cell}</div>
+                                ))
+                              })}
+                            </div>
+                          </div>
+
+                          {totalUncovered > 0 && (
+                            <div style={{
+                              marginTop: 14, padding: '10px 14px',
+                              background: 'var(--warn-bg)', border: '1px solid var(--warn)',
+                              borderRadius: 8, fontSize: 13, color: 'var(--warn)',
+                              display: 'flex', gap: 8, alignItems: 'center',
+                            }}>
+                              <span>⚠</span>
+                              <span>Not enough in savings — shortfall: <strong>{fmt(totalUncovered)}</strong></span>
+                            </div>
+                          )}
+                          {totalUncovered === 0 && (gapP1 > 0 || gapP2 > 0) && (
+                            <div style={{
+                              marginTop: 14, padding: '10px 14px',
+                              background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
+                              borderRadius: 8, fontSize: 13, color: 'var(--accent)',
+                              display: 'flex', gap: 8, alignItems: 'center',
+                            }}>
+                              <span>✓</span>
+                              <span>Savings covers all transfers for this month.</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+            </>
           )}
         </div>
       )}
