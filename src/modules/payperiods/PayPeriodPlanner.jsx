@@ -2364,7 +2364,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
 
       {/* ── Trends Tab ── */}
       {tab === 'trends' && (
-        <TrendsTab userId={userId} bills={bills} payDay2={payDay2} mobile={mobile} />
+        <TrendsTab userId={userId} bills={bills} payDay2={payDay2} mobile={mobile} statementsByCard={statementsByCard} />
       )}
     </div>
   )

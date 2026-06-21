@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getBillAmountsRange, getForecastAmountsForBills, splitBillsByPeriod } from '../../lib/db/bills.js'
+import { projectedBillAmounts } from '../../lib/cashflow/cashflowEngine.js'
 
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const P1_COLOR = 'var(--accent)'
@@ -53,7 +54,7 @@ function StatCard({ label, value, subLabel, mobile }) {
   )
 }
 
-export default function TrendsTab({ userId, bills, payDay2, mobile }) {
+export default function TrendsTab({ userId, bills, payDay2, mobile, statementsByCard = {} }) {
   const [chartData, setChartData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -144,12 +145,18 @@ export default function TrendsTab({ userId, bills, payDay2, mobile }) {
           ? (forecastResults[`${slot.year}-${slot.month}`] ?? {})
           : {}
 
-        // Future months: variable fallback (last known actual) overridden by budget-derived forecast
-        const forecastAmountsMap = slot.isFuture
-          ? { ...variableFallbackMap, ...budgetForecastMap }
+        // For future months, derive CC bill amounts from the statement projection engine,
+        // which reflects the seasonal forecast spend routed to each card.
+        const cardStatementMap = slot.isFuture
+          ? projectedBillAmounts({ bills, statementsByCard, year: slot.year, month: slot.month })
           : {}
 
-        const { period1, period2 } = splitBillsByPeriod(bills, billAmountsMap, midpoint, forecastAmountsMap)
+        // Priority: card statement projection > budget-derived forecast > last-known actual
+        const forecastAmountsMap = slot.isFuture
+          ? { ...variableFallbackMap, ...budgetForecastMap, ...cardStatementMap }
+          : {}
+
+        const { period1, period2 } = splitBillsByPeriod(bills, billAmountsMap, midpoint, forecastAmountsMap, cardStatementMap)
 
         const period1Total = period1.reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
         const period2Total = period2.reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
@@ -225,7 +232,7 @@ export default function TrendsTab({ userId, bills, payDay2, mobile }) {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <LegendDot color={P1_COLOR} label="Period 1" />
         <LegendDot color={P2_COLOR} label="Period 2" />
-        <LegendDot color="var(--tx-3)" dashed label="Forecast — next 3 months" />
+        <LegendDot color="var(--tx-3)" dashed label="Forecast — rest of year" />
       </div>
 
       {/* Chart area */}
