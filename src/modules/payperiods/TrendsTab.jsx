@@ -15,8 +15,9 @@ function LegendDot({ color, dashed, label }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <span style={{
         width: 10, height: 10, borderRadius: 3,
-        background: dashed ? 'transparent' : color,
+        background: color,
         border: dashed ? `1px dashed ${color}` : 'none',
+        opacity: dashed ? 0.35 : 1,
         display: 'inline-block', flexShrink: 0,
       }} />
       <span style={{
@@ -232,7 +233,8 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <LegendDot color={P1_COLOR} label="Period 1" />
         <LegendDot color={P2_COLOR} label="Period 2" />
-        <LegendDot color="var(--tx-3)" dashed label="Forecast — rest of year" />
+        <LegendDot color={P1_COLOR} dashed label="Forecast P1" />
+        <LegendDot color={P2_COLOR} dashed label="Forecast P2" />
       </div>
 
       {/* Chart area */}
@@ -360,20 +362,20 @@ export default function TrendsTab({ userId, bills, payDay2, mobile, statementsBy
                 <div style={{
                   width: mobile ? 8 : '46%', maxWidth: 28,
                   height: slot.period1Total > 0 ? Math.max(p1H, 2) : 0,
-                  background: slot.isFuture ? 'transparent' : P1_COLOR,
+                  background: P1_COLOR,
                   border: slot.isFuture ? `1px dashed ${P1_COLOR}` : 'none',
                   borderRadius: '3px 3px 0 0',
-                  opacity: slot.isFuture ? 0.55 : (isHover ? 1 : 0.9),
+                  opacity: slot.isFuture ? 0.35 : (isHover ? 1 : 0.9),
                   transition: 'opacity .15s',
                 }} />
                 {/* Period 2 bar */}
                 <div style={{
                   width: mobile ? 8 : '46%', maxWidth: 28,
                   height: slot.period2Total > 0 ? Math.max(p2H, 2) : 0,
-                  background: slot.isFuture ? 'transparent' : P2_COLOR,
+                  background: P2_COLOR,
                   border: slot.isFuture ? `1px dashed ${P2_COLOR}` : 'none',
                   borderRadius: '3px 3px 0 0',
-                  opacity: slot.isFuture ? 0.55 : (isHover ? 1 : 0.92),
+                  opacity: slot.isFuture ? 0.35 : (isHover ? 1 : 0.92),
                   transition: 'opacity .15s',
                 }} />
 
