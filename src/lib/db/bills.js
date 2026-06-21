@@ -200,9 +200,13 @@ export async function getForecastAmountsForBills(userId, year, month, bills) {
 }
 
 // Returns the effective amount for a bill in a given month.
-// Priority: manual bill_amounts entry → forecast-derived → fixed_amount → null (variable).
-export function resolveBillAmount(bill, billAmountsMap, forecastAmountsMap = {}) {
+// Priority: manual bill_amounts entry → linked-card statement projection →
+//           forecast-derived → fixed_amount → null (variable).
+// The card-statement projection lets a credit-card bill auto-fill from the
+// statement balance projected for its linked card, while a manual entry still wins.
+export function resolveBillAmount(bill, billAmountsMap, forecastAmountsMap = {}, cardStatementMap = {}) {
   if (billAmountsMap[bill.id] != null) return billAmountsMap[bill.id]
+  if (cardStatementMap[bill.id] != null) return cardStatementMap[bill.id]
   if (forecastAmountsMap[bill.id] != null) return forecastAmountsMap[bill.id]
   return bill.fixed_amount ?? null
 }
@@ -211,12 +215,12 @@ export function resolveBillAmount(bill, billAmountsMap, forecastAmountsMap = {})
 // the two semi-monthly periods defined by the user's pay schedule.
 // period 1: bills whose pay_day <= midpoint (default 15)
 // period 2: bills whose pay_day > midpoint
-export function splitBillsByPeriod(bills, billAmountsMap, midpoint = 15, forecastAmountsMap = {}) {
+export function splitBillsByPeriod(bills, billAmountsMap, midpoint = 15, forecastAmountsMap = {}, cardStatementMap = {}) {
   const period1 = []
   const period2 = []
 
   for (const bill of bills) {
-    const amount = resolveBillAmount(bill, billAmountsMap, forecastAmountsMap)
+    const amount = resolveBillAmount(bill, billAmountsMap, forecastAmountsMap, cardStatementMap)
     const entry = { ...bill, resolvedAmount: amount }
     if (bill.pay_day <= midpoint) {
       period1.push(entry)

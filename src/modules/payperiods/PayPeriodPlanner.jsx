@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import {
   getAccounts, upsertAccount, deleteAccount,
@@ -10,6 +10,13 @@ import {
 } from '../../lib/db/bills.js'
 import { getProfile, saveMinCheckingBalance } from '../../lib/db/profile.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import { getCreditCards, getEarnRates, getCCSettings, buildEarnRateMap } from '../../lib/db/creditCards.js'
+import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
+import { getForecastOverrides } from '../../lib/db/forecastOverrides.js'
+import {
+  routeForecastToCards, computeStatementForecast,
+  projectedBillAmounts, splitCashAcrossPeriods,
+} from '../../lib/cashflow/cashflowEngine.js'
 import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
 import { parseBillAmountsFromFile } from '../../lib/ai/billAmountsParser.js'
@@ -127,7 +134,7 @@ function Badge({ label, variant = 'neutral' }) {
 
 // ─── Period Card ──────────────────────────────────────────────────────────────
 
-function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
+function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, forecastCash = 0, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
@@ -169,6 +176,8 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
             const forecastAmount = forecastAmountsMap[bill.id] ?? null
             const hasManualOverride = amountsMap[bill.id] != null
             const showForecastBadge = isForecastLinked && forecastAmount != null && !hasManualOverride
+            const cardProjected = bill.credit_card_id != null && cardStatementMap[bill.id] != null
+            const showProjectedBadge = cardProjected && !hasManualOverride && !showForecastBadge
             const amount = bill.resolvedAmount
             const showInput = !showForecastBadge && bill.fixed_amount == null
             return (
@@ -202,22 +211,36 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
                     </span>
                   </div>
                 ) : showInput ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)' }}>$</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={amount ?? ''}
-                      placeholder="0"
-                      onChange={e => onAmountChange(bill.id, e.target.value)}
-                      onBlur={e => onAmountBlur(bill.id, e.target.value)}
-                      style={{
-                        width: 90, background: 'var(--bg-app)', border: '1px solid var(--bd)',
-                        borderRadius: 6, padding: '5px 8px',
-                        fontFamily: "'DM Mono', monospace", fontSize: 12,
-                        color: 'var(--tx-1)', outline: 'none', textAlign: 'right',
-                      }}
-                    />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {showProjectedBadge && (
+                      <span
+                        title="Projected from this card's statement (forecast spend). Type to override."
+                        style={{
+                          fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.05em',
+                          padding: '2px 5px', borderRadius: 3, whiteSpace: 'nowrap',
+                          background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
+                        }}
+                      >
+                        PROJECTED
+                      </span>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)' }}>$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={amount ?? ''}
+                        placeholder="0"
+                        onChange={e => onAmountChange(bill.id, e.target.value)}
+                        onBlur={e => onAmountBlur(bill.id, e.target.value)}
+                        style={{
+                          width: 90, background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                          borderRadius: 6, padding: '5px 8px',
+                          fontFamily: "'DM Mono', monospace", fontSize: 12,
+                          color: 'var(--tx-1)', outline: 'none', textAlign: 'right',
+                        }}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: 'var(--tx-1)' }}>
@@ -259,6 +282,28 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
               </span>
             )}
           </div>
+        )}
+
+        {forecastCash > 0 && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+              <MonoLabel style={{ fontSize: 9 }} title="Forecast spend not on a credit card (cash-only categories + the portion of spend not put on a card), pro-rated into this period.">
+                NON-CARD CASH (FCST)
+              </MonoLabel>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: 'var(--tx-2)' }}>
+                +{fmt(forecastCash)}
+              </div>
+            </div>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+              marginBottom: 10, paddingTop: 6, borderTop: '1px solid var(--bd)',
+            }}>
+              <MonoLabel style={{ fontSize: 9 }}>TOTAL OUTFLOW</MonoLabel>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: 'var(--tx-1)' }}>
+                {fmt(total + forecastCash)}
+              </div>
+            </div>
+          </>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -325,15 +370,16 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
 
 const EMPTY_BILL = {
   name: '', bill_type: 'credit_card', due_day: '', pay_same_as_due: true, pay_day: '',
-  payment_method: 'manual', fixed_amount: null, debits_from_account_id: null,
+  payment_method: 'manual', fixed_amount: null, debits_from_account_id: null, credit_card_id: null,
 }
 
-function BillForm({ initial, accounts, budgetCategories = [], onSave, onCancel, onDelete }) {
+function BillForm({ initial, accounts, budgetCategories = [], creditCards = [], onSave, onCancel, onDelete }) {
   const [form, setForm] = useState(initial || EMPTY_BILL)
   const [isFixed, setIsFixed] = useState(initial ? initial.fixed_amount != null : false)
   const [fixedInput, setFixedInput] = useState(initial?.fixed_amount != null ? String(initial.fixed_amount) : '')
   const [forecastCategoryId, setForecastCategoryId] = useState(initial?.forecast_category_id ?? null)
   const [forecastDivisor, setForecastDivisor] = useState(initial?.forecast_divisor ?? 1)
+  const [creditCardId, setCreditCardId] = useState(initial?.credit_card_id ?? null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -358,6 +404,7 @@ function BillForm({ initial, accounts, budgetCategories = [], onSave, onCancel, 
         fixed_amount: isFixed && fixedInput ? Number(fixedInput) : null,
         forecast_category_id: forecastCategoryId || null,
         forecast_divisor: forecastCategoryId ? Math.max(1, forecastDivisor || 1) : 1,
+        credit_card_id: creditCardId || null,
       })
     } catch (e) {
       setErr(e.message)
@@ -511,6 +558,35 @@ function BillForm({ initial, accounts, budgetCategories = [], onSave, onCancel, 
             <option value="">— Select account —</option>
             {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
+        </div>
+      )}
+
+      {/* Linked credit card — auto-fills the bill amount from the projected statement */}
+      {form.bill_type === 'credit_card' && creditCards.length > 0 && (
+        <div style={{ ...fieldGap, borderTop: '1px solid var(--bd)', paddingTop: 14 }}>
+          <label style={labelStyle}>LINKED CREDIT CARD (OPTIONAL)</label>
+          <select
+            style={{ ...inputStyle, cursor: 'pointer' }}
+            value={creditCardId || ''}
+            onChange={e => setCreditCardId(e.target.value || null)}
+          >
+            <option value="">— Not linked —</option>
+            {creditCards.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name}{c.issuer ? ` · ${c.issuer}` : ''}
+              </option>
+            ))}
+          </select>
+          {creditCardId && (
+            <div style={{
+              marginTop: 10, padding: '8px 10px', borderRadius: 7,
+              background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
+              fontSize: 11, color: 'var(--accent)', lineHeight: 1.5,
+            }}>
+              The monthly amount auto-fills from this card's projected statement (forecast spend
+              routed to the card, timed by its billing cycle). You can still type over it any month.
+            </div>
+          )}
         </div>
       )}
 
@@ -931,6 +1007,12 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [bills, setBills] = useState([])
   const [accounts, setAccounts] = useState([])
   const [budgetCategories, setBudgetCategories] = useState([])
+  const [creditCards, setCreditCards] = useState([])
+  const [earnRateMap, setEarnRateMap] = useState({})
+  const [ccCoverage, setCcCoverage] = useState(80)
+  const [ccOptimization, setCcOptimization] = useState(100)
+  const [lineItems, setLineItems] = useState([])           // budget_line_items for navYear
+  const [overrides, setOverrides] = useState([])           // forecast_overrides for navYear
   const [amountsMap, setAmountsMap] = useState({})         // billId → manual amount (for current navMonth)
   const [forecastAmountsMap, setForecastAmountsMap] = useState({}) // billId → forecast-derived amount
   const [balancesMap, setBalancesMap] = useState({})       // `accountId-periodHalf` → balance
@@ -1002,16 +1084,23 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const reload = useCallback(async () => {
     if (!userId) return
     try {
-      const [prof, fetchedBills, fetchedAccounts, fetchedCategories] = await Promise.all([
+      const [prof, fetchedBills, fetchedAccounts, fetchedCategories, fetchedCards, fetchedRates, ccSettings] = await Promise.all([
         getProfile(userId),
         getBills(userId),
         getAccounts(userId),
         getBudgetCategories(userId),
+        getCreditCards(userId),
+        getEarnRates(userId),
+        getCCSettings(userId),
       ])
       setProfile(prof)
       setBills(fetchedBills)
       setAccounts(fetchedAccounts)
       setBudgetCategories(fetchedCategories)
+      setCreditCards(fetchedCards)
+      setEarnRateMap(buildEarnRateMap(fetchedRates))
+      setCcCoverage(ccSettings.coveragePct)
+      setCcOptimization(ccSettings.optimizationPct)
     } catch (e) {
       setError(e.message)
     }
@@ -1042,14 +1131,53 @@ export default function PayPeriodPlanner({ userId, mobile }) {
       .catch(() => {})
   }, [userId, navYear, navMonth, bills])
 
+  // Reload budget line items + forecast overrides when the nav year changes —
+  // these feed the cash-flow engine that projects credit-card statement amounts.
+  useEffect(() => {
+    if (!userId) return
+    Promise.all([
+      getBudgetLineItems(userId, { year: navYear }),
+      getForecastOverrides(userId, navYear),
+    ]).then(([li, ov]) => {
+      setLineItems(li)
+      setOverrides(ov)
+    }).catch(() => {})
+  }, [userId, navYear])
+
   // ── Derived values ──────────────────────────────────────────────────────────
 
   const payDay1 = profile?.pay_day_1 ?? 15
   const payDay2 = profile?.pay_day_2 ?? 30
   const hasPaySchedule = profile?.pay_frequency != null
 
+  // ── Cash-flow projection ──────────────────────────────────────────────────
+  // Route forecast spend to cards ($), project each card's statement balance
+  // (proportional by close day), and derive the payment due in the nav month.
+  const cashflow = useMemo(
+    () => routeForecastToCards({
+      budgetCategories, lineItems, overrides,
+      cards: creditCards, earnRateMap,
+      coveragePct: ccCoverage, optimizationPct: ccOptimization, year: navYear,
+    }),
+    [budgetCategories, lineItems, overrides, creditCards, earnRateMap, ccCoverage, ccOptimization, navYear]
+  )
+  const statementsByCard = useMemo(
+    () => computeStatementForecast({ cardDollarsByMonth: cashflow.cardDollarsByMonth, cards: creditCards, year: navYear }),
+    [cashflow, creditCards, navYear]
+  )
+  // billId → projected statement amount for linked credit-card bills (this nav month)
+  const cardStatementMap = useMemo(
+    () => projectedBillAmounts({ bills, statementsByCard, year: navYear, month: navMonth }),
+    [bills, statementsByCard, navYear, navMonth]
+  )
+  // Non-card forecast cash (cash-only + uncovered spend), split across the two periods
+  const forecastCashSplit = useMemo(
+    () => splitCashAcrossPeriods(cashflow.cashByMonth[navMonth] ?? 0, payDay2 - 1, navYear, navMonth),
+    [cashflow, navMonth, navYear, payDay2]
+  )
+
   // Split bills: period 1 = pay_day < pay_day_2, period 2 = pay_day >= pay_day_2
-  const { period1, period2 } = splitBillsByPeriod(bills, amountsMap, payDay2 - 1, forecastAmountsMap)
+  const { period1, period2 } = splitBillsByPeriod(bills, amountsMap, payDay2 - 1, forecastAmountsMap, cardStatementMap)
 
   const primaryChecking = accounts.find(a => a.is_primary_checking && a.type === 'checking') ?? null
 
@@ -1552,6 +1680,8 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   bills={period1}
                   amountsMap={amountsMap}
                   forecastAmountsMap={forecastAmountsMap}
+                  cardStatementMap={cardStatementMap}
+                  forecastCash={forecastCashSplit.period1}
                   primaryChecking={primaryChecking}
                   balancesMap={balancesMap}
                   onAmountChange={handleAmountChange}
@@ -1568,6 +1698,8 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   bills={period2}
                   amountsMap={amountsMap}
                   forecastAmountsMap={forecastAmountsMap}
+                  cardStatementMap={cardStatementMap}
+                  forecastCash={forecastCashSplit.period2}
                   primaryChecking={primaryChecking}
                   balancesMap={balancesMap}
                   onAmountChange={handleAmountChange}
@@ -1902,6 +2034,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             <BillForm
               accounts={accounts}
               budgetCategories={budgetCategories}
+              creditCards={creditCards}
               onSave={handleSaveBill}
               onCancel={() => setEditingBill(null)}
               onDelete={handleDeleteBill}
@@ -1967,6 +2100,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                   initial={bill}
                                   accounts={accounts}
                                   budgetCategories={budgetCategories}
+                                  creditCards={creditCards}
                                   onSave={handleSaveBill}
                                   onCancel={() => setEditingBill(null)}
                                   onDelete={handleDeleteBill}
