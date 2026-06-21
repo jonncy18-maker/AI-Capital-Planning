@@ -205,7 +205,11 @@ export async function getForecastAmountsForBills(userId, year, month, bills) {
 // The card-statement projection lets a credit-card bill auto-fill from the
 // statement balance projected for its linked card, while a manual entry still wins.
 export function resolveBillAmount(bill, billAmountsMap, forecastAmountsMap = {}, cardStatementMap = {}) {
-  if (billAmountsMap[bill.id] != null) return billAmountsMap[bill.id]
+  // Manual per-month entries only apply to variable bills — the Schedule view
+  // only exposes an amount input when fixed_amount == null. A stored amount on a
+  // fixed bill is stale data from a prior variable configuration and must not
+  // override the fixed amount (otherwise it double-counts in trends/schedule).
+  if (bill.fixed_amount == null && billAmountsMap[bill.id] != null) return billAmountsMap[bill.id]
   if (cardStatementMap[bill.id] != null) return cardStatementMap[bill.id]
   if (forecastAmountsMap[bill.id] != null) return forecastAmountsMap[bill.id]
   return bill.fixed_amount ?? null
