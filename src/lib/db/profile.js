@@ -11,6 +11,14 @@ export async function getProfile(userId) {
   return data
 }
 
+export async function saveMinCheckingBalance(userId, amount) {
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ min_checking_balance: amount, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+  if (error) throw error
+}
+
 export async function saveProfile(userId, profile) {
   const { data, error } = await supabase
     .from('user_profiles')

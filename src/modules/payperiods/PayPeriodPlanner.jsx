@@ -8,7 +8,7 @@ import {
   getForecastAmountsForBills,
   splitBillsByPeriod,
 } from '../../lib/db/bills.js'
-import { getProfile } from '../../lib/db/profile.js'
+import { getProfile, saveMinCheckingBalance } from '../../lib/db/profile.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
@@ -127,7 +127,7 @@ function Badge({ label, variant = 'neutral' }) {
 
 // ─── Period Card ──────────────────────────────────────────────────────────────
 
-function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, mobile }) {
+function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
@@ -138,7 +138,7 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
 
   const balanceKey = primaryChecking ? `${primaryChecking.id}-${period}` : null
   const checkingBalance = balanceKey ? (balancesMap[balanceKey] ?? '') : ''
-  const transferNeeded = checkingBalance !== '' ? Math.max(0, total - Number(checkingBalance)) : null
+  const transferNeeded = checkingBalance !== '' ? Math.max(0, total + minCheckingBalance - Number(checkingBalance)) : null
 
   return (
     <div style={{
@@ -301,11 +301,16 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
               fontFamily: "'DM Serif Display', serif", fontSize: 15,
               color: transferNeeded > 0 ? 'var(--warn)' : 'var(--accent)',
             }}>
-              {transferNeeded > 0 ? fmt(transferNeeded) : fmt(Number(checkingBalance) - total)}
+              {transferNeeded > 0 ? fmt(transferNeeded) : fmt(Number(checkingBalance) - total - minCheckingBalance)}
             </div>
           </div>
         )}
 
+        {minCheckingBalance > 0 && (
+          <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 4, fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em' }}>
+            {fmt(minCheckingBalance)} min. balance reserved
+          </div>
+        )}
         {!primaryChecking && (
           <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 6 }}>
             Add a checking account in the Accounts tab to track balances.
@@ -950,6 +955,25 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [accountParseError, setAccountParseError] = useState(null)
   const [importingParsedAccounts, setImportingParsedAccounts] = useState(false)
 
+  // Minimum checking balance — amount to keep in checking at all times
+  const [minCheckingBal, setMinCheckingBal] = useState(0)
+  const [minCheckingBalInput, setMinCheckingBalInput] = useState('0')
+  useEffect(() => {
+    const v = profile?.min_checking_balance ?? 0
+    setMinCheckingBal(Number(v))
+    setMinCheckingBalInput(String(Number(v)))
+  }, [profile])
+  async function handleMinCheckingBalBlur(raw) {
+    const value = raw === '' ? 0 : Math.max(0, Number(raw))
+    setMinCheckingBal(value)
+    setMinCheckingBalInput(String(value))
+    try {
+      await saveMinCheckingBalance(userId, value)
+    } catch (e) {
+      console.error('Failed to save min checking balance:', e)
+    }
+  }
+
   // Savings hierarchy toggle — persisted in localStorage
   const [useHierarchy, setUseHierarchy] = useState(
     () => localStorage.getItem('pp_use_hierarchy') === 'true'
@@ -1309,6 +1333,39 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             </div>
           </div>
 
+          {/* Minimum checking balance setting */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 14px', marginBottom: 16,
+            border: '1px solid var(--bd)', borderRadius: 9,
+            background: 'var(--bg-card)',
+          }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginBottom: 2 }}>
+                MIN. CHECKING BALANCE
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--tx-3)' }}>
+                Amount to keep in checking at all times — added to transfer-needed calculations.
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)' }}>$</span>
+              <input
+                type="number"
+                min="0"
+                value={minCheckingBalInput}
+                onChange={e => setMinCheckingBalInput(e.target.value)}
+                onBlur={e => handleMinCheckingBalBlur(e.target.value)}
+                style={{
+                  width: 90, background: 'var(--bg-app)', border: '1px solid var(--bd)',
+                  borderRadius: 6, padding: '5px 8px',
+                  fontFamily: "'DM Mono', monospace", fontSize: 12,
+                  color: 'var(--tx-1)', outline: 'none', textAlign: 'right',
+                }}
+              />
+            </div>
+          </div>
+
           {/* Historical amounts review panel */}
           {parsedAmountRows && (() => {
             const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -1501,6 +1558,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   onAmountBlur={handleAmountBlur}
                   onBalanceChange={handleBalanceChange}
                   onBalanceBlur={handleBalanceBlur}
+                  minCheckingBalance={minCheckingBal}
                   mobile={mobile}
                 />
                 <PeriodCard
@@ -1516,6 +1574,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   onAmountBlur={handleAmountBlur}
                   onBalanceChange={handleBalanceChange}
                   onBalanceBlur={handleBalanceBlur}
+                  minCheckingBalance={minCheckingBal}
                   mobile={mobile}
                 />
               </div>
@@ -1535,8 +1594,8 @@ export default function PayPeriodPlanner({ userId, mobile }) {
 
                 const p1CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-1`] ?? 0) : 0
                 const p2CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-2`] ?? 0) : 0
-                const gapP1 = Math.max(0, (autoP1 + manualP1) - p1CheckingBal)
-                const gapP2 = Math.max(0, (autoP2 + manualP2) - p2CheckingBal)
+                const gapP1 = Math.max(0, (autoP1 + manualP1) + minCheckingBal - p1CheckingBal)
+                const gapP2 = Math.max(0, (autoP2 + manualP2) + minCheckingBal - p2CheckingBal)
 
                 // Hierarchy drawdown — each period uses its own saved balances independently
                 function drawFrom(bkts, gap) {
