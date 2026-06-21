@@ -25,9 +25,29 @@ export const CC_CATEGORIES = [
   { slug: 'other',           label: 'Everything Else' },
 ]
 
+// Build the lookup maps used to resolve monthly spend per category.
+//   lineItemsByCategory[categoryId][month] = summed budget_line_items amount
+//   overridesByCategory[categoryId][month] = forecast_override amount
+export function buildSpendMaps(lineItems, overrides) {
+  const lineItemsByCategory = {}
+  for (const li of (lineItems ?? [])) {
+    if (!lineItemsByCategory[li.category_id]) lineItemsByCategory[li.category_id] = {}
+    lineItemsByCategory[li.category_id][li.month] =
+      (lineItemsByCategory[li.category_id][li.month] ?? 0) + Number(li.amount)
+  }
+
+  const overridesByCategory = {}
+  for (const ov of (overrides ?? [])) {
+    if (!overridesByCategory[ov.category_id]) overridesByCategory[ov.category_id] = {}
+    overridesByCategory[ov.category_id][ov.month] = Number(ov.amount)
+  }
+
+  return { lineItemsByCategory, overridesByCategory }
+}
+
 // Resolve spend per category for a given month.
 // Priority: forecast_override → sum(budget_line_items) → 0
-function resolveMonthlySpend(categoryId, month, lineItemsByCategory, overridesByCategory) {
+export function resolveMonthlySpend(categoryId, month, lineItemsByCategory, overridesByCategory) {
   if (overridesByCategory[categoryId]?.[month] != null) {
     return Number(overridesByCategory[categoryId][month])
   }
@@ -36,7 +56,7 @@ function resolveMonthlySpend(categoryId, month, lineItemsByCategory, overridesBy
 
 // Find the best earn rate for a given cc_category across all active cards.
 // Returns { cardId, earnRate } or null if no cards have earn rates configured.
-function bestCardForCategory(ccCategory, cards, earnRateMap) {
+export function bestCardForCategory(ccCategory, cards, earnRateMap) {
   let best = null
   for (const card of cards) {
     const rates = earnRateMap[card.id] ?? {}
@@ -50,7 +70,7 @@ function bestCardForCategory(ccCategory, cards, earnRateMap) {
 }
 
 // Get the default card's earn rate for a given cc_category.
-function defaultCardRate(ccCategory, defaultCard, earnRateMap) {
+export function defaultCardRate(ccCategory, defaultCard, earnRateMap) {
   if (!defaultCard) return 1.0
   const rates = earnRateMap[defaultCard.id] ?? {}
   return rates[ccCategory] ?? rates['other'] ?? 1.0
@@ -77,20 +97,7 @@ export function computePointsForecast({
   const optimizationFactor = (optimizationPct ?? 100) / 100
 
   // Build lookup maps for line items and overrides
-  // lineItemsByCategory[categoryId][month] = summed amount
-  const lineItemsByCategory = {}
-  for (const li of (lineItems ?? [])) {
-    if (!lineItemsByCategory[li.category_id]) lineItemsByCategory[li.category_id] = {}
-    lineItemsByCategory[li.category_id][li.month] =
-      (lineItemsByCategory[li.category_id][li.month] ?? 0) + Number(li.amount)
-  }
-
-  // overridesByCategory[categoryId][month] = amount
-  const overridesByCategory = {}
-  for (const ov of (overrides ?? [])) {
-    if (!overridesByCategory[ov.category_id]) overridesByCategory[ov.category_id] = {}
-    overridesByCategory[ov.category_id][ov.month] = Number(ov.amount)
-  }
+  const { lineItemsByCategory, overridesByCategory } = buildSpendMaps(lineItems, overrides)
 
   // Build redemptions map: { [cardId]: { [month]: pointsAmount } }
   const redemptionMap = {}

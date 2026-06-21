@@ -19,6 +19,9 @@ import {
   estimateMonthlyEarnRate,
   CC_CATEGORIES,
 } from '../../lib/creditcards/pointsEngine.js'
+import {
+  routeForecastToCards, computeStatementForecast, statementDueIn,
+} from '../../lib/cashflow/cashflowEngine.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1292,7 +1295,7 @@ function CatMappingRow({ cat, isLast, ccCat, cashOnly, onCcCatChange, onCashOnly
 
 // ─── Bill Pay Tab ─────────────────────────────────────────────────────────────
 
-function BillPayTab({ cards, bills, year }) {
+function BillPayTab({ cards, bills, year, statementsByCard = {} }) {
   const [viewMonth, setViewMonth] = useState(new Date().getMonth() + 1)
 
   const ccBills = bills.filter(b => b.bill_type === 'credit_card')
@@ -1305,6 +1308,11 @@ function BillPayTab({ cards, bills, year }) {
     const closeDate = new Date(year, month - 1, closeDay)
     const dueDate = new Date(closeDate.getTime() + dueDays * 24 * 60 * 60 * 1000)
     return { closeDate, dueDate }
+  }
+
+  // Projected statement payment landing in viewMonth (forecast-driven).
+  function projectedDueInMonth(card, month) {
+    return statementDueIn(statementsByCard[card.id], year, month)
   }
 
   return (
@@ -1340,7 +1348,8 @@ function BillPayTab({ cards, bills, year }) {
             {cards.map(card => {
               const dates = dueDateForMonth(card, viewMonth)
               const fmtDate = d => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
-              const linkedBill = ccBills.find(b => b.name === card.name)
+              const linkedBill = ccBills.find(b => b.credit_card_id === card.id)
+              const projected = projectedDueInMonth(card, viewMonth)
 
               return (
                 <div key={card.id} style={{
@@ -1375,6 +1384,15 @@ function BillPayTab({ cards, bills, year }) {
                         <MonoLabel>DAYS TO PAY</MonoLabel>
                         <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: 'var(--tx-2)', marginTop: 4 }}>
                           {card.due_days_after_close || 21}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'center', minWidth: 90 }}>
+                        <MonoLabel>EST. STATEMENT</MonoLabel>
+                        <div
+                          title="Projected statement balance from forecast spend routed to this card (proportional by close day)."
+                          style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18, color: 'var(--tx-1)', marginTop: 4 }}
+                        >
+                          {projected && projected.balance > 0 ? fmt(projected.balance) : '—'}
                         </div>
                       </div>
                     </>
@@ -1557,6 +1575,17 @@ export default function CreditCards({ userId, mobile }) {
     })
   }, [cards, earnRateMap, budgetCategories, lineItems, overrides, pointsBalances, redemptions, coveragePct, optimizationPct, year])
 
+  // Projected statement balances per card (forecast spend routed to cards, then
+  // attributed to statements proportionally by close day) — drives Bill Pay amounts.
+  const statementsByCard = useMemo(() => {
+    if (cards.length === 0) return {}
+    const { cardDollarsByMonth } = routeForecastToCards({
+      budgetCategories, lineItems, overrides,
+      cards, earnRateMap, coveragePct, optimizationPct, year,
+    })
+    return computeStatementForecast({ cardDollarsByMonth, cards, year })
+  }, [cards, earnRateMap, budgetCategories, lineItems, overrides, coveragePct, optimizationPct, year])
+
   async function handleEarnRateSaved(userId, cardId, ccCat, rate) {
     await upsertEarnRate(userId, cardId, ccCat, rate)
     const ratesData = await getEarnRates(userId)
@@ -1649,6 +1678,7 @@ export default function CreditCards({ userId, mobile }) {
           cards={cards}
           bills={bills}
           year={year}
+          statementsByCard={statementsByCard}
         />
       )}
     </div>
