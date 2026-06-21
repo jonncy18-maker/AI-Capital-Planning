@@ -21,6 +21,7 @@ import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
 import { parseBillAmountsFromFile } from '../../lib/ai/billAmountsParser.js'
 import TrendsTab from './TrendsTab.jsx'
+import CCScheduleTab from './CCScheduleTab.jsx'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -991,10 +992,11 @@ function AccountParseReviewPanel({ selections, onToggle, onNameEdit, onPrimaryTo
 // ─── Main Module ──────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'schedule', label: 'SCHEDULE' },
-  { id: 'bills',    label: 'BILLS' },
-  { id: 'accounts', label: 'ACCOUNTS' },
-  { id: 'trends',   label: 'TRENDS' },
+  { id: 'schedule',    label: 'SCHEDULE' },
+  { id: 'bills',       label: 'BILLS' },
+  { id: 'accounts',    label: 'ACCOUNTS' },
+  { id: 'trends',      label: 'TRENDS' },
+  { id: 'cc-schedule', label: 'CC SCHEDULE' },
 ]
 
 export default function PayPeriodPlanner({ userId, mobile }) {
@@ -2365,6 +2367,18 @@ export default function PayPeriodPlanner({ userId, mobile }) {
       {/* ── Trends Tab ── */}
       {tab === 'trends' && (
         <TrendsTab userId={userId} bills={bills} payDay2={payDay2} mobile={mobile} statementsByCard={statementsByCard} />
+      )}
+
+      {/* ── CC Schedule Tab ── */}
+      {tab === 'cc-schedule' && (
+        <CCScheduleTab
+          userId={userId}
+          bills={bills}
+          creditCards={creditCards}
+          statementsByCard={statementsByCard}
+          navYear={navYear}
+          mobile={mobile}
+        />
       )}
     </div>
   )
