@@ -893,7 +893,11 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
 
   const getCatCcCat = cat => catEdits[cat.id]?.ccCat ?? (cat.cc_category || '')
   const getCatCashOnly = cat => catEdits[cat.id]?.cashOnly ?? !!cat.cash_only
-  const isCatDirty = cat => getCatCcCat(cat) !== (cat.cc_category || '') || getCatCashOnly(cat) !== !!cat.cash_only
+  const getCatPinnedCard = cat => catEdits[cat.id]?.pinnedCardId !== undefined ? catEdits[cat.id].pinnedCardId : (cat.pinned_card_id || null)
+  const isCatDirty = cat =>
+    getCatCcCat(cat) !== (cat.cc_category || '') ||
+    getCatCashOnly(cat) !== !!cat.cash_only ||
+    getCatPinnedCard(cat) !== (cat.pinned_card_id || null)
 
   useEffect(() => {
     if (Object.keys(suggestions).length === 0) return
@@ -934,12 +938,12 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
     await onCardsChanged()
   }
 
-  async function saveCatMapping(catId, ccCategory, cashOnly) {
+  async function saveCatMapping(catId, ccCategory, cashOnly, pinnedCardId) {
     setCatMapSaving(prev => ({ ...prev, [catId]: true }))
     try {
       await supabase
         .from('budget_categories')
-        .update({ cc_category: ccCategory || null, cash_only: cashOnly })
+        .update({ cc_category: ccCategory || null, cash_only: cashOnly, pinned_card_id: pinnedCardId || null })
         .eq('id', catId)
       setCatEdits(prev => { const next = { ...prev }; delete next[catId]; return next })
       await onCategoriesChanged()
@@ -957,7 +961,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
       await Promise.all(
         dirty.map(cat =>
           supabase.from('budget_categories')
-            .update({ cc_category: getCatCcCat(cat) || null, cash_only: getCatCashOnly(cat) })
+            .update({ cc_category: getCatCcCat(cat) || null, cash_only: getCatCashOnly(cat), pinned_card_id: getCatPinnedCard(cat) || null })
             .eq('id', cat.id)
         )
       )
@@ -1218,6 +1222,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
                     <th style={{ textAlign: 'left', padding: '9px 14px', color: 'var(--tx-3)', fontWeight: 400, borderBottom: '1px solid var(--bd)' }}>CATEGORY</th>
                     <th style={{ textAlign: 'left', padding: '9px 12px', color: 'var(--tx-3)', fontWeight: 400, borderBottom: '1px solid var(--bd)' }}>GROUP</th>
                     <th style={{ textAlign: 'left', padding: '9px 12px', color: 'var(--tx-3)', fontWeight: 400, borderBottom: '1px solid var(--bd)' }}>CC CATEGORY</th>
+                    <th style={{ textAlign: 'left', padding: '9px 12px', color: 'var(--tx-3)', fontWeight: 400, borderBottom: '1px solid var(--bd)' }}>PIN TO CARD</th>
                     <th style={{ textAlign: 'center', padding: '9px 12px', color: 'var(--tx-3)', fontWeight: 400, borderBottom: '1px solid var(--bd)' }}>CASH ONLY</th>
                     <th style={{ padding: '9px 14px', borderBottom: '1px solid var(--bd)' }} />
                   </tr>
@@ -1230,9 +1235,12 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
                       isLast={i === budgetCategories.filter(c => c.is_active).length - 1}
                       ccCat={getCatCcCat(cat)}
                       cashOnly={getCatCashOnly(cat)}
-                      onCcCatChange={v => setCatEdits(prev => ({ ...prev, [cat.id]: { ...(prev[cat.id] ?? { ccCat: cat.cc_category || '', cashOnly: !!cat.cash_only }), ccCat: v } }))}
-                      onCashOnlyChange={v => setCatEdits(prev => ({ ...prev, [cat.id]: { ...(prev[cat.id] ?? { ccCat: cat.cc_category || '', cashOnly: !!cat.cash_only }), cashOnly: v } }))}
-                      onSave={() => saveCatMapping(cat.id, getCatCcCat(cat), getCatCashOnly(cat))}
+                      pinnedCardId={getCatPinnedCard(cat)}
+                      creditCards={cards}
+                      onCcCatChange={v => setCatEdits(prev => ({ ...prev, [cat.id]: { ...(prev[cat.id] ?? { ccCat: cat.cc_category || '', cashOnly: !!cat.cash_only, pinnedCardId: cat.pinned_card_id || null }), ccCat: v } }))}
+                      onCashOnlyChange={v => setCatEdits(prev => ({ ...prev, [cat.id]: { ...(prev[cat.id] ?? { ccCat: cat.cc_category || '', cashOnly: !!cat.cash_only, pinnedCardId: cat.pinned_card_id || null }), cashOnly: v } }))}
+                      onPinnedCardChange={v => setCatEdits(prev => ({ ...prev, [cat.id]: { ...(prev[cat.id] ?? { ccCat: cat.cc_category || '', cashOnly: !!cat.cash_only, pinnedCardId: cat.pinned_card_id || null }), pinnedCardId: v || null } }))}
+                      onSave={() => saveCatMapping(cat.id, getCatCcCat(cat), getCatCashOnly(cat), getCatPinnedCard(cat))}
                       saving={!!catMapSaving[cat.id]}
                       suggestion={suggestions[cat.id] ?? null}
                     />
@@ -1247,9 +1255,10 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
   )
 }
 
-function CatMappingRow({ cat, isLast, ccCat, cashOnly, onCcCatChange, onCashOnlyChange, onSave, saving, suggestion }) {
-  const dirty = ccCat !== (cat.cc_category || '') || cashOnly !== !!cat.cash_only
+function CatMappingRow({ cat, isLast, ccCat, cashOnly, pinnedCardId, creditCards, onCcCatChange, onCashOnlyChange, onPinnedCardChange, onSave, saving, suggestion }) {
+  const dirty = ccCat !== (cat.cc_category || '') || cashOnly !== !!cat.cash_only || pinnedCardId !== (cat.pinned_card_id || null)
   const showBadge = !!suggestion && !cat.cc_category && ccCat === suggestion
+  const selectStyle = { background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-1)', outline: 'none' }
 
   return (
     <tr style={{
@@ -1260,11 +1269,7 @@ function CatMappingRow({ cat, isLast, ccCat, cashOnly, onCcCatChange, onCashOnly
       <td style={{ padding: '8px 12px', color: 'var(--tx-3)' }}>{cat.group || '—'}</td>
       <td style={{ padding: '8px 12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <select
-            value={ccCat}
-            onChange={e => onCcCatChange(e.target.value)}
-            style={{ background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-1)', outline: 'none' }}
-          >
+          <select value={ccCat} onChange={e => onCcCatChange(e.target.value)} style={selectStyle}>
             <option value="">— unassigned (other) —</option>
             {CC_CATEGORIES.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
           </select>
@@ -1273,11 +1278,20 @@ function CatMappingRow({ cat, isLast, ccCat, cashOnly, onCcCatChange, onCashOnly
               fontFamily: "'DM Mono', monospace", fontSize: 8, padding: '1px 5px',
               borderRadius: 3, background: 'var(--accent-bg)', color: 'var(--accent)',
               border: '1px solid var(--accent-bd)', whiteSpace: 'nowrap',
-            }}>
-              AI ✦
-            </span>
+            }}>AI ✦</span>
           )}
         </div>
+      </td>
+      <td style={{ padding: '8px 12px' }}>
+        <select
+          value={pinnedCardId || ''}
+          onChange={e => onPinnedCardChange(e.target.value || null)}
+          style={{ ...selectStyle, color: pinnedCardId ? 'var(--accent)' : 'var(--tx-3)' }}
+          disabled={cashOnly}
+        >
+          <option value="">— auto (best rate) —</option>
+          {(creditCards ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
       </td>
       <td style={{ textAlign: 'center', padding: '8px 12px' }}>
         <input type="checkbox" checked={cashOnly} onChange={e => onCashOnlyChange(e.target.checked)} />
