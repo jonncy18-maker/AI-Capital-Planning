@@ -78,7 +78,9 @@ export function routeForecastToCards({
       const uncovered = spend - cardable
       if (uncovered > 0.005) pushCash(m, cat, uncovered, 'uncovered')
 
-      const best = bestCardForCategory(ccCat, cards, earnRateMap)
+      // Pinned card overrides earn-rate optimization for this category.
+      const pinnedCard = cat.pinned_card_id ? (cards ?? []).find(c => c.id === cat.pinned_card_id) : null
+      const best = pinnedCard ? { cardId: pinnedCard.id } : bestCardForCategory(ccCat, cards, earnRateMap)
       const optimizedSpend = cardable * optimizationFactor
       const defaultSpend = cardable * (1 - optimizationFactor)
       if (best) {
