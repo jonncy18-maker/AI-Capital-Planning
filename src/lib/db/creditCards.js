@@ -42,7 +42,10 @@ export async function getEarnRates(userId) {
 export async function upsertEarnRate(userId, cardId, ccCategory, earnRate) {
   const { data, error } = await supabase
     .from('credit_card_earn_rates')
-    .upsert({ card_id: cardId, user_id: userId, cc_category: ccCategory, earn_rate: earnRate })
+    .upsert(
+      { card_id: cardId, user_id: userId, cc_category: ccCategory, earn_rate: earnRate },
+      { onConflict: 'card_id,cc_category' }
+    )
     .select()
     .single()
   if (error) throw error

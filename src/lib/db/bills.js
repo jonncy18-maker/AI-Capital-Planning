@@ -100,7 +100,10 @@ export async function getBillAmountsRange(userId, startYear, endYear) {
 export async function upsertBillAmount(userId, billId, year, month, amount, notes = null) {
   const { data, error } = await supabase
     .from('bill_amounts')
-    .upsert({ bill_id: billId, user_id: userId, year, month, amount, notes })
+    .upsert(
+      { bill_id: billId, user_id: userId, year, month, amount, notes },
+      { onConflict: 'bill_id,year,month' }
+    )
     .select()
     .single()
   if (error) throw error
@@ -134,7 +137,10 @@ export async function getAccountBalances(userId, year, month) {
 export async function upsertAccountBalance(userId, accountId, year, month, periodHalf, balance) {
   const { data, error } = await supabase
     .from('account_balances')
-    .upsert({ account_id: accountId, user_id: userId, year, month, period_half: periodHalf, balance })
+    .upsert(
+      { account_id: accountId, user_id: userId, year, month, period_half: periodHalf, balance },
+      { onConflict: 'account_id,year,month,period_half' }
+    )
     .select()
     .single()
   if (error) throw error
