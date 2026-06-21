@@ -80,7 +80,8 @@ export default function TrendsTab({ userId, bills, payDay2, mobile }) {
       const currentMonth = now.getMonth() + 1
 
       const slots = []
-      for (let offset = -6; offset <= 3; offset++) {
+      const fwdMonths = Math.max(3, 12 - currentMonth)
+      for (let offset = -6; offset <= fwdMonths; offset++) {
         const raw = currentMonth + offset
         const year = currentYear + Math.floor((raw - 1) / 12)
         const month = ((raw - 1 + 120) % 12) + 1
