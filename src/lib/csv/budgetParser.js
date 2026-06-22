@@ -326,11 +326,10 @@ export async function parseBudgetWorkbook(arrayBuffer) {
     }
   }
 
-  // Propose a detail tab for each Non-Monthly category (exact or fuzzy). The
-  // confident matches also pre-fill `monthly12` and `lineItems`; callers may
-  // let the user review.
+  // Propose a detail tab for any category (any type) that has a matching tab.
+  // Non-Monthly categories go through the review step; Fixed/Flexible with a
+  // confident tab match get their line-level data auto-used without review.
   for (const row of best.rows) {
-    if (row.type !== 'Non-Monthly') continue
     const m = bestTabMatch(row.category, detailTabs)
     row.matchedTab = m.tab
     row.matchConfidence = m.confidence
