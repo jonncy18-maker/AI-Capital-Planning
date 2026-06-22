@@ -54,6 +54,28 @@ export async function saveBudgetForYear(userId, year, version = 'v1', items) {
   if (error) throw error
 }
 
+// Insert a single budget line item (e.g. adding a new line under a category from
+// the Forecast drill-down). Returns the inserted row with its category joined so
+// callers can fold it straight into their in-memory line-item list.
+export async function insertBudgetLineItem(userId, { year, version = 'v1', categoryId, month, amount, label }) {
+  const { data, error } = await supabase
+    .from('budget_line_items')
+    .insert({
+      user_id: userId,
+      budget_year: year,
+      budget_version: version,
+      category_id: categoryId,
+      month,
+      amount,
+      label: label ?? null,
+    })
+    .select('*, budget_categories(id, category, "group", type)')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 // Update a single line item's amount (for inline editing).
 export async function updateLineItemAmount(id, amount) {
   const { error } = await supabase
