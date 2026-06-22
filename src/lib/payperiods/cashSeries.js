@@ -7,7 +7,9 @@ import {
 } from '../db/bills.js'
 import { getBudgetLineItems } from '../db/budgetLineItems.js'
 import { getForecastOverrides } from '../db/forecastOverrides.js'
-import { getIncomeAmountsRange, resolveMonthlyInflow } from '../db/income.js'
+import { getIncomeActualsRange } from '../db/income.js'
+import { estimateNet } from '../db/taxBrackets.js'
+import { monthlyNetForecast } from './incomeForecast.js'
 import {
   routeForecastToCards, computeStatementForecast, projectedBillAmounts,
 } from '../cashflow/cashflowEngine.js'
@@ -137,31 +139,53 @@ export async function loadOutflowSeries({
   })
 }
 
-// Compute per-month inflow from income sources, using entered actuals where present
-// and the source's expected amount otherwise. Returns the slots array, each with:
-//   { inflowTotal, inflowIsActual, lines: [{ source, expected, actual, resolved }] }
-export async function loadInflowSeries({ userId, sources, now = new Date() }) {
+// Compute per-month cash inflow. Resolution per month:
+//   stored actual (pulled from transactions or manually adjusted)        →
+//   else, current + future months: net salary/bonus forecast from Settings →
+//   else (an elapsed past month that wasn't pulled): 0.
+// The current month is forecast, not history — it's still in progress, so pulling
+// partial month-to-date income would understate it.
+// Returns the slots array, each with { inflow, inflowIsActual, inflowKind }.
+//   inflowKind: 'actual' | 'forecast' | 'none'
+export async function loadInflowSeries({ userId, profile, now = new Date() }) {
   const { slots } = buildMonthSlots(now)
-
-  if (!sources || sources.length === 0) {
-    return slots.map(s => ({ ...s, inflowTotal: 0, inflowIsActual: false, lines: [] }))
-  }
-
   const startYear = slots[0].year
   const endYear = slots[slots.length - 1].year
-  const rawAmounts = await getIncomeAmountsRange(userId, startYear, endYear)
 
-  // actualIndex[year][month][income_source_id] = amount
+  // Stored actuals (pulled or manual), indexed by year→month.
+  const rawActuals = await getIncomeActualsRange(userId, startYear, endYear)
   const actualIndex = {}
-  for (const row of rawAmounts) {
+  for (const row of rawActuals) {
     if (!actualIndex[row.year]) actualIndex[row.year] = {}
-    if (!actualIndex[row.year][row.month]) actualIndex[row.year][row.month] = {}
-    actualIndex[row.year][row.month][row.income_source_id] = row.amount
+    actualIndex[row.year][row.month] = Number(row.amount)
+  }
+
+  // Settings-derived net forecast, per year the current+future window spans.
+  const forecastByYear = {}
+  if (Number(profile?.annual_income) > 0) {
+    const forecastYears = [...new Set(slots.filter(s => s.isFuture || s.isCurrent).map(s => s.year))]
+    const tp = profile.tax_profile || {}
+    await Promise.all(forecastYears.map(async year => {
+      const est = await estimateNet({
+        grossIncome: Number(profile.annual_income) || 0,
+        bonus: Number(profile.annual_bonus) || 0,
+        filingStatus: tp.filingStatus || 'single',
+        state: tp.state || null,
+        stateRateOverride: tp.stateRateOverride ?? null,
+        preTaxDeductions: (Number(tp.preTax401k) || 0) + (Number(tp.preTaxOther) || 0),
+        year,
+      }).catch(() => null)
+      forecastByYear[year] = monthlyNetForecast(profile, est)
+    }))
   }
 
   return slots.map(slot => {
-    const actualsMap = actualIndex[slot.year]?.[slot.month] ?? {}
-    const { total, lines, hasActual } = resolveMonthlyInflow(sources, actualsMap, slot.month)
-    return { ...slot, inflowTotal: total, inflowIsActual: hasActual, lines }
+    const stored = actualIndex[slot.year]?.[slot.month]
+    if (stored != null) return { ...slot, inflow: stored, inflowIsActual: true, inflowKind: 'actual' }
+    if (slot.isFuture || slot.isCurrent) {
+      const fc = forecastByYear[slot.year]?.[slot.month - 1] ?? 0
+      return { ...slot, inflow: fc, inflowIsActual: false, inflowKind: fc > 0 ? 'forecast' : 'none' }
+    }
+    return { ...slot, inflow: 0, inflowIsActual: false, inflowKind: 'none' }
   })
 }

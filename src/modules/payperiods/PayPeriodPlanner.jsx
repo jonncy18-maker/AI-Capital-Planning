@@ -2373,6 +2373,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
           bills={bills}
           payDay2={payDay2}
           mobile={mobile}
+          profile={profile}
           creditCards={creditCards}
           budgetCategories={budgetCategories}
           earnRateMap={earnRateMap}
