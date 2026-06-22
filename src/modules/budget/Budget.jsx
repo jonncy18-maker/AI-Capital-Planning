@@ -52,6 +52,7 @@ function GeneratePanel({ analysis, commitments, year, onSave, onCancel, saving }
         monthly: Math.round(cat.monthlyAvg),
         annual: Math.round(cat.annualTotal),
         histogram: cat.monthHistogram,
+        lineItems: cat.lineItems ?? null,
       }
     }
     return m
@@ -80,7 +81,12 @@ function GeneratePanel({ analysis, commitments, year, onSave, onCancel, saving }
   function handleSave() {
     const items = []
     for (const r of includedRows) {
-      if (r.type === 'Non-Monthly') {
+      if (r.type === 'Non-Monthly' && r.lineItems?.length) {
+        for (const li of r.lineItems) {
+          const amount = Math.round(li.amount)
+          if (amount > 0) items.push({ category_id: r.category_id, month: li.month, amount, label: li.label })
+        }
+      } else if (r.type === 'Non-Monthly') {
         const histTotal = r.histogram.reduce((a, b) => a + b, 0)
         for (let m = 0; m < 12; m++) {
           const share = histTotal > 0 ? r.histogram[m] / histTotal : 0
@@ -218,6 +224,12 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
     return m
   }, [detailTabs])
 
+  const linesByTab = useMemo(() => {
+    const m = new Map()
+    for (const t of detailTabs) m.set(t.name, t.lineItems ?? null)
+    return m
+  }, [detailTabs])
+
   const [sel, setSel] = useState(() => {
     const init = {}
     for (const r of nonMonthly) init[r.category] = r.matchedTab || ''
@@ -248,11 +260,13 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
 
   function confirm() {
     const map = new Map()
+    const lineMap = new Map()
     for (const r of nonMonthly) {
       const t = sel[r.category]
       map.set(r.category, t ? (monthsByTab.get(t) || null) : null)
+      lineMap.set(r.category, t ? (linesByTab.get(t) || null) : null)
     }
-    onConfirm(map)
+    onConfirm(map, lineMap)
   }
 
   function activeMonthsLabel(tab) {
@@ -343,7 +357,7 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
 // ── Schedule grid (annual drill-down) ────────────────────────────────────────
 
 function ScheduleGrid({ lineItems, commitments, year, mobile }) {
-  // Aggregate line items: category → [12 months]
+  // Aggregate by category; also keep individual labeled sub-lines for drill-down.
   const byCategory = {}
   for (const li of lineItems) {
     const name = li.budget_categories?.category || 'Uncategorized'
@@ -351,24 +365,26 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
     const type = li.budget_categories?.type || 'Flexible'
     const key = li.category_id || name
     if (!byCategory[key]) {
-      byCategory[key] = { name, group, type, months: Array(12).fill(0) }
+      byCategory[key] = { name, group, type, months: Array(12).fill(0), lines: [] }
     }
     const m = (li.month ?? 1) - 1
     byCategory[key].months[m] += Number(li.amount) || 0
+    if (li.label) {
+      byCategory[key].lines.push({ id: li.id, label: li.label, month: m, amount: Number(li.amount) || 0 })
+    }
   }
 
-  // Commitments as synthetic rows
+  // Commitments as synthetic rows (no sub-lines)
   for (const c of commitments) {
     const sched = commitmentYearSchedule(c, year)
     if (sched.some(v => v > 0)) {
       byCategory[`commitment_${c.id}`] = {
-        name: c.name, group: 'Commitments', type: 'Non-Monthly', months: sched, isCommitment: true,
+        name: c.name, group: 'Commitments', type: 'Non-Monthly', months: sched, lines: [], isCommitment: true,
       }
     }
   }
 
   const rows = Object.values(byCategory)
-  // group → rows
   const grouped = {}
   for (const r of rows) {
     if (!grouped[r.group]) grouped[r.group] = []
@@ -376,12 +392,19 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
   }
   const groupNames = Object.keys(grouped).sort()
 
-  // Buckets (groups) collapse for a clean overview; collapsed by default so the
-  // module opens as a summary the user expands into.
-  const [expanded, setExpanded] = useState(() => new Set())
-  const toggleGroup = g => setExpanded(prev => {
+  // Groups open by default (mirror forecast table behavior)
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
+  const toggleGroup = g => setCollapsedGroups(prev => {
     const next = new Set(prev)
     next.has(g) ? next.delete(g) : next.add(g)
+    return next
+  })
+
+  // Category drill-down: show individual labeled lines when expanded
+  const [expandedCats, setExpandedCats] = useState(() => new Set())
+  const toggleCat = key => setExpandedCats(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
     return next
   })
 
@@ -390,7 +413,6 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
   const grandTotal = monthTotals.reduce((a, b) => a + b, 0)
 
   if (mobile) {
-    // Mobile: per-month cards
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {MONTHS.map((mLabel, m) => (
@@ -412,21 +434,21 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
   }
 
   const curMonth = year === CUR_YEAR ? new Date().getMonth() : -1
-  const cellStyle = { textAlign: 'right', fontSize: 12, padding: '9px 12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
-  // Tint the current month's column so "where we are now" reads at a glance.
+  const cellStyle = { textAlign: 'right', fontSize: 12, padding: '8px 10px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
   const colBg = m => (m === curMonth ? 'var(--accent-bg)' : 'transparent')
-  const STICKY = 168 // first-column width
+  const STICKY = 168
+  const headTh = { position: 'sticky', top: 0, zIndex: 4, background: 'var(--bg-card)' }
 
   return (
-    <div style={{ overflowX: 'auto', border: '1px solid var(--bd)', borderRadius: 12, background: 'var(--bg-card)' }}>
+    <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 290px)', border: '1px solid var(--bd)', borderRadius: 12, background: 'var(--bg-card)' }}>
       <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 1040 }}>
         <thead>
           <tr>
-            <th style={{ textAlign: 'left', fontSize: 10, color: 'var(--tx-3)', padding: '12px 14px', letterSpacing: '0.06em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg-card)', borderBottom: '1px solid var(--bd)', minWidth: STICKY }}>Category</th>
+            <th style={{ ...headTh, textAlign: 'left', fontSize: 10, color: 'var(--tx-3)', padding: '10px 14px', letterSpacing: '0.06em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 5, borderBottom: '1px solid var(--bd)', minWidth: STICKY }}>Category</th>
             {MONTHS.map((m, mi) => (
-              <th key={m} style={{ ...cellStyle, color: mi === curMonth ? 'var(--accent)' : 'var(--tx-3)', fontWeight: 600, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', background: colBg(mi), borderBottom: '1px solid var(--bd)' }}>{m}</th>
+              <th key={m} style={{ ...cellStyle, ...headTh, color: mi === curMonth ? 'var(--accent)' : 'var(--tx-3)', fontWeight: 600, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', background: mi === curMonth ? 'var(--accent-bg)' : 'var(--bg-card)', borderBottom: '1px solid var(--bd)', padding: '10px 10px' }}>{m}</th>
             ))}
-            <th style={{ ...cellStyle, color: 'var(--tx-2)', fontWeight: 700, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', borderBottom: '1px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>Total</th>
+            <th style={{ ...cellStyle, ...headTh, color: 'var(--tx-2)', fontWeight: 700, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', borderBottom: '1px solid var(--bd)', borderLeft: '1px solid var(--bd-light)', padding: '10px 10px' }}>Total</th>
           </tr>
         </thead>
         <tbody>
@@ -435,29 +457,53 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
             const gTotals = Array(12).fill(0)
             for (const r of gRows) for (let m = 0; m < 12; m++) gTotals[m] += r.months[m]
             const gTotal = gTotals.reduce((a, b) => a + b, 0)
-            const isOpen = expanded.has(g)
+            const groupOpen = !collapsedGroups.has(g)
             return (
               <Fragment key={`group-${g}`}>
                 <tr style={{ background: 'var(--hover)', cursor: 'pointer' }} onClick={() => toggleGroup(g)}>
-                  <td style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx-2)', padding: '8px 14px', letterSpacing: '0.05em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)' }}>
-                    <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-3)', transition: 'transform .12s', transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                  <td style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--tx-2)', padding: '7px 14px', letterSpacing: '0.05em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)' }}>
+                    <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-3)', transition: 'transform .12s', transform: groupOpen ? 'rotate(90deg)' : 'none' }}>&#9658;</span>
                     {g}
                     <span style={{ marginLeft: 6, color: 'var(--tx-4)', fontWeight: 600 }}>({gRows.length})</span>
                   </td>
                   {gTotals.map((v, m) => <td key={m} style={{ ...cellStyle, color: 'var(--tx-3)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
                   <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(gTotal)}</td>
                 </tr>
-                {isOpen && gRows.map((r, ri) => {
+                {groupOpen && gRows.map((r, ri) => {
+                  const catKey = r.category_id || r.name
+                  const hasLines = r.lines.length > 0
+                  const catOpen = hasLines && expandedCats.has(catKey)
                   const rTotal = r.months.reduce((a, b) => a + b, 0)
+                  const sortedLines = hasLines ? [...r.lines].sort((a, b) => a.month - b.month || (a.label || '').localeCompare(b.label || '')) : []
                   return (
-                    <tr key={`${g}-${ri}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
-                      <td style={{ fontSize: 12.5, color: 'var(--tx-1)', padding: '9px 14px 9px 26px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap' }}>
-                        {r.name}
-                        {r.isCommitment && <span style={{ fontSize: 9, color: '#8B5CF6', marginLeft: 6 }}>◈</span>}
-                      </td>
-                      {r.months.map((v, m) => <td key={m} style={{ ...cellStyle, color: v > 0 ? 'var(--tx-1)' : 'var(--tx-4)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
-                      <td style={{ ...cellStyle, fontWeight: 600, color: 'var(--tx-1)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(rTotal)}</td>
-                    </tr>
+                    <Fragment key={`${g}-${ri}`}>
+                      <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
+                        <td
+                          onClick={() => hasLines && toggleCat(catKey)}
+                          style={{ textAlign: 'left', fontSize: 12.5, color: 'var(--tx-1)', padding: '8px 14px 8px 34px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap', cursor: hasLines ? 'pointer' : 'default' }}
+                        >
+                          <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-4)', transition: 'transform .12s', transform: catOpen ? 'rotate(90deg)' : 'none', opacity: hasLines ? 1 : 0 }}>&#9658;</span>
+                          {r.name}
+                          {r.isCommitment && <span style={{ fontSize: 9, color: '#8B5CF6', marginLeft: 6 }}>&#9672;</span>}
+                        </td>
+                        {r.months.map((v, m) => <td key={m} style={{ ...cellStyle, color: v > 0 ? 'var(--tx-1)' : 'var(--tx-4)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
+                        <td style={{ ...cellStyle, fontWeight: 600, color: 'var(--tx-1)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(rTotal)}</td>
+                      </tr>
+                      {catOpen && sortedLines.map((line, li) => (
+                        <tr key={`line-${li}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
+                          <td style={{ textAlign: 'left', fontSize: 12, color: 'var(--tx-2)', padding: '6px 14px 6px 54px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
+                            <span style={{ color: 'var(--tx-4)', marginRight: 6 }}>&#8618;</span>
+                            {line.label}
+                          </td>
+                          {Array.from({ length: 12 }, (_, m) => (
+                            <td key={m} style={{ ...cellStyle, background: colBg(m), fontSize: 11.5, padding: '5px 10px' }}>
+                              {m === line.month ? <span style={{ color: 'var(--tx-2)' }}>{fmt(line.amount)}</span> : ''}
+                            </td>
+                          ))}
+                          <td style={{ ...cellStyle, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)', fontSize: 11.5 }}>{fmt(line.amount)}</td>
+                        </tr>
+                      ))}
+                    </Fragment>
                   )
                 })}
               </Fragment>
@@ -775,14 +821,17 @@ export default function Budget({ userId, mobile }) {
   // Build the editable-preview analysis from parsed upload rows.
   // `chosenMonthsByCat` (optional) is the reviewed category → 12-month array map;
   // when absent we use each row's auto-matched detail, else an even spread.
-  function buildUploadAnalysis(rows, idByName, fileName, chosenMonthsByCat) {
+  function buildUploadAnalysis(rows, idByName, fileName, chosenMonthsByCat, chosenLinesByCat) {
     const categories = rows
       .map(r => {
         let detail = null
+        let lineItems = null
         if (chosenMonthsByCat && chosenMonthsByCat.has(r.category)) {
           detail = chosenMonthsByCat.get(r.category)
+          lineItems = chosenLinesByCat?.get(r.category) ?? null
         } else if (r.monthly12 && r.monthly12.length === 12) {
           detail = r.monthly12
+          lineItems = r.lineItems ?? null
         }
         const monthly = r.monthlyTarget ?? (r.annual != null ? r.annual / 12 : 0)
         const annual = detail ? detail.reduce((a, b) => a + b, 0) : (r.annual ?? monthly * 12)
@@ -794,6 +843,7 @@ export default function Budget({ userId, mobile }) {
           monthlyAvg: monthly,
           annualTotal: annual,
           monthHistogram: detail ?? Array(12).fill(annual / 12),
+          lineItems: lineItems ?? null,
         }
       })
       .filter(c => c.category_id && c.annualTotal >= 1)
@@ -842,9 +892,9 @@ export default function Budget({ userId, mobile }) {
     }
   }
 
-  function handleReviewConfirm(chosenMonthsByCat) {
+  function handleReviewConfirm(chosenMonthsByCat, chosenLinesByCat) {
     const { rows, idByName, fileName } = pendingUpload
-    const analysis = buildUploadAnalysis(rows, idByName, fileName, chosenMonthsByCat)
+    const analysis = buildUploadAnalysis(rows, idByName, fileName, chosenMonthsByCat, chosenLinesByCat)
     setReviewing(false)
     setPendingUpload(null)
     if (!analysis.categories.length) {
