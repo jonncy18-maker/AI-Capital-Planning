@@ -16,22 +16,19 @@ import {
 
 export const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-// The full-year month window: 6 months back through at least 3 months forward
-// (always out to December of the current year), centred on the real current month.
-// Each slot: { year, month, isFuture, isCurrent, label }.
+// The forecast period: the current calendar year, Jan–Dec (12 months), matching
+// the rest of the app's annual forecast (Dashboard / Forecast use the calendar
+// year). Elapsed months resolve to actuals, the current + future months to
+// forecast. Each slot: { year, month, isFuture, isCurrent, label }.
 export function buildMonthSlots(now = new Date()) {
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() + 1
   const slots = []
-  const fwdMonths = Math.max(3, 12 - currentMonth)
-  for (let offset = -6; offset <= fwdMonths; offset++) {
-    const raw = currentMonth + offset
-    const year = currentYear + Math.floor((raw - 1) / 12)
-    const month = ((raw - 1 + 120) % 12) + 1
+  for (let month = 1; month <= 12; month++) {
     slots.push({
-      year, month,
-      isFuture: year > currentYear || (year === currentYear && month > currentMonth),
-      isCurrent: year === currentYear && month === currentMonth,
+      year: currentYear, month,
+      isFuture: month > currentMonth,
+      isCurrent: month === currentMonth,
       label: MONTH_ABBR[month - 1],
     })
   }
