@@ -5,6 +5,7 @@ import { getScenarios, getAdjustments } from '../db/scenarios.js'
 import { getLatestWealthSnapshot } from '../db/wealthSnapshots.js'
 import { getBudgetLineItems, getBudgetYears } from '../db/budgetLineItems.js'
 import { getForecastOverrides } from '../db/forecastOverrides.js'
+import { getForecastLineItems } from '../db/forecastLineItems.js'
 import { getProfile } from '../db/profile.js'
 import { estimateNet } from '../db/taxBrackets.js'
 import { getAIPreferences } from '../db/aiPreferences.js'
@@ -53,9 +54,10 @@ export async function loadAIContext(userId) {
     }).catch(() => null)
   }
 
-  const [budgetLineItems, forecastOverrides, scenariosWithAdjs] = await Promise.all([
+  const [budgetLineItems, forecastOverrides, forecastLineItems, scenariosWithAdjs] = await Promise.all([
     getBudgetLineItems(userId, { year: thisYear }).catch(() => []),
     getForecastOverrides(userId, thisYear).catch(() => []),
+    getForecastLineItems(userId, thisYear).catch(() => []),
     // Load adjustments for all open scenarios (modeled + committed)
     Promise.all(
       scenarios.map(async s => {
@@ -79,6 +81,7 @@ export async function loadAIContext(userId) {
     scenarios: scenariosWithAdjs,
     budgetLineItems,
     forecastOverrides,
+    forecastLineItems,
     budgetYears,
     profile,
     incomeEstimate,
