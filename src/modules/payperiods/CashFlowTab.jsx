@@ -43,23 +43,34 @@ function LegendDot({ color, dashed, label }) {
   )
 }
 
-function StatCard({ label, value, sub, color, mobile }) {
+// A single card holding several related metrics in a row, with an optional footnote.
+function MetricCard({ title, metrics, footnote, mobile }) {
   return (
     <div style={{
       border: '1px solid var(--bd)', borderRadius: 11,
-      padding: mobile ? '12px 14px' : '16px 18px', background: 'var(--bg-card)',
+      padding: mobile ? '14px' : '16px 18px', background: 'var(--bg-card)',
     }}>
       <div style={{
         fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-3)',
-        letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8,
-      }}>{label}</div>
-      <div style={{
-        fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 20 : 24,
-        color: color || 'var(--tx-1)', lineHeight: 1,
-      }}>{value}</div>
-      {sub && (
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)', marginTop: 6 }}>
-          {sub}
+        letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12,
+      }}>{title}</div>
+      <div style={{ display: 'flex', gap: mobile ? 16 : 24, flexWrap: 'wrap' }}>
+        {metrics.map((m, i) => (
+          <div key={i} style={{ minWidth: 60 }}>
+            <div style={{
+              fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)',
+              letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5,
+            }}>{m.label}</div>
+            <div style={{
+              fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 19 : 23,
+              color: m.color || 'var(--tx-1)', lineHeight: 1,
+            }}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+      {footnote && (
+        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)', marginTop: 12, lineHeight: 1.5 }}>
+          {footnote}
         </div>
       )}
     </div>
@@ -225,10 +236,18 @@ export default function CashFlowTab({
   const max = Math.max(1, ...data.map(s => Math.max(s.inflow, s.outflow)))
   const chartH = mobile ? 150 : 200
 
-  const monthsN = data.length
-  const avgIn = monthsN ? data.reduce((s, m) => s + m.inflow, 0) / monthsN : 0
-  const avgOut = monthsN ? data.reduce((s, m) => s + m.outflow, 0) / monthsN : 0
-  const avgNet = avgIn - avgOut
+  // 12-month (calendar-year) figures — actuals for elapsed months, forecast for the rest.
+  const monthsN = data.length || 1
+  const totalIn = data.reduce((s, m) => s + m.inflow, 0)
+  const totalOut = data.reduce((s, m) => s + m.outflow, 0)
+  const avgIn = totalIn / monthsN
+  const avgOut = totalOut / monthsN
+  const annualNet = totalIn - totalOut
+  // Net margin = how much of inflow is left after outflow. Green at/above the
+  // dashboard's variance threshold, red below it (including a deficit).
+  const netPct = avgIn > 0 ? ((avgIn - avgOut) / avgIn) * 100 : (avgOut > 0 ? -100 : 0)
+  const threshold = Number(profile?.variance_threshold) || 10
+  const netColor = netPct >= threshold ? INFLOW_COLOR : WARN_COLOR
 
   const hasHistoryInflow = data.some(s => !s.isFuture && !s.isCurrent && s.inflow > 0)
   const hasForecast = Number(profile?.annual_income) > 0
@@ -352,11 +371,26 @@ export default function CashFlowTab({
         </div>
       </div>
 
-      {/* Summary stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 1fr', gap: 12, marginTop: 24 }}>
-        <StatCard label="Avg Inflow / mo" value={fmt(avgIn)} sub={`across ${monthsN} months`} color={INFLOW_COLOR} mobile={mobile} />
-        <StatCard label="Avg Outflow / mo" value={fmt(avgOut)} sub={`across ${monthsN} months`} color={OUTFLOW_COLOR} mobile={mobile} />
-        <StatCard label="Avg Net / mo" value={fmtSigned(avgNet)} sub={avgNet >= 0 ? 'surplus' : 'shortfall'} color={avgNet >= 0 ? INFLOW_COLOR : WARN_COLOR} mobile={mobile} />
+      {/* Summary stats — 12-month (calendar-year) basis */}
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.7fr 1fr', gap: 12, marginTop: 24 }}>
+        <MetricCard
+          title={`${data[0]?.year ?? ''} Average · per month`}
+          mobile={mobile}
+          metrics={[
+            { label: 'Inflow', value: fmt(avgIn), color: INFLOW_COLOR },
+            { label: 'Outflow', value: fmt(avgOut), color: OUTFLOW_COLOR },
+            { label: 'Net margin', value: (netPct >= 0 ? '+' : '') + netPct.toFixed(0) + '%', color: netColor },
+          ]}
+          footnote={`Net margin is green at or above your ${threshold}% variance threshold (Settings → Analysis), red below it.`}
+        />
+        <MetricCard
+          title="Projected annual net"
+          mobile={mobile}
+          metrics={[
+            { label: annualNet >= 0 ? 'Surplus' : 'Shortfall', value: fmtSigned(annualNet), color: annualNet >= 0 ? INFLOW_COLOR : WARN_COLOR },
+          ]}
+          footnote="Inflow − outflow across the full calendar year."
+        />
       </div>
 
       {/* Per-month override */}
