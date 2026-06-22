@@ -70,6 +70,7 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange, on
         {hover != null && (() => {
           const mo = data.months[hover]
           const planVal = mo.forecast ?? mo.budget
+          const isForecastPeriod = mo.actual == null
           const variance = mo.actual != null ? mo.actual - planVal : null
           const vpct = planVal > 0 && variance != null ? (variance / planVal) * 100 : null
           const hasForecastOverride = mo.hasOverride && mo.forecast !== mo.budget
@@ -84,29 +85,36 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange, on
                 fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em',
                 color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 8,
               }}>
-                {mo.label}{mo.isFuture ? ' · forecast' : ''}
+                {mo.label}{isForecastPeriod ? ' · forecast' : ''}
               </div>
-              {hasForecastOverride && (
-                <Row label="Budget (plan)" value={fmtMoney(mo.budget)} color="var(--tx-3)" />
-              )}
-              <Row label={hasForecastOverride ? 'Forecast (override)' : 'Budget'} value={fmtMoney(planVal)} color="var(--tx-1)" />
-              {mo.actual != null ? (
-                <Row
-                  label="Actual"
-                  value={
-                    <>
-                      {fmtMoney(mo.actual)}
-                      {vpct != null && (
-                        <span style={{ color: STATUS_COLOR[mo.status], marginLeft: 6 }}>
-                          {variance > 0 ? '▲' : '▼'}{Math.abs(Math.round(vpct))}%
-                        </span>
-                      )}
-                    </>
-                  }
-                  color={STATUS_COLOR[mo.status]}
-                />
+              {isForecastPeriod ? (
+                // Forecast months: show the budget baseline and the forecast
+                // (override-adjusted) value — not an empty "actual".
+                <>
+                  <Row label="Budget" value={fmtMoney(mo.budget)} color="var(--tx-3)" />
+                  <Row label="Forecast" value={fmtMoney(planVal)} color="var(--tx-1)" />
+                </>
               ) : (
-                <Row label="Actual" value="—" color="var(--tx-3)" />
+                <>
+                  {hasForecastOverride && (
+                    <Row label="Budget (plan)" value={fmtMoney(mo.budget)} color="var(--tx-3)" />
+                  )}
+                  <Row label={hasForecastOverride ? 'Forecast (override)' : 'Budget'} value={fmtMoney(planVal)} color="var(--tx-1)" />
+                  <Row
+                    label="Actual"
+                    value={
+                      <>
+                        {fmtMoney(mo.actual)}
+                        {vpct != null && (
+                          <span style={{ color: STATUS_COLOR[mo.status], marginLeft: 6 }}>
+                            {variance > 0 ? '▲' : '▼'}{Math.abs(Math.round(vpct))}%
+                          </span>
+                        )}
+                      </>
+                    }
+                    color={STATUS_COLOR[mo.status]}
+                  />
+                </>
               )}
             </div>
           )

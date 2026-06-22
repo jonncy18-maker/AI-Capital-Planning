@@ -138,7 +138,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
       case 'creditcards': return <CreditCards userId={user.id} mobile={mobile} />
       case 'scenarios':   return <Scenarios userId={user.id} mobile={mobile} reloadSignal={dataNonce} context={aiContext} onDataChange={() => { setDataNonce(n => n + 1); reloadAiContext() }} openScenarioId={openScenarioId} />
       case 'budget':      return <Budget userId={user.id} mobile={mobile} />
-      case 'forecast':    return <Forecast userId={user.id} mobile={mobile} />
+      case 'forecast':    return <Forecast userId={user.id} mobile={mobile} onDataChange={() => { setDataNonce(n => n + 1); reloadAiContext() }} />
       case 'commitments': return <Commitments userId={user.id} mobile={mobile} />
       case 'wealth':      return <Wealth userId={user.id} mobile={mobile} />
       case 'mapping':     return <Mapping userId={user.id} mobile={mobile} />
