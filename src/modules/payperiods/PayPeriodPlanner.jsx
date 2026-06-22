@@ -177,7 +177,10 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
             const isForecastLinked = bill.forecast_category_id != null
             const forecastAmount = forecastAmountsMap[bill.id] ?? null
             const hasManualOverride = amountsMap[bill.id] != null
-            const showForecastBadge = isForecastLinked && forecastAmount != null && !hasManualOverride
+            // Forecast-linked bills are forecast-driven (the resolver ignores any
+            // stale per-month entry), so always surface the FORECAST badge when a
+            // forecast value exists — matching how Rent and other linked bills read.
+            const showForecastBadge = isForecastLinked && forecastAmount != null
             const cardProjected = bill.credit_card_id != null && cardStatementMap[bill.id] != null
             const showProjectedBadge = cardProjected && !hasManualOverride && !showForecastBadge
             const amount = bill.resolvedAmount
@@ -993,17 +996,17 @@ function AccountParseReviewPanel({ selections, onToggle, onNameEdit, onPrimaryTo
 // ─── Main Module ──────────────────────────────────────────────────────────────
 
 const TABS = [
+  { id: 'cash-flow',   label: 'CASH FLOW' },
+  { id: 'trends',      label: 'TRENDS' },
   { id: 'schedule',    label: 'SCHEDULE' },
   { id: 'bills',       label: 'BILLS' },
   { id: 'accounts',    label: 'ACCOUNTS' },
-  { id: 'cash-flow',   label: 'CASH FLOW' },
-  { id: 'trends',      label: 'TRENDS' },
   { id: 'cc-schedule', label: 'CC SCHEDULE' },
 ]
 
 export default function PayPeriodPlanner({ userId, mobile }) {
   const now = new Date()
-  const [tab, setTab] = useState('schedule')
+  const [tab, setTab] = useState('cash-flow')
   const [navYear, setNavYear] = useState(now.getFullYear())
   const [navMonth, setNavMonth] = useState(now.getMonth() + 1)
 
