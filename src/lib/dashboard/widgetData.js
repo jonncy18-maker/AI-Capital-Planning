@@ -12,7 +12,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // best full-year estimate (actual-so-far + plan-for-the-rest) against budget.
 export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
   const lineItems = ctx?.budgetLineItems ?? []
-  const overrides = ctx?.forecastOverrides ?? []
+  const forecastLines = ctx?.forecastLineItems ?? []
   const year = ctx?.thisYear ?? new Date().getFullYear()
   const categories = ctx?.categories ?? []
   const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
@@ -27,33 +27,30 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
     if (li.category_id) catGroup[li.category_id] = li.budget_categories?.group || catGroup[li.category_id] || 'Uncategorized'
   }
 
-  // Budget by group by month, plus per-category month budget for override math.
+  // Budget by group by month.
   const budgetByGroupMonth = {}
-  const catMonthBudget = {}
   for (const li of lineItems) {
     const g = li.budget_categories?.group || 'Uncategorized'
     const m = (li.month ?? 1) - 1
     if (m < 0 || m > 11) continue
     if (!budgetByGroupMonth[g]) budgetByGroupMonth[g] = Array(12).fill(0)
     budgetByGroupMonth[g][m] += Number(li.amount || 0)
-    const catId = li.category_id
-    if (catId) {
-      if (!catMonthBudget[catId]) catMonthBudget[catId] = Array(12).fill(0)
-      catMonthBudget[catId][m] += Number(li.amount || 0)
-    }
   }
 
-  // Forecast = override ?? budget. Apply each override on top of its group/month.
+  // Forecast from the independent forecast lines, grouped by month; falls back to
+  // the budget when no forecast has been initialized for the year.
+  const forecastInitialized = forecastLines.length > 0
   const forecastByGroupMonth = {}
-  for (const g of Object.keys(budgetByGroupMonth)) forecastByGroupMonth[g] = [...budgetByGroupMonth[g]]
-  for (const ov of overrides) {
-    const catId = ov.category_id
-    const m = (ov.month ?? 1) - 1
-    if (m < 0 || m > 11 || !catId) continue
-    const g = ov.budget_categories?.group || catGroup[catId] || 'Uncategorized'
-    if (!forecastByGroupMonth[g]) forecastByGroupMonth[g] = Array(12).fill(0)
-    const budgetContrib = catMonthBudget[catId]?.[m] ?? 0
-    forecastByGroupMonth[g][m] = forecastByGroupMonth[g][m] - budgetContrib + Number(ov.amount || 0)
+  if (forecastInitialized) {
+    for (const fi of forecastLines) {
+      const m = (fi.month ?? 1) - 1
+      if (m < 0 || m > 11) continue
+      const g = fi.budget_categories?.group || catGroup[fi.category_id] || 'Uncategorized'
+      if (!forecastByGroupMonth[g]) forecastByGroupMonth[g] = Array(12).fill(0)
+      forecastByGroupMonth[g][m] += Number(fi.amount || 0)
+    }
+  } else {
+    for (const g of Object.keys(budgetByGroupMonth)) forecastByGroupMonth[g] = [...budgetByGroupMonth[g]]
   }
 
   // Actual expenses by group by month from the full-year transactions.
@@ -172,7 +169,7 @@ export function commitmentsSummary(ctx) {
 // re-apply the exclusion here against ctx.categories.
 export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   const lineItems = ctx?.budgetLineItems ?? []
-  const overrides = ctx?.forecastOverrides ?? []
+  const forecastLines = ctx?.forecastLineItems ?? []
   const year = ctx?.thisYear ?? new Date().getFullYear()
   const excluded = new Set(
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
@@ -184,29 +181,17 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     if (m >= 0 && m < 12) budget[m] += Number(li.amount || 0)
   }
 
-  // Forecast = override ?? budget per category per month.
-  // Re-aggregate from scratch: start with budget, then apply overrides.
-  // An override replaces the per-category contribution for that month.
-  // We build a category→month budget index so we can subtract the original
-  // budget contribution and add the override value.
-  const catMonthBudget = {}
-  for (const li of lineItems) {
-    const catId = li.category_id
-    const m = (li.month ?? 1) - 1
-    if (m < 0 || m >= 12 || !catId) continue
-    if (!catMonthBudget[catId]) catMonthBudget[catId] = Array(12).fill(0)
-    catMonthBudget[catId][m] += Number(li.amount || 0)
-  }
+  // Forecast is its own independent dataset (forecast_line_items), seeded from
+  // the budget. When a forecast exists for the year we sum its lines per month;
+  // otherwise we fall back to the budget so the chart still reads as a plan.
+  const forecastInitialized = forecastLines.length > 0
   const forecast = [...budget]
-  for (const ov of overrides) {
-    const catId = ov.category_id
-    const m = (ov.month ?? 1) - 1
-    if (m < 0 || m >= 12 || !catId) continue
-    const budgetContrib = catMonthBudget[catId]?.[m] ?? 0
-    forecast[m] = forecast[m] - budgetContrib + Number(ov.amount)
-    // update the contribution so further overrides for same cat accumulate correctly
-    if (!catMonthBudget[catId]) catMonthBudget[catId] = Array(12).fill(0)
-    catMonthBudget[catId][m] = Number(ov.amount)
+  if (forecastInitialized) {
+    for (let m = 0; m < 12; m++) forecast[m] = 0
+    for (const fi of forecastLines) {
+      const m = (fi.month ?? 1) - 1
+      if (m >= 0 && m < 12) forecast[m] += Number(fi.amount || 0)
+    }
   }
 
   const actual = Array(12).fill(0)
@@ -273,7 +258,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     currentMonth,
     months,
     hasBudget: lineItems.length > 0,
-    hasForecastOverrides: overrides.length > 0,
+    hasForecastOverrides: forecastInitialized,
     hasActuals: seen.some(Boolean),
     annualBudget: budget.reduce((a, b) => a + b, 0),
     annualForecast: forecast.reduce((a, b) => a + b, 0),
@@ -496,7 +481,7 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
 // Mirrors the logic of spendByGroupYear but scoped to one group and at category granularity.
 export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
   const lineItems = ctx?.budgetLineItems ?? []
-  const overrides = ctx?.forecastOverrides ?? []
+  const forecastLines = ctx?.forecastLineItems ?? []
   const year = ctx?.thisYear ?? new Date().getFullYear()
   const categories = ctx?.categories ?? []
   const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
@@ -523,21 +508,25 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
     budgetByCatMonth[catName][m] += Number(li.amount || 0)
   }
 
-  // Forecast = budget, overridden where a forecastOverride exists for that category+month
+  // Forecast from the independent forecast lines for this group; falls back to the
+  // budget when no forecast has been initialized for the year.
+  const forecastInitialized = forecastLines.length > 0
   const forecastByCatMonth = {}
-  for (const cat of Object.keys(budgetByCatMonth)) {
-    forecastByCatMonth[cat] = [...budgetByCatMonth[cat]]
-  }
-  for (const ov of overrides) {
-    const g = ov.budget_categories?.group || 'Uncategorized'
-    if (g !== groupName) continue
-    const catName = catIdToName[ov.category_id]
-    if (!catName || excluded.has(catName)) continue
-    const m = (ov.month ?? 1) - 1
-    if (m < 0 || m > 11) continue
-    if (!forecastByCatMonth[catName]) forecastByCatMonth[catName] = Array(12).fill(0)
-    const budgetContrib = budgetByCatMonth[catName]?.[m] ?? 0
-    forecastByCatMonth[catName][m] = forecastByCatMonth[catName][m] - budgetContrib + Number(ov.amount || 0)
+  if (forecastInitialized) {
+    for (const fi of forecastLines) {
+      const g = fi.budget_categories?.group || 'Uncategorized'
+      if (g !== groupName) continue
+      const catName = catIdToName[fi.category_id]
+      if (!catName || excluded.has(catName)) continue
+      const m = (fi.month ?? 1) - 1
+      if (m < 0 || m > 11) continue
+      if (!forecastByCatMonth[catName]) forecastByCatMonth[catName] = Array(12).fill(0)
+      forecastByCatMonth[catName][m] += Number(fi.amount || 0)
+    }
+  } else {
+    for (const cat of Object.keys(budgetByCatMonth)) {
+      forecastByCatMonth[cat] = [...budgetByCatMonth[cat]]
+    }
   }
 
   // Actual expenses by category from transactions

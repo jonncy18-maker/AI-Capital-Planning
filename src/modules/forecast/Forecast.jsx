@@ -1,8 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
-import { getBudgetLineItems, getBudgetYears, insertBudgetLineItem, deleteLineItem } from '../../lib/db/budgetLineItems.js'
-import { getForecastOverrides, upsertForecastOverride, deleteForecastOverride } from '../../lib/db/forecastOverrides.js'
+import { getBudgetLineItems, getBudgetYears } from '../../lib/db/budgetLineItems.js'
+import {
+  getForecastLineItems,
+  insertForecastLineItem,
+  updateForecastLineItem,
+  deleteForecastLineItem,
+  seedForecastFromBudget,
+  resetForecastToBudget,
+} from '../../lib/db/forecastLineItems.js'
 import { getTransactionsForYear } from '../../lib/db/transactions.js'
-import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { getScenarios, getAdjustments } from '../../lib/db/scenarios.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
@@ -40,10 +46,12 @@ function lineInput(w) {
 }
 
 // ── Inline cell editor ───────────────────────────────────────────────────────
+// Edits the forecast value for a single category/month. The forecast is its own
+// dataset (independent of the budget); the budget figure is shown only as a
+// reference. Saving updates that month's single forecast line (or creates one).
 
-function CellEditor({ value, note, budgetValue, onSave, onReset, onCancel, hasOverride }) {
-  const [val, setVal] = useState(String(Math.round(value ?? budgetValue ?? 0)))
-  const [noteVal, setNoteVal] = useState(note ?? '')
+function CellEditor({ value, budgetValue, onSave, onCancel }) {
+  const [val, setVal] = useState(String(Math.round(value ?? 0)))
   const inputRef = useRef(null)
 
   useEffect(() => { inputRef.current?.focus(); inputRef.current?.select() }, [])
@@ -52,10 +60,8 @@ function CellEditor({ value, note, budgetValue, onSave, onReset, onCancel, hasOv
     if (e.key === 'Enter') handleSave()
     if (e.key === 'Escape') onCancel()
   }
-
   function handleSave() {
-    const n = parseFloat(val.replace(/[^0-9.]/g, '')) || 0
-    onSave(n, noteVal.trim() || null)
+    onSave(parseFloat(val.replace(/[^0-9.]/g, '')) || 0)
   }
 
   return (
@@ -66,14 +72,14 @@ function CellEditor({ value, note, budgetValue, onSave, onReset, onCancel, hasOv
       top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
     }}>
       <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 8, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-        Override forecast
+        Edit forecast
       </div>
       {budgetValue != null && (
         <div style={{ fontSize: 11.5, color: 'var(--tx-3)', marginBottom: 8 }}>
-          Budget baseline: <strong style={{ color: 'var(--tx-2)' }}>{fmtFull(budgetValue)}</strong>
+          Budget (reference): <strong style={{ color: 'var(--tx-2)' }}>{fmtFull(budgetValue)}</strong>
         </div>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
         <span style={{ fontSize: 13, color: 'var(--tx-2)' }}>$</span>
         <input
           ref={inputRef}
@@ -87,54 +93,78 @@ function CellEditor({ value, note, budgetValue, onSave, onReset, onCancel, hasOv
           }}
         />
       </div>
-      <input
-        placeholder="Note (optional)"
-        value={noteVal}
-        onChange={e => setNoteVal(e.target.value)}
-        onKeyDown={handleKeyDown}
-        style={{
-          width: '100%', background: 'var(--field)', border: '1px solid var(--bd)',
-          borderRadius: 6, padding: '5px 10px', color: 'var(--tx-2)', fontSize: 12,
-          outline: 'none', marginBottom: 12, boxSizing: 'border-box',
-        }}
-      />
       <div style={{ display: 'flex', gap: 6 }}>
-        <button onClick={handleSave} style={{ ...primaryBtn, flex: 1, padding: '7px 0' }}>
-          Save
-        </button>
-        <button onClick={onCancel} style={{ ...ghostBtn, padding: '7px 12px' }}>
-          ✕
-        </button>
-        {hasOverride && (
-          <button onClick={onReset} title="Reset to budget" style={{ ...ghostBtn, padding: '7px 12px', color: 'var(--warn)' }}>
-            ↺
-          </button>
-        )}
+        <button onClick={handleSave} style={{ ...primaryBtn, flex: 1, padding: '7px 0' }}>Save</button>
+        <button onClick={onCancel} style={{ ...ghostBtn, padding: '7px 12px' }}>✕</button>
       </div>
     </div>
   )
 }
 
 // Resolve the display value for a single cell based on the active layer.
-function getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap) {
-  const key = `${r.catId}::${m + 1}`
-  const budgetV = r.budget[m] ?? 0
-  if (layer === 'budget') return budgetV
-  const forecastV = overrideMap[key] ?? budgetV
-  if (layer === 'forecast') return forecastV
-  return forecastV + (scenarioDeltaMap?.[key] ?? 0)
+function getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady) {
+  if (layer === 'budget') return r.budget[m] ?? 0
+  const base = forecastReady ? (r.forecast[m] ?? 0) : (r.budget[m] ?? 0)
+  if (layer === 'forecast') return base
+  return base + (scenarioDeltaMap?.[`${r.catId}::${m + 1}`] ?? 0)
 }
 
-// ── Category drill-down (line items) ─────────────────────────────────────────
-// Rendered as a set of <tr>s beneath an expanded category row. Shows each budget
-// line item that rolls up into the category, plus an inline "add line" form.
-// Adding a line writes a budget_line_item, which automatically re-totals into the
-// category and its parent bucket.
+// ── Single forecast line (inline-editable amount) ────────────────────────────
 
-function CategoryLineItems({ row, cellStyle, colBg, curMonth, onAddLine, onDeleteLine }) {
+function ForecastLineRow({ line, cellStyle, colBg, editable, onUpdate, onDelete }) {
+  const [val, setVal] = useState(String(Math.round(line.amount)))
+
+  function commit() {
+    const n = parseFloat(String(val).replace(/[^0-9.]/g, '')) || 0
+    if (n !== line.amount) onUpdate(line.id, n)
+  }
+
+  return (
+    <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
+      <td style={{ textAlign: 'left', fontSize: 12, color: 'var(--tx-2)', padding: '6px 14px 6px 54px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
+        <span style={{ color: 'var(--tx-4)', marginRight: 6 }}>↳</span>
+        {line.label || 'Untitled line'}
+        {editable && (
+          <button
+            onClick={() => onDelete(line.id)}
+            title="Remove this line"
+            style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--tx-4)', cursor: 'pointer', fontSize: 11, padding: 0 }}
+          >
+            ✕
+          </button>
+        )}
+      </td>
+      {Array.from({ length: 12 }, (_, m) => {
+        const here = m === line.month - 1
+        return (
+          <td key={m} style={{ ...cellStyle, background: colBg(m), fontSize: 11.5, padding: '5px 8px' }}>
+            {here && editable ? (
+              <input
+                value={val}
+                onChange={e => setVal(e.target.value)}
+                onBlur={commit}
+                onKeyDown={e => { if (e.key === 'Enter') { commit(); e.currentTarget.blur() } }}
+                style={{ width: 54, textAlign: 'right', background: 'var(--field)', border: '1px solid var(--bd)', borderRadius: 5, padding: '3px 5px', color: 'var(--tx-1)', fontSize: 11.5, outline: 'none', fontVariantNumeric: 'tabular-nums' }}
+              />
+            ) : here ? (
+              <span style={{ color: 'var(--tx-2)' }}>{fmt(line.amount)}</span>
+            ) : ''}
+          </td>
+        )
+      })}
+      <td style={{ ...cellStyle, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)', fontSize: 11.5 }}>{fmt(line.amount)}</td>
+    </tr>
+  )
+}
+
+// ── Category drill-down (forecast line items) ────────────────────────────────
+// The discrete forecast lines that roll up into a category. Adding, editing, or
+// removing a line only touches the forecast — never the budget.
+
+function CategoryLineItems({ row, cellStyle, colBg, editable, onAddLine, onUpdateLine, onDeleteLine }) {
   const [adding, setAdding] = useState(false)
   const [label, setLabel] = useState('')
-  const [month, setMonth] = useState(String((curMonth >= 0 ? curMonth : 0) + 1))
+  const [month, setMonth] = useState(String((CUR_MONTH >= 0 ? CUR_MONTH : 0) + 1))
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -158,73 +188,73 @@ function CategoryLineItems({ row, cellStyle, colBg, curMonth, onAddLine, onDelet
   return (
     <>
       {items.map(it => (
-        <tr key={`li-${it.id}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
-          <td style={{ textAlign: 'left', fontSize: 12, color: 'var(--tx-2)', padding: '6px 14px 6px 54px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
-            <span style={{ color: 'var(--tx-4)', marginRight: 6 }}>↳</span>
-            {it.label || 'Untitled line'}
-            <button
-              onClick={() => onDeleteLine(it.id)}
-              title="Remove this line"
-              style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--tx-4)', cursor: 'pointer', fontSize: 11, padding: 0 }}
-            >
-              ✕
-            </button>
-          </td>
-          {Array.from({ length: 12 }, (_, m) => (
-            <td key={m} style={{ ...cellStyle, color: m === it.month - 1 ? 'var(--tx-2)' : 'var(--tx-4)', background: colBg(m), fontSize: 11.5, padding: '6px 10px' }}>
-              {m === it.month - 1 ? fmt(it.amount) : ''}
-            </td>
-          ))}
-          <td style={{ ...cellStyle, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)', fontSize: 11.5 }}>{fmt(it.amount)}</td>
-        </tr>
+        <ForecastLineRow
+          key={`li-${it.id}`}
+          line={it}
+          cellStyle={cellStyle}
+          colBg={colBg}
+          editable={editable}
+          onUpdate={onUpdateLine}
+          onDelete={onDeleteLine}
+        />
       ))}
-      <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
-        <td colSpan={14} style={{ textAlign: 'left', padding: '7px 14px 9px 54px', background: 'var(--bg-app)' }}>
-          {adding ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <input
-                autoFocus
-                placeholder="Line name (e.g. Flight to NYC)"
-                value={label}
-                onChange={e => setLabel(e.target.value)}
-                style={lineInput(190)}
-              />
-              <select value={month} onChange={e => setMonth(e.target.value)} style={lineSelect}>
-                {MONTHS.map((mL, i) => <option key={i} value={i + 1}>{mL}</option>)}
-              </select>
-              <span style={{ fontSize: 12, color: 'var(--tx-3)' }}>$</span>
-              <input
-                placeholder="0"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false) }}
-                style={lineInput(80)}
-              />
-              <button onClick={submit} disabled={busy} style={{ ...primaryBtn, padding: '6px 14px', opacity: busy ? 0.6 : 1 }}>
-                {busy ? 'Adding…' : 'Add'}
+      {!items.length && (
+        <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
+          <td colSpan={14} style={{ textAlign: 'left', padding: '6px 14px 6px 54px', background: 'var(--bg-app)', fontSize: 11.5, color: 'var(--tx-4)' }}>
+            No forecast lines for {row.name} yet.
+          </td>
+        </tr>
+      )}
+      {editable && (
+        <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
+          <td colSpan={14} style={{ textAlign: 'left', padding: '7px 14px 9px 54px', background: 'var(--bg-app)' }}>
+            {adding ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <input
+                  autoFocus
+                  placeholder="Line name (e.g. Flight to NYC)"
+                  value={label}
+                  onChange={e => setLabel(e.target.value)}
+                  style={lineInput(190)}
+                />
+                <select value={month} onChange={e => setMonth(e.target.value)} style={lineSelect}>
+                  {MONTHS.map((mL, i) => <option key={i} value={i + 1}>{mL}</option>)}
+                </select>
+                <span style={{ fontSize: 12, color: 'var(--tx-3)' }}>$</span>
+                <input
+                  placeholder="0"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false) }}
+                  style={lineInput(80)}
+                />
+                <button onClick={submit} disabled={busy} style={{ ...primaryBtn, padding: '6px 14px', opacity: busy ? 0.6 : 1 }}>
+                  {busy ? 'Adding…' : 'Add'}
+                </button>
+                <button onClick={() => { setAdding(false); setLabel(''); setAmount('') }} style={{ ...ghostBtn, padding: '6px 11px' }}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAdding(true)}
+                style={{ background: 'none', border: '1px dashed var(--bd)', borderRadius: 6, color: 'var(--tx-2)', cursor: 'pointer', fontSize: 12, padding: '5px 12px' }}
+              >
+                + Add forecast line to {row.name}
               </button>
-              <button onClick={() => { setAdding(false); setLabel(''); setAmount('') }} style={{ ...ghostBtn, padding: '6px 11px' }}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setAdding(true)}
-              style={{ background: 'none', border: '1px dashed var(--bd)', borderRadius: 6, color: 'var(--tx-2)', cursor: 'pointer', fontSize: 12, padding: '5px 12px' }}
-            >
-              + Add line to {row.name}
-            </button>
-          )}
-        </td>
-      </tr>
+            )}
+          </td>
+        </tr>
+      )}
     </>
   )
 }
 
 // ── Forecast grid ────────────────────────────────────────────────────────────
 
-function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year, mobile, layer, onEdit, onReset, saving, editKey, collapsedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onDeleteLine }) {
+function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, layer, forecastReady, onEdit, saving, editKey, collapsedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onUpdateLine, onDeleteLine }) {
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1 // highlight current month
+  const canEditForecast = layer === 'forecast' && forecastReady
 
   // Group rows
   const grouped = {}
@@ -240,7 +270,7 @@ function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year,
   const actualTotals = Array(12).fill(0)
   for (const r of catRows) {
     for (let m = 0; m < 12; m++) {
-      forecastTotals[m] += getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)
+      forecastTotals[m] += getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady)
       actualTotals[m] += actualMap[r.name]?.[m] ?? 0
     }
   }
@@ -269,22 +299,12 @@ function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year,
                   )}
                 </div>
               </div>
-              {catRows.filter(r => getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap) > 0).map((r, i) => {
-                const key = `${r.catId}::${m + 1}`
-                const displayV = getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)
-                const hasOv = layer !== 'budget' && overrideMap[key] != null
-                const hasDelta = layer === 'scenarios' && (scenarioDeltaMap?.[key] ?? 0) !== 0
-                return (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '3px 0', color: 'var(--tx-2)' }}>
-                    <span>
-                      {r.name}
-                      {hasOv && <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 4 }}>●</span>}
-                      {hasDelta && <span style={{ fontSize: 9, color: 'rgba(168,100,255,0.9)', marginLeft: 2 }}>◆</span>}
-                    </span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtFull(displayV)}</span>
-                  </div>
-                )
-              })}
+              {catRows.filter(r => getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady) > 0).map((r, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '3px 0', color: 'var(--tx-2)' }}>
+                  <span>{r.name}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtFull(getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady))}</span>
+                </div>
+              ))}
             </div>
           )
         })}
@@ -334,7 +354,7 @@ function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year,
             const gForecast = Array(12).fill(0)
             for (const r of gRows) {
               for (let m = 0; m < 12; m++) {
-                gForecast[m] += getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)
+                gForecast[m] += getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady)
               }
             }
             const gTotal = gForecast.reduce((a, b) => a + b, 0)
@@ -351,29 +371,29 @@ function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year,
                   <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(gTotal)}</td>
                 </tr>
                 {groupOpen && gRows.map((r, ri) => {
-                  const rTotal = Array.from({ length: 12 }, (_, m) => getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)).reduce((a, b) => a + b, 0)
-                  const catOpen = expandedCats.has(r.catId)
+                  const rTotal = Array.from({ length: 12 }, (_, m) => getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady)).reduce((a, b) => a + b, 0)
+                  const drillable = layer === 'forecast'
+                  const catOpen = drillable && expandedCats.has(r.catId)
                   return (
                     <Fragment key={`${g}-${ri}`}>
                     <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
                       <td
-                        onClick={() => onToggleCat(r.catId)}
-                        title="Show line items"
-                        style={{ textAlign: 'left', fontSize: 12.5, color: 'var(--tx-1)', padding: '8px 14px 8px 34px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                        onClick={() => drillable && onToggleCat(r.catId)}
+                        title={drillable ? 'Show forecast lines' : undefined}
+                        style={{ textAlign: 'left', fontSize: 12.5, color: 'var(--tx-1)', padding: '8px 14px 8px 34px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap', cursor: drillable ? 'pointer' : 'default' }}
                       >
-                        <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-4)', transition: 'transform .12s', transform: catOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                        <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-4)', transition: 'transform .12s', transform: catOpen ? 'rotate(90deg)' : 'none', opacity: drillable ? 1 : 0 }}>▸</span>
                         {r.name}
                       </td>
                       {Array.from({ length: 12 }, (_, m) => {
-                        const key = `${r.catId}::${m + 1}`
-                        const hasOv = layer !== 'budget' && overrideMap[key] != null
-                        const hasDelta = layer === 'scenarios' && (scenarioDeltaMap?.[key] ?? 0) !== 0
-                        const displayV = getCellDisplayValue(r, m, layer, overrideMap, scenarioDeltaMap)
+                        const displayV = getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady)
                         const isPast = curMonth >= 0 ? m < curMonth : false
+                        const key = `${r.catId}::${m + 1}`
                         const isEditing = editKey === key && saving !== true
-                        const canEdit = layer === 'forecast' && !isPast
-                        const bg = hasOv ? 'var(--accent-bg)' : hasDelta ? 'rgba(168,100,255,0.08)' : colBg(m)
-                        const col = hasOv ? 'var(--accent)' : hasDelta ? 'var(--tx-1)' : displayV > 0 ? 'var(--tx-1)' : 'var(--tx-4)'
+                        const canEdit = canEditForecast && !isPast
+                        const hasDelta = layer === 'scenarios' && (scenarioDeltaMap?.[key] ?? 0) !== 0
+                        const bg = hasDelta ? 'rgba(168,100,255,0.08)' : colBg(m)
+                        const col = hasDelta ? 'var(--tx-1)' : displayV > 0 ? 'var(--tx-1)' : 'var(--tx-4)'
                         return (
                           <td
                             key={m}
@@ -388,7 +408,6 @@ function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year,
                             onClick={() => canEdit && !isEditing && onEdit(r, m + 1)}
                           >
                             {displayV > 0 ? fmt(displayV) : '·'}
-                            {hasOv && <span style={{ fontSize: 7, verticalAlign: 'super', color: 'var(--accent)', marginLeft: 1 }}>●</span>}
                             {hasDelta && <span style={{ fontSize: 7, verticalAlign: 'super', color: 'rgba(168,100,255,0.9)', marginLeft: 1 }}>◆</span>}
                           </td>
                         )
@@ -400,8 +419,9 @@ function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year,
                         row={r}
                         cellStyle={cellStyle}
                         colBg={colBg}
-                        curMonth={curMonth}
+                        editable={canEditForecast}
                         onAddLine={onAddLine}
+                        onUpdateLine={onUpdateLine}
                         onDeleteLine={onDeleteLine}
                       />
                     )}
@@ -432,19 +452,19 @@ export default function Forecast({ userId, mobile, onDataChange }) {
   const [year, setYear] = useState(CUR_YEAR)
   const [years, setYears] = useState([])
   const [budgetItems, setBudgetItems] = useState([])
-  const [overrides, setOverrides] = useState([])
+  const [forecastItems, setForecastItems] = useState([])
+  const [forecastReady, setForecastReady] = useState(false) // forecast initialized for this year
   const [yearTxns, setYearTxns] = useState([])
   const [committedScenarios, setCommittedScenarios] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [busy, setBusy] = useState(false) // initialize / reset in flight
   const [layer, setLayer] = useState('forecast') // 'budget' | 'forecast' | 'scenarios'
 
-  // Editing state: { catId, catName, month, budgetValue, currentValue, currentNote }
+  // Editing state: { catId, month, budgetValue, currentValue, lineId, key }
   const [editCell, setEditCell] = useState(null)
 
-  // Bucket collapse + category drill-down state. Buckets start expanded so the
-  // grid opens as today; the Expand/Collapse-all toggle flips every bucket at once.
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
   const [expandedCats, setExpandedCats] = useState(() => new Set())
 
@@ -452,18 +472,18 @@ export default function Forecast({ userId, mobile, onDataChange }) {
     setLoading(true)
     setError(null)
     try {
-      const [items, ovs, txns, budgetYears, allScenarios] = await Promise.all([
+      const [items, fItems, txns, budgetYears, allScenarios] = await Promise.all([
         getBudgetLineItems(userId, { year: yr }),
-        getForecastOverrides(userId, yr),
+        getForecastLineItems(userId, yr),
         getTransactionsForYear(userId, yr),
         getBudgetYears(userId),
         getScenarios(userId).catch(() => []),
       ])
       setBudgetItems(items)
-      setOverrides(ovs)
+      setForecastItems(fItems)
+      setForecastReady(fItems.length > 0)
       setYearTxns(txns)
       setYears(budgetYears)
-      // Load adjustments for committed scenarios only
       const committed = allScenarios.filter(s => s.state === 'committed')
       const commWithAdjs = await Promise.all(
         committed.map(async s => {
@@ -481,46 +501,41 @@ export default function Forecast({ userId, mobile, onDataChange }) {
 
   useEffect(() => { loadData(year) }, [year, loadData])
 
-  // Build category rows: catId → { catId, name, group, type, budget[12] }
+  // Build category rows merging budget (baseline/reference) and forecast (live).
+  // catId → { catId, name, group, type, budget[12], forecast[12], items[] (forecast lines) }
   const catRows = useMemo(() => {
     const byId = {}
-    for (const li of budgetItems) {
-      const id = li.category_id
-      if (!id) continue
+    const ensure = (id, cats) => {
       if (!byId[id]) {
         byId[id] = {
           catId: id,
-          name: li.budget_categories?.category || 'Uncategorized',
-          group: li.budget_categories?.group || '—',
-          type: li.budget_categories?.type || 'Flexible',
+          name: cats?.category || 'Uncategorized',
+          group: cats?.group || '—',
+          type: cats?.type || 'Flexible',
           budget: Array(12).fill(0),
+          forecast: Array(12).fill(0),
           items: [],
         }
+      } else if (cats?.category && byId[id].name === 'Uncategorized') {
+        byId[id].name = cats.category
+        byId[id].group = cats.group || byId[id].group
       }
+    }
+    for (const li of budgetItems) {
+      if (!li.category_id) continue
+      ensure(li.category_id, li.budget_categories)
       const m = (li.month ?? 1) - 1
-      byId[id].budget[m] += Number(li.amount) || 0
-      byId[id].items.push({ id: li.id, label: li.label, month: li.month ?? 1, amount: Number(li.amount) || 0 })
+      if (m >= 0 && m < 12) byId[li.category_id].budget[m] += Number(li.amount) || 0
+    }
+    for (const fi of forecastItems) {
+      if (!fi.category_id) continue
+      ensure(fi.category_id, fi.budget_categories)
+      const m = (fi.month ?? 1) - 1
+      if (m >= 0 && m < 12) byId[fi.category_id].forecast[m] += Number(fi.amount) || 0
+      byId[fi.category_id].items.push({ id: fi.id, label: fi.label, month: fi.month ?? 1, amount: Number(fi.amount) || 0 })
     }
     return Object.values(byId).sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name))
-  }, [budgetItems])
-
-  // Override map: "catId::month" → amount (1-indexed month)
-  const overrideMap = useMemo(() => {
-    const m = {}
-    for (const ov of overrides) {
-      if (ov.category_id && ov.month) m[`${ov.category_id}::${ov.month}`] = Number(ov.amount)
-    }
-    return m
-  }, [overrides])
-
-  // Override notes: "catId::month" → note
-  const overrideNoteMap = useMemo(() => {
-    const m = {}
-    for (const ov of overrides) {
-      if (ov.category_id && ov.month) m[`${ov.category_id}::${ov.month}`] = ov.note ?? null
-    }
-    return m
-  }, [overrides])
+  }, [budgetItems, forecastItems])
 
   // Actuals: category name → [12 months of spend]
   const actualMap = useMemo(() => {
@@ -550,22 +565,20 @@ export default function Forecast({ userId, mobile, onDataChange }) {
   }, [committedScenarios, year])
 
   // Summary stats
-  const { annualBudget, annualForecast, annualWithScenarios, overrideCount } = useMemo(() => {
-    let ab = 0, af = 0, aws = 0, oc = 0
+  const { annualBudget, annualForecast, annualWithScenarios } = useMemo(() => {
+    let ab = 0, af = 0, aws = 0
     for (const r of catRows) {
       for (let m = 0; m < 12; m++) {
-        const key = `${r.catId}::${m + 1}`
         const budgetV = r.budget[m] ?? 0
-        const forecastV = overrideMap[key] ?? budgetV
-        const delta = scenarioDeltaMap[key] ?? 0
+        const forecastV = forecastReady ? (r.forecast[m] ?? 0) : budgetV
+        const delta = scenarioDeltaMap[`${r.catId}::${m + 1}`] ?? 0
         ab += budgetV
         af += forecastV
         aws += forecastV + delta
-        if (overrideMap[key] != null) oc++
       }
     }
-    return { annualBudget: ab, annualForecast: af, annualWithScenarios: aws, overrideCount: oc }
-  }, [catRows, overrideMap, scenarioDeltaMap])
+    return { annualBudget: ab, annualForecast: af, annualWithScenarios: aws }
+  }, [catRows, scenarioDeltaMap, forecastReady])
 
   const yearOptions = useMemo(() => {
     const s = new Set([...years, CUR_YEAR, CUR_YEAR + 1])
@@ -596,58 +609,76 @@ export default function Forecast({ userId, mobile, onDataChange }) {
     })
   }
 
-  async function handleAddLine(catId, { label, month, amount }) {
-    const newItem = await insertBudgetLineItem(userId, { year, categoryId: catId, month, amount, label })
-    setBudgetItems(prev => [...prev, newItem])
-    onDataChange?.()
+  // Replace or insert a forecast line in local state by id.
+  function upsertForecastLocal(row) {
+    setForecastItems(prev => {
+      const i = prev.findIndex(x => x.id === row.id)
+      if (i >= 0) { const n = [...prev]; n[i] = row; return n }
+      return [...prev, row]
+    })
   }
-  async function handleDeleteLine(id) {
-    const prev = budgetItems
-    setBudgetItems(prev.filter(li => li.id !== id))
+
+  async function handleInitialize() {
+    setBusy(true)
+    setError(null)
     try {
-      await deleteLineItem(id)
+      const rows = await seedForecastFromBudget(userId, year)
+      setForecastItems(rows)
+      setForecastReady(true)
       onDataChange?.()
     } catch (e) {
-      setBudgetItems(prev) // revert on failure
       setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleResetToBudget() {
+    if (!window.confirm(`Reset the ${year} forecast to match your current budget? This replaces all forecast edits for ${year}.`)) return
+    setBusy(true)
+    setError(null)
+    try {
+      const rows = await resetForecastToBudget(userId, year)
+      setForecastItems(rows)
+      setForecastReady(true)
+      setEditCell(null)
+      onDataChange?.()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
     }
   }
 
   function handleEdit(row, month) {
-    const key = `${row.catId}::${month}`
+    const lines = row.items.filter(it => it.month === month)
+    // A cell with multiple discrete lines can't be edited as one value — open the
+    // drill-down so each line is edited individually.
+    if (lines.length > 1) {
+      setExpandedCats(prev => new Set(prev).add(row.catId))
+      return
+    }
     setEditCell({
       catId: row.catId,
-      catName: row.name,
       month,
       budgetValue: row.budget[month - 1] ?? 0,
-      currentValue: overrideMap[key] ?? row.budget[month - 1] ?? 0,
-      currentNote: overrideNoteMap[key] ?? null,
-      key,
+      currentValue: row.forecast[month - 1] ?? 0,
+      lineId: lines[0]?.id ?? null,
+      key: `${row.catId}::${month}`,
     })
   }
 
-  async function handleSave(amount, note) {
+  async function handleSaveCell(amount) {
     if (!editCell) return
     setSaving(true)
     try {
-      await upsertForecastOverride(userId, {
-        categoryId: editCell.catId,
-        year,
-        month: editCell.month,
-        amount,
-        note,
-      })
-      setOverrides(prev => {
-        const filtered = prev.filter(ov => !(ov.category_id === editCell.catId && ov.month === editCell.month))
-        return [...filtered, {
-          category_id: editCell.catId,
-          budget_year: year,
-          month: editCell.month,
-          amount,
-          note,
-          budget_categories: budgetItems.find(li => li.category_id === editCell.catId)?.budget_categories,
-        }]
-      })
+      let row
+      if (editCell.lineId) {
+        row = await updateForecastLineItem(editCell.lineId, { amount })
+      } else {
+        row = await insertForecastLineItem(userId, { year, categoryId: editCell.catId, month: editCell.month, amount })
+      }
+      upsertForecastLocal(row)
       setEditCell(null)
       onDataChange?.()
     } catch (e) {
@@ -657,23 +688,39 @@ export default function Forecast({ userId, mobile, onDataChange }) {
     }
   }
 
-  async function handleReset() {
-    if (!editCell) return
-    setSaving(true)
+  async function handleAddLine(catId, { label, month, amount }) {
+    const row = await insertForecastLineItem(userId, { year, categoryId: catId, month, amount, label })
+    upsertForecastLocal(row)
+    onDataChange?.()
+  }
+
+  async function handleUpdateLine(id, amount) {
+    const prev = forecastItems
+    setForecastItems(prev.map(li => li.id === id ? { ...li, amount } : li))
     try {
-      await deleteForecastOverride(userId, editCell.catId, year, editCell.month)
-      setOverrides(prev => prev.filter(ov => !(ov.category_id === editCell.catId && ov.month === editCell.month)))
-      setEditCell(null)
+      await updateForecastLineItem(id, { amount })
       onDataChange?.()
     } catch (e) {
+      setForecastItems(prev)
       setError(e.message)
-    } finally {
-      setSaving(false)
+    }
+  }
+
+  async function handleDeleteLine(id) {
+    const prev = forecastItems
+    setForecastItems(prev.filter(li => li.id !== id))
+    try {
+      await deleteForecastLineItem(id)
+      onDataChange?.()
+    } catch (e) {
+      setForecastItems(prev)
+      setError(e.message)
     }
   }
 
   const variance = annualForecast - annualBudget
   const pctVariance = annualBudget > 0 ? (variance / annualBudget) * 100 : null
+  const needsInit = !forecastReady && budgetItems.length > 0
 
   return (
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
@@ -681,7 +728,7 @@ export default function Forecast({ userId, mobile, onDataChange }) {
         mobile={mobile}
         icon="⬡"
         title="Forecast"
-        subtitle="Adjust category estimates month-by-month. Expand a bucket, click a category to see its line items, or click any future cell to override. Past months show actuals."
+        subtitle="An independent month-by-month forecast, seeded from your budget. Edits here never change the budget. Click a cell to edit, or a category to manage its forecast lines."
         actions={
           <>
             <select value={year} onChange={e => setYear(Number(e.target.value))} style={{
@@ -690,6 +737,11 @@ export default function Forecast({ userId, mobile, onDataChange }) {
             }}>
               {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
+            {forecastReady && !mobile && (
+              <button onClick={handleResetToBudget} disabled={busy} style={{ ...ghostBtn, opacity: busy ? 0.6 : 1 }} title="Replace this year's forecast with a fresh copy of the budget">
+                ↺ Reset to budget
+              </button>
+            )}
           </>
         }
       />
@@ -706,8 +758,8 @@ export default function Forecast({ userId, mobile, onDataChange }) {
             No budget for {year}
           </div>
           <div style={{ fontSize: 13.5, color: 'var(--tx-2)', lineHeight: 1.6, maxWidth: 400, margin: '0 auto' }}>
-            Build a budget first in the Budget module — the forecast starts from your budget baseline
-            and lets you override any category for any month.
+            Build a budget first in the Budget module — the forecast is seeded from your budget,
+            then becomes an independent plan you can adjust without touching the budget.
           </div>
         </div>
       ) : loading ? (
@@ -719,7 +771,7 @@ export default function Forecast({ userId, mobile, onDataChange }) {
             <div style={{ display: 'flex', gap: 0, border: '1px solid var(--bd)', borderRadius: 8, overflow: 'hidden', width: 'fit-content' }}>
               {[
                 { id: 'budget', label: 'Budget' },
-                { id: 'forecast', label: '+ Overrides' },
+                { id: 'forecast', label: 'Forecast' },
                 { id: 'scenarios', label: '+ Scenarios' },
               ].map(({ id, label }, i, arr) => (
                 <button
@@ -746,10 +798,30 @@ export default function Forecast({ userId, mobile, onDataChange }) {
             )}
           </div>
 
+          {/* Initialize banner — forecast not yet set up for this year */}
+          {needsInit && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', padding: '14px 16px', background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 10, marginBottom: 18 }}>
+              <div style={{ fontSize: 13, color: 'var(--tx-1)', lineHeight: 1.5 }}>
+                <strong>Set up your {year} forecast.</strong> It starts as a copy of your budget, then
+                becomes fully independent — editing it never changes the budget.
+                {layer !== 'budget' && <span style={{ color: 'var(--tx-3)' }}> Showing budget values until you initialize.</span>}
+              </div>
+              <button onClick={handleInitialize} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                {busy ? 'Setting up…' : 'Initialize from budget'}
+              </button>
+            </div>
+          )}
+
           {/* Summary strip */}
           <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
             <SummaryStat label={`${year} budget`} value={fmtFull(annualBudget)} />
-            <SummaryStat label={`${year} forecast`} value={fmtFull(annualForecast)} accent={layer !== 'budget'} />
+            <SummaryStat
+              label={`${year} forecast`}
+              value={fmtFull(annualForecast)}
+              accent={layer !== 'budget'}
+              note={forecastReady && pctVariance != null && Math.abs(pctVariance) >= 0.5 ? `${variance >= 0 ? '+' : ''}${Math.round(pctVariance)}% vs budget` : null}
+              noteColor={variance > 0 ? 'var(--warn)' : 'var(--accent)'}
+            />
             {layer === 'scenarios' && committedScenarios.length > 0 && (
               <SummaryStat
                 label="with scenarios"
@@ -766,27 +838,13 @@ export default function Forecast({ userId, mobile, onDataChange }) {
                 No committed scenarios — promote one in the Scenario Planner to layer it here.
               </div>
             )}
-            {layer !== 'scenarios' && overrideCount > 0 && (
-              <SummaryStat
-                label="overrides"
-                value={overrideCount.toString()}
-                note={pctVariance != null ? `${variance >= 0 ? '+' : ''}${Math.round(pctVariance)}% vs budget` : null}
-                noteColor={variance > 0 ? 'var(--warn)' : 'var(--accent)'}
-              />
-            )}
           </div>
 
           {/* Legend */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 11, color: 'var(--tx-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-            {layer === 'forecast' && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: 'var(--accent-bg)', border: '1px solid var(--accent)', opacity: 0.7 }} />
-                Override — click future cell to edit
-              </span>
-            )}
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, border: '1px solid var(--bd)', background: 'var(--bg-card)' }} />
-              {layer === 'budget' ? 'Budget baseline (read-only)' : 'Budget baseline'}
+              {layer === 'budget' ? 'Budget (read-only — edit in Budget module)' : layer === 'forecast' ? 'Forecast — click a cell to edit, a category to manage lines' : 'Forecast + committed scenarios'}
             </span>
             {layer === 'scenarios' && (
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -804,14 +862,13 @@ export default function Forecast({ userId, mobile, onDataChange }) {
           <div style={{ position: 'relative' }}>
             <ForecastGrid
               catRows={catRows}
-              overrideMap={overrideMap}
               scenarioDeltaMap={scenarioDeltaMap}
               actualMap={actualMap}
               year={year}
               mobile={mobile}
               layer={layer}
+              forecastReady={forecastReady}
               onEdit={handleEdit}
-              onReset={() => editCell && handleReset()}
               saving={saving}
               editKey={editCell?.key ?? null}
               collapsedGroups={collapsedGroups}
@@ -819,9 +876,10 @@ export default function Forecast({ userId, mobile, onDataChange }) {
               expandedCats={expandedCats}
               onToggleCat={toggleCat}
               onAddLine={handleAddLine}
+              onUpdateLine={handleUpdateLine}
               onDeleteLine={handleDeleteLine}
             />
-            {editCell && layer === 'forecast' && (
+            {editCell && layer === 'forecast' && forecastReady && (
               <div
                 style={{ position: 'absolute', inset: 0, zIndex: 40 }}
                 onClick={() => setEditCell(null)}
@@ -829,23 +887,14 @@ export default function Forecast({ userId, mobile, onDataChange }) {
                 <div onClick={e => e.stopPropagation()}>
                   <CellEditor
                     value={editCell.currentValue}
-                    note={editCell.currentNote}
                     budgetValue={editCell.budgetValue}
-                    hasOverride={overrideMap[editCell.key] != null}
-                    onSave={handleSave}
-                    onReset={handleReset}
+                    onSave={handleSaveCell}
                     onCancel={() => setEditCell(null)}
                   />
                 </div>
               </div>
             )}
           </div>
-
-          {layer === 'forecast' && overrideCount > 0 && (
-            <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--tx-3)' }}>
-              {overrideCount} {overrideCount === 1 ? 'cell' : 'cells'} overridden · ● marks overrides · ↺ in editor resets to budget
-            </div>
-          )}
         </>
       )}
     </div>

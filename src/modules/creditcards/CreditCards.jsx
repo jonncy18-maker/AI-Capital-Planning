@@ -1510,7 +1510,7 @@ export default function CreditCards({ userId, mobile }) {
   const [optimizationPct, setOptimizationPct] = useState(100)
   const [budgetCategories, setBudgetCategories] = useState([])
   const [lineItems, setLineItems] = useState([])
-  const [overrides, setOverrides] = useState([])
+  const [forecastLines, setForecastLines] = useState([])
   const [bills, setBills] = useState([])
 
   const year = new Date().getFullYear()
@@ -1535,9 +1535,9 @@ export default function CreditCards({ userId, mobile }) {
         supabase.from('bills').select('*').eq('user_id', userId).eq('active', true).then(r => r.data ?? []),
       ])
 
-      const [lineItemsRes, overridesRes] = await Promise.all([
+      const [lineItemsRes, forecastLinesRes] = await Promise.all([
         supabase.from('budget_line_items').select('*').eq('user_id', userId).eq('budget_year', year).then(r => r.data ?? []),
-        supabase.from('forecast_overrides').select('*').eq('user_id', userId).eq('budget_year', year).then(r => r.data ?? []),
+        supabase.from('forecast_line_items').select('*').eq('user_id', userId).eq('budget_year', year).then(r => r.data ?? []),
       ])
 
       setCards(cardsData)
@@ -1548,7 +1548,7 @@ export default function CreditCards({ userId, mobile }) {
       setOptimizationPct(settingsData.optimizationPct)
       setBudgetCategories(categoriesData)
       setLineItems(lineItemsRes)
-      setOverrides(overridesRes)
+      setForecastLines(forecastLinesRes)
       setBills(billsData)
     } catch (e) {
       setError(e.message)
@@ -1580,25 +1580,25 @@ export default function CreditCards({ userId, mobile }) {
       earnRateMap,
       budgetCategories,
       lineItems,
-      overrides,
+      forecastLines,
       pointsBalances,
       redemptions,
       coveragePct,
       optimizationPct,
       year,
     })
-  }, [cards, earnRateMap, budgetCategories, lineItems, overrides, pointsBalances, redemptions, coveragePct, optimizationPct, year])
+  }, [cards, earnRateMap, budgetCategories, lineItems, forecastLines, pointsBalances, redemptions, coveragePct, optimizationPct, year])
 
   // Projected statement balances per card (forecast spend routed to cards, then
   // attributed to statements proportionally by close day) — drives Bill Pay amounts.
   const statementsByCard = useMemo(() => {
     if (cards.length === 0) return {}
     const { cardDollarsByMonth } = routeForecastToCards({
-      budgetCategories, lineItems, overrides,
+      budgetCategories, lineItems, forecastLines,
       cards, earnRateMap, coveragePct, optimizationPct, year,
     })
     return computeStatementForecast({ cardDollarsByMonth, cards, year })
-  }, [cards, earnRateMap, budgetCategories, lineItems, overrides, coveragePct, optimizationPct, year])
+  }, [cards, earnRateMap, budgetCategories, lineItems, forecastLines, coveragePct, optimizationPct, year])
 
   async function handleEarnRateSaved(userId, cardId, ccCat, rate) {
     await upsertEarnRate(userId, cardId, ccCat, rate)
