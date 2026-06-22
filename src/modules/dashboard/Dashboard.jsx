@@ -975,7 +975,7 @@ function BriefingWidget({ userId, ctx, briefing, onGenerated, onCollapse, isColl
 
 // ── Main dashboard ───────────────────────────────────────────────────────────
 
-export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [], onThresholdChange }) {
+export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [], reloadSignal, onThresholdChange }) {
   const [briefing, setBriefing] = useState(null)
   const [configure, setConfigure] = useState(false)
   const [configMenu, setConfigMenu] = useState(false)
@@ -1004,7 +1004,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
       .then(rows => { if (!cancelled) setYearTxns(rows) })
       .catch(() => { if (!cancelled) setYearTxns([]) })
     return () => { cancelled = true }
-  }, [userId, context?.thisYear])
+  }, [userId, context?.thisYear, reloadSignal])
 
   useEffect(() => {
     if (!userId) return

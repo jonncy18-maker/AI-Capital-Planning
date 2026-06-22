@@ -483,7 +483,16 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
                   const hasLines = r.lines.length > 0
                   const catOpen = hasLines && expandedCats.has(catKey)
                   const rTotal = r.months.reduce((a, b) => a + b, 0)
-                  const sortedLines = hasLines ? [...r.lines].sort((a, b) => a.month - b.month || (a.label || '').localeCompare(b.label || '')) : []
+                  // Group lines by label → one row per unique label, all months shown
+                  const labelGroups = (() => {
+                    const g = {}
+                    for (const ln of r.lines) {
+                      const k = ln.label ?? ''
+                      if (!g[k]) g[k] = { label: ln.label, byMonth: {} }
+                      g[k].byMonth[ln.month] = (g[k].byMonth[ln.month] || 0) + ln.amount
+                    }
+                    return Object.values(g).sort((a, b) => (a.label || '').localeCompare(b.label || ''))
+                  })()
                   return (
                     <Fragment key={`${g}-${ri}`}>
                       <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
@@ -498,20 +507,26 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
                         {r.months.map((v, m) => <td key={m} style={{ ...cellStyle, color: v > 0 ? 'var(--tx-1)' : 'var(--tx-4)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
                         <td style={{ ...cellStyle, fontWeight: 600, color: 'var(--tx-1)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(rTotal)}</td>
                       </tr>
-                      {catOpen && sortedLines.map((line, li) => (
-                        <tr key={`line-${li}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
-                          <td style={{ textAlign: 'left', fontSize: 12, color: 'var(--tx-2)', padding: '6px 14px 6px 54px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
-                            <span style={{ color: 'var(--tx-4)', marginRight: 6 }}>&#8618;</span>
-                            {line.label}
-                          </td>
-                          {Array.from({ length: 12 }, (_, m) => (
-                            <td key={m} style={{ ...cellStyle, background: colBg(m), fontSize: 11.5, padding: '5px 10px' }}>
-                              {m === line.month ? <span style={{ color: 'var(--tx-2)' }}>{fmt(line.amount)}</span> : ''}
+                      {catOpen && labelGroups.map((lg, li) => {
+                        const lgTotal = Object.values(lg.byMonth).reduce((s, a) => s + a, 0)
+                        return (
+                          <tr key={`lbl-${li}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
+                            <td style={{ textAlign: 'left', fontSize: 12, color: 'var(--tx-2)', padding: '6px 14px 6px 54px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
+                              <span style={{ color: 'var(--tx-4)', marginRight: 6 }}>&#8618;</span>
+                              {lg.label || 'Untitled line'}
                             </td>
-                          ))}
-                          <td style={{ ...cellStyle, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)', fontSize: 11.5 }}>{fmt(line.amount)}</td>
-                        </tr>
-                      ))}
+                            {Array.from({ length: 12 }, (_, m) => {
+                              const amt = lg.byMonth[m]
+                              return (
+                                <td key={m} style={{ ...cellStyle, background: colBg(m), fontSize: 11.5, padding: '5px 10px' }}>
+                                  {amt > 0 ? <span style={{ color: 'var(--tx-2)' }}>{fmt(amt)}</span> : ''}
+                                </td>
+                              )
+                            })}
+                            <td style={{ ...cellStyle, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)', fontSize: 11.5 }}>{fmt(lgTotal)}</td>
+                          </tr>
+                        )
+                      })}
                     </Fragment>
                   )
                 })}
