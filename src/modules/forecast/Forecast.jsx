@@ -428,7 +428,7 @@ function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year,
 
 // ── Main module ──────────────────────────────────────────────────────────────
 
-export default function Forecast({ userId, mobile }) {
+export default function Forecast({ userId, mobile, onDataChange }) {
   const [year, setYear] = useState(CUR_YEAR)
   const [years, setYears] = useState([])
   const [budgetItems, setBudgetItems] = useState([])
@@ -599,12 +599,14 @@ export default function Forecast({ userId, mobile }) {
   async function handleAddLine(catId, { label, month, amount }) {
     const newItem = await insertBudgetLineItem(userId, { year, categoryId: catId, month, amount, label })
     setBudgetItems(prev => [...prev, newItem])
+    onDataChange?.()
   }
   async function handleDeleteLine(id) {
     const prev = budgetItems
     setBudgetItems(prev.filter(li => li.id !== id))
     try {
       await deleteLineItem(id)
+      onDataChange?.()
     } catch (e) {
       setBudgetItems(prev) // revert on failure
       setError(e.message)
@@ -647,6 +649,7 @@ export default function Forecast({ userId, mobile }) {
         }]
       })
       setEditCell(null)
+      onDataChange?.()
     } catch (e) {
       setError(e.message)
     } finally {
@@ -661,6 +664,7 @@ export default function Forecast({ userId, mobile }) {
       await deleteForecastOverride(userId, editCell.catId, year, editCell.month)
       setOverrides(prev => prev.filter(ov => !(ov.category_id === editCell.catId && ov.month === editCell.month)))
       setEditCell(null)
+      onDataChange?.()
     } catch (e) {
       setError(e.message)
     } finally {
