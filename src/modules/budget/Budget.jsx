@@ -81,7 +81,9 @@ function GeneratePanel({ analysis, commitments, year, onSave, onCancel, saving }
   function handleSave() {
     const items = []
     for (const r of includedRows) {
-      if (r.type === 'Non-Monthly' && r.lineItems?.length) {
+      if (r.lineItems?.length) {
+        // Any category (Fixed, Flexible, or Non-Monthly) with a detail tab uses
+        // its labeled line items — preserving the exact month-by-month breakdown.
         for (const li of r.lineItems) {
           const amount = Math.round(li.amount)
           if (amount > 0) items.push({ category_id: r.category_id, month: li.month, amount, label: li.label })
