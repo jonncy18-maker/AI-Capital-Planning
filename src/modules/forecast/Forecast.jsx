@@ -159,7 +159,7 @@ function CategoryLineItems({ row, cellStyle, colBg, curMonth, onAddLine, onDelet
     <>
       {items.map(it => (
         <tr key={`li-${it.id}`} style={{ borderTop: '1px solid var(--bd-light)' }}>
-          <td style={{ fontSize: 12, color: 'var(--tx-2)', padding: '6px 14px 6px 46px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
+          <td style={{ fontSize: 12, color: 'var(--tx-2)', padding: '6px 14px 6px 54px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
             <span style={{ color: 'var(--tx-4)', marginRight: 6 }}>↳</span>
             {it.label || 'Untitled line'}
             <button
@@ -179,7 +179,7 @@ function CategoryLineItems({ row, cellStyle, colBg, curMonth, onAddLine, onDelet
         </tr>
       ))}
       <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
-        <td colSpan={14} style={{ padding: '7px 14px 9px 46px', background: 'var(--bg-app)' }}>
+        <td colSpan={14} style={{ padding: '7px 14px 9px 54px', background: 'var(--bg-app)' }}>
           {adding ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <input
@@ -359,7 +359,7 @@ function ForecastGrid({ catRows, overrideMap, scenarioDeltaMap, actualMap, year,
                       <td
                         onClick={() => onToggleCat(r.catId)}
                         title="Show line items"
-                        style={{ fontSize: 12.5, color: 'var(--tx-1)', padding: '8px 14px 8px 26px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                        style={{ fontSize: 12.5, color: 'var(--tx-1)', padding: '8px 14px 8px 34px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap', cursor: 'pointer' }}
                       >
                         <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-4)', transition: 'transform .12s', transform: catOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
                         {r.name}
