@@ -26,34 +26,23 @@ function LegendDot({ color, dashed, label }) {
   )
 }
 
-// A single card holding several related metrics in a row, with an optional footnote.
-function MetricCard({ title, metrics, footnote, mobile }) {
+function StatCard({ label, value, sub, color, mobile }) {
   return (
     <div style={{
       border: '1px solid var(--bd)', borderRadius: 11,
-      padding: mobile ? '14px' : '16px 18px', background: 'var(--bg-card)',
+      padding: mobile ? '12px 14px' : '16px 18px', background: 'var(--bg-card)',
     }}>
       <div style={{
         fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-3)',
-        letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12,
-      }}>{title}</div>
-      <div style={{ display: 'flex', gap: mobile ? 16 : 28, flexWrap: 'wrap' }}>
-        {metrics.map((m, i) => (
-          <div key={i} style={{ minWidth: 60 }}>
-            <div style={{
-              fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)',
-              letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5,
-            }}>{m.label}</div>
-            <div style={{
-              fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 19 : 23,
-              color: m.color || 'var(--tx-1)', lineHeight: 1,
-            }}>{m.value}</div>
-          </div>
-        ))}
-      </div>
-      {footnote && (
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)', marginTop: 12, lineHeight: 1.5 }}>
-          {footnote}
+        letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8,
+      }}>{label}</div>
+      <div style={{
+        fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 20 : 24,
+        color: color || 'var(--tx-1)', lineHeight: 1,
+      }}>{value}</div>
+      {sub && (
+        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)', marginTop: 6 }}>
+          {sub}
         </div>
       )}
     </div>
@@ -340,19 +329,12 @@ export default function TrendsTab({
         </div>
       </div>
 
-      {/* Summary stats — 12-month (calendar-year) basis */}
-      <div style={{ marginTop: 24 }}>
-        <MetricCard
-          title={`${periodYear} Average · per month`}
-          mobile={mobile}
-          metrics={[
-            { label: 'Period 1', value: fmtMoney(avgP1), color: P1_COLOR },
-            { label: 'Period 2', value: fmtMoney(avgP2), color: P2_COLOR },
-            { label: 'Difference', value: (periodDiff >= 0 ? '+' : '−') + fmtMoney(Math.abs(periodDiff)) },
-            { label: 'Monthly total', value: fmtMoney(avgTotal) },
-          ]}
-          footnote={`Across the full calendar year (actuals for past months, forecast ahead). Difference is Period 1 − Period 2 — ${periodDiff >= 0 ? 'Period 1' : 'Period 2'} is heavier.`}
-        />
+      {/* Summary stats — separate cards, 12-month (calendar-year) basis */}
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 12, marginTop: 24 }}>
+        <StatCard label="Avg Period 1" value={fmtMoney(avgP1)} sub={`${periodYear} · 12-mo avg`} color={P1_COLOR} mobile={mobile} />
+        <StatCard label="Avg Period 2" value={fmtMoney(avgP2)} sub={`${periodYear} · 12-mo avg`} color={P2_COLOR} mobile={mobile} />
+        <StatCard label="Avg Monthly Total" value={fmtMoney(avgTotal)} sub={`${periodYear} · 12-mo avg`} mobile={mobile} />
+        <StatCard label="Period Difference" value={(periodDiff >= 0 ? '+' : '−') + fmtMoney(Math.abs(periodDiff))} sub={periodDiff >= 0 ? 'Period 1 heavier' : 'Period 2 heavier'} mobile={mobile} />
       </div>
     </div>
   )
