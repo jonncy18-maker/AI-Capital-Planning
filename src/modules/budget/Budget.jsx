@@ -218,7 +218,9 @@ function GeneratePanel({ analysis, commitments, year, onSave, onCancel, saving }
 
 function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
   const { rows, detailTabs } = pending
-  const nonMonthly = useMemo(() => rows.filter(r => r.type === 'Non-Monthly'), [rows])
+  // Show Non-Monthly rows (need a tab for distribution) AND any Fixed/Flexible row
+  // that was auto-matched to a tab (e.g. Cloud Services) so the user can see/adjust.
+  const reviewRows = useMemo(() => rows.filter(r => r.type === 'Non-Monthly' || r.matchedTab), [rows])
   const tabNames = useMemo(() => detailTabs.map(t => t.name), [detailTabs])
   const monthsByTab = useMemo(() => {
     const m = new Map()
@@ -234,7 +236,7 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
 
   const [sel, setSel] = useState(() => {
     const init = {}
-    for (const r of nonMonthly) init[r.category] = r.matchedTab || ''
+    for (const r of reviewRows) init[r.category] = r.matchedTab || ''
     return init
   })
   const [aiBusy, setAiBusy] = useState(false)
@@ -244,7 +246,7 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
     setAiBusy(true)
     setAiError(null)
     try {
-      const res = await suggestTabMatches(nonMonthly.map(r => r.category), tabNames)
+      const res = await suggestTabMatches(reviewRows.map(r => r.category), tabNames)
       if (res.error) { setAiError(res.error); return }
       setSel(prev => {
         const next = { ...prev }
@@ -263,7 +265,7 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
   function confirm() {
     const map = new Map()
     const lineMap = new Map()
-    for (const r of nonMonthly) {
+    for (const r of reviewRows) {
       const t = sel[r.category]
       map.set(r.category, t ? (monthsByTab.get(t) || null) : null)
       lineMap.set(r.category, t ? (linesByTab.get(t) || null) : null)
@@ -279,7 +281,7 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
     return `${active.length} mo · ${active.slice(0, 4).join(', ')}${active.length > 4 ? '…' : ''}`
   }
 
-  const matchedCount = nonMonthly.filter(r => sel[r.category]).length
+  const matchedCount = reviewRows.filter(r => sel[r.category]).length
   const selectStyle = {
     background: 'var(--field)', border: '1px solid var(--bd)', borderRadius: 6,
     padding: '6px 8px', color: 'var(--tx-1)', fontSize: 12.5, outline: 'none', cursor: 'pointer', width: '100%',
@@ -290,10 +292,10 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-1)', marginBottom: 4 }}>
-            Match Non-Monthly categories to their detail tabs
+            Match categories to their detail tabs
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--tx-2)', maxWidth: 560 }}>
-            {nonMonthly.length} Non-Monthly {nonMonthly.length === 1 ? 'category' : 'categories'} · {detailTabs.length} detail tabs ·{' '}
+            {reviewRows.length} {reviewRows.length === 1 ? 'category' : 'categories'} · {detailTabs.length} detail tabs ·{' '}
             <strong style={{ color: 'var(--tx-1)' }}>{matchedCount} matched</strong>. Confirm or adjust —
             anything left on “Even spread” distributes its yearly total evenly.
           </div>
@@ -314,7 +316,7 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
       )}
 
       <div style={{ border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
-        {nonMonthly.map((r, i) => {
+        {reviewRows.map((r, i) => {
           const conf = sel[r.category] === r.matchedTab ? r.matchConfidence : (sel[r.category] ? 'manual' : null)
           const label = sel[r.category] ? activeMonthsLabel(sel[r.category]) : 'Even spread'
           return (
@@ -330,6 +332,11 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {r.category}
+                  {r.type !== 'Non-Monthly' && (
+                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 400, color: 'var(--tx-3)', background: 'var(--field)', borderRadius: 4, padding: '1px 5px' }}>
+                      {r.type}
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--tx-3)' }}>
                   {r.group}{r.annual != null ? ` · ${fmtFull(r.annual)}/yr` : ''}
@@ -872,8 +879,8 @@ export default function Budget({ userId, mobile }) {
       const idByName = new Map(cats.map(c => [c.category, c.id]))
 
       const tabs = detailTabs || []
-      const hasNonMonthly = rows.some(r => r.type === 'Non-Monthly')
-      if (tabs.length && hasNonMonthly) {
+      const needsReview = rows.some(r => r.type === 'Non-Monthly' || r.matchedTab)
+      if (tabs.length && needsReview) {
         setPendingUpload({ rows, detailTabs: tabs, idByName, fileName: file.name })
         setReviewing(true)
         return
