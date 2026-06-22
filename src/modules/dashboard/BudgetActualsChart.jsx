@@ -40,7 +40,7 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange, on
   const max = useMemo(() => {
     let m = 0
     for (const mo of data.months) {
-      m = Math.max(m, mo.forecast ?? mo.budget, mo.actual ?? 0)
+      m = Math.max(m, mo.budget, mo.forecast ?? mo.budget, mo.actual ?? 0)
     }
     return m || 1
   }, [data])
@@ -123,9 +123,12 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange, on
         {/* Bars */}
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 4 : 10, height: chartH }}>
           {data.months.map(mo => {
-            const planVal = mo.forecast ?? mo.budget
-            const budgetH = (planVal / max) * chartH
-            const actualH = mo.actual != null ? (mo.actual / max) * chartH : budgetH
+            // Left bar is always the budget; the right bar is the actual (past
+            // months) or the forecast (current/future months, dashed). Keeping
+            // them distinct means a forecast edit moves only the forecast bar.
+            const budgetH = (mo.budget / max) * chartH
+            const rightVal = mo.actual != null ? mo.actual : (mo.forecast ?? mo.budget)
+            const actualH = (rightVal / max) * chartH
             const isHover = hover === mo.month
             const showForecast = mo.actual == null
             return (
@@ -341,7 +344,7 @@ function ChartCard({ data, children, onThresholdChange, onCollapse, isCollapsed 
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           {!isCollapsed && <>
-            <LegendDot color="var(--bar-budget)" label={data.hasForecastOverrides ? 'Forecast' : 'Budget'} />
+            <LegendDot color="var(--bar-budget)" label="Budget" />
             {onThresholdChange ? (
               <ThresholdChip varThreshold={data.varThreshold} onThresholdChange={onThresholdChange} />
             ) : (
