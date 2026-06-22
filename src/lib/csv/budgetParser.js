@@ -188,7 +188,7 @@ function similarity(a, b) {
 function bestTabMatch(category, detailTabs) {
   const cn = normName(category)
   for (const t of detailTabs) {
-    if (normName(t.name) === cn) return { tab: t.name, confidence: 'exact', months: t.months }
+    if (normName(t.name) === cn) return { tab: t.name, confidence: 'exact', months: t.months, lineItems: t.lineItems ?? null }
   }
   let best = null
   let bestScore = 0
@@ -199,8 +199,50 @@ function bestTabMatch(category, detailTabs) {
   // High floor: a confident near-match only (plurals, "&"/"and", spacing).
   // Looser synonyms/abbreviations are left for the AI button or manual pick to
   // avoid auto-proposing a wrong tab the user might accept without checking.
-  if (best && bestScore >= 0.8) return { tab: best.name, confidence: 'fuzzy', months: best.months }
-  return { tab: null, confidence: null, months: null }
+  if (best && bestScore >= 0.8) return { tab: best.name, confidence: 'fuzzy', months: best.months, lineItems: best.lineItems ?? null }
+  return { tab: null, confidence: null, months: null, lineItems: null }
+}
+
+// Like extractMonthlyDetail but returns each individual labeled row instead of
+// the aggregated totals. Used so the budget table can show "Airfare → Delta
+// Flight $70 (Jan)" as a drill-down line rather than just the monthly sum.
+// Returns [{label, month, amount}] (month is 1-indexed) or null.
+function extractLineItemsFromDetail(sheetRows) {
+  let periodRow = -1
+  let monthCols = null
+  const scan = Math.min(sheetRows.length, 12)
+  for (let r = 0; r < scan && !monthCols; r++) {
+    const row = sheetRows[r] || []
+    for (let s = 0; s + 12 <= row.length; s++) {
+      let ok = true
+      for (let k = 0; k < 12; k++) {
+        if (parseAmount(row[s + k]) !== k + 1) { ok = false; break }
+      }
+      if (ok) {
+        periodRow = r
+        monthCols = Array.from({ length: 12 }, (_, k) => s + k)
+        break
+      }
+    }
+  }
+  if (!monthCols) return null
+
+  const labelCol = monthCols[0] - 1
+  const items = []
+  for (let r = periodRow + 1; r < sheetRows.length; r++) {
+    const row = sheetRows[r] || []
+    const rawLabel = labelCol >= 0 ? String(row[labelCol] ?? '').trim() : ''
+    if (!rawLabel) continue
+    const lnorm = normHeader(rawLabel)
+    if (lnorm === 'quarter' || lnorm === 'total' || lnorm === 'period') continue
+    for (let k = 0; k < 12; k++) {
+      const v = parseAmount(row[monthCols[k]])
+      if (v != null && v > 0) {
+        items.push({ label: rawLabel, month: k + 1, amount: v })
+      }
+    }
+  }
+  return items.length > 0 ? items : null
 }
 
 // A detail tab lays out a single category month-by-month: a "Period" row of
@@ -278,17 +320,22 @@ export async function parseBudgetWorkbook(arrayBuffer) {
   for (const sheet of wb.sheets) {
     if (sheet.name === best.sheet) continue
     const months = extractMonthlyDetail(sheet.rows)
-    if (months) detailTabs.push({ name: sheet.name, months })
+    if (months) {
+      const lineItems = extractLineItemsFromDetail(sheet.rows)
+      detailTabs.push({ name: sheet.name, months, lineItems })
+    }
   }
 
   // Propose a detail tab for each Non-Monthly category (exact or fuzzy). The
-  // confident matches also pre-fill `monthly12`; callers may let the user review.
+  // confident matches also pre-fill `monthly12` and `lineItems`; callers may
+  // let the user review.
   for (const row of best.rows) {
     if (row.type !== 'Non-Monthly') continue
     const m = bestTabMatch(row.category, detailTabs)
     row.matchedTab = m.tab
     row.matchConfidence = m.confidence
     if (m.months) row.monthly12 = m.months
+    if (m.lineItems) row.lineItems = m.lineItems
   }
 
   return { rows: best.rows, errors: [], headers: best.headers, sheet: best.sheet, detailTabs }
