@@ -126,6 +126,15 @@ Replaces the manual spreadsheet process. AI-guided session that generates the mo
 5. App generates the full multi-year month-by-month budget schedule
 6. User can drill into any single year for annual view
 
+**Upload Budget (alternative entry path):**
+The user can also upload an existing `.xlsx` or `.csv` budget file to seed the budget without AI generation. The workbook parser (`src/lib/csv/budgetParser.js`) supports multi-sheet workbooks where the main sheet contains the category→group→type→target mapping and sibling sheets are detail tabs (one per Non-Monthly or otherwise detailed category) with a Period 1–12 monthly grid.
+
+Key behaviors:
+- **Header detection** is flexible: case-insensitive, punctuation-insensitive, scans the first 25 rows (title/blank rows above the table are ignored).
+- **Detail tab matching**: any sheet with a Period 1–12 row is recognized as a detail tab. The parser uses exact normalized-name matching first, then fuzzy Levenshtein ≥ 0.8 as a fallback. Tabs are matched against *all* category types (Fixed, Flexible, Non-Monthly), not just Non-Monthly.
+- **Line-level detail**: `extractLineItemsFromDetail()` pulls individual named rows from each detail tab (e.g. "Delta Flight - Philippines Luggage") and stores them as `budget_line_items` rows with a `label` field, enabling sub-row drill-down in the schedule grid.
+- **Tab Match Review**: a confirmation dialog shows every category that was auto-matched to a detail tab (regardless of type), plus all Non-Monthly categories that may need a tab assigned. Fixed/Flexible entries are shown with a type badge so the user can confirm or reassign before saving.
+
 **Budget types (inherited from transaction data):**
 - **Fixed:** Same amount, same cadence (rent, car payment, gym)
 - **Flexible:** Variable amount, recurring category (groceries, dining, shopping)
@@ -409,6 +418,8 @@ The founding architecture held. These are the notable implementation details tha
 **Error boundary not yet added.** A missing component definition caused a blank-page incident (June 2026). Adding a React error boundary around `<AppShell>` is the highest-priority hardening item. A missing component produces a `ReferenceError` that crashes the full React tree with no recovery path — blank page with no console access for users.
 
 **Model pinning deferred.** `resolveModel` still floats to the newest Claude model. For a financial product this is a behavior-change risk (tool-use / JSON schema can shift between model versions). Pinning deliberately and spot-checking tool calls after each bump is documented as a hardening priority.
+
+**Budget schedule grid matches forecast grid.** `ScheduleGrid` now mirrors `ForecastGrid` in layout: sticky column and row headers, scrollable max-height, groups expanded by default with a collapse toggle, per-category drill-down toggle (▸) that expands into individual named sub-rows (↳) at 54px indent. Sub-rows come from `budget_line_items` rows whose `label` field is populated (either from the Upload Budget xlsx parser or from commitment names).
 
 **Known hardening backlog** (in order of leverage):
 1. Add Vitest + unit tests for pure modeling functions

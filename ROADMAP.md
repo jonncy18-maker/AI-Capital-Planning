@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-06-19 (Phases 0–11 largely built; in daily use)
+**Last updated:** 2026-06-22 (Phases 0–11 largely built; in daily use)
 
 ### Done so far
 - **Phase 0 complete** — Vite + React SPA, GitHub Pages deploy (auto on push to `main`), Supabase project live, client configured.
@@ -73,6 +73,12 @@
   - **Collapse/expand** — every dashboard card has a ▾/▸ chevron; a global ▾ COLLAPSE / ▸ EXPAND button in the header actions collapses or expands all visible cards at once. State persisted to localStorage.
   - **Bug fix** — `BvaWidget` referenced `IveTooltip`, `TooltipHeader`, `TooltipRow` without defining them, causing a `ReferenceError` on first render that crashed the entire React tree and produced a blank page. Added the three missing component definitions.
   - **Schema additions** — `user_profiles` gained 8 new nullable columns: `variance_threshold`, `bonus_month`, `benefits_amount`, `benefits_pct`, `four01k_pct`, `four01k_on_bonus`, `annual_income` (already existed), `annual_bonus` (already existed).
+
+- **Budget table + line-level upload (2026-06-22):**
+  - `ScheduleGrid` rewritten to mirror `ForecastGrid`: sticky headers, scrollable max-height, groups expanded by default, per-category drill-down toggle, named sub-rows at 54px indent.
+  - Upload Budget now captures individual named line items from xlsx detail tabs (`extractLineItemsFromDetail` in `budgetParser.js`); labels stored in `budget_line_items.label`.
+  - Fixed/Flexible categories now matched against detail tabs (removed Non-Monthly-only restriction in `parseBudgetWorkbook`).
+  - `TabMatchReview` dialog expanded to show all categories with matched tabs (not just Non-Monthly), with a type badge for Fixed/Flexible entries.
 
 ### Known follow-ups / gotchas
 - **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
@@ -214,10 +220,11 @@
 - [x] Build historical pattern analyzer (ingests 12–24 months of transactions, identifies Fixed/Flexible/Non-Monthly patterns by category) — `src/lib/budget/patternAnalyzer.js`
 - [ ] Build conversational timing confirmation flow (AI asks about Non-Monthly items) — deferred (Non-Monthly timing derived from historical month histogram instead)
 - [x] Build month-by-month budget schedule generator (output: `budget_line_items` rows)
-- [x] Build annual drill-down view (single year from multi-year schedule) — year selector + schedule grid
+- [x] Build annual drill-down view (single year from multi-year schedule) — year selector + schedule grid; `ScheduleGrid` mirrors `ForecastGrid` with sticky headers, group collapse, and per-category named sub-row drill-down (2026-06-22)
 - [~] Build multi-year budget view (3–5 year horizon) — per-year selectable; side-by-side multi-year roll-up deferred
 - [x] Wire Long-Term Commitments into multi-year projection (auto-populate from `commitments` table) — commitment rows rendered in the schedule grid
 - [x] Build budget edit/override UI (user can adjust AI-generated targets) — editable draft in generate flow
+- [x] Build Upload Budget path (import existing .xlsx/.csv) — `parseBudgetFile` / `parseBudgetCSV` / `parseBudgetWorkbook` in `src/lib/csv/budgetParser.js`; supports detail-tab line-item capture with `extractLineItemsFromDetail`; Tab Match Review covers all matched categories (2026-06-22)
 - [ ] Build budget version history (track changes year over year) — schema supports `budget_version`; UI deferred
 - [ ] Test: Full FY27 budget generation from FY25–FY26 transaction history — pending real data
 

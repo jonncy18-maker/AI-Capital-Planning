@@ -26,11 +26,11 @@ npm run dev
 
 **Phase 11 — Polish and Pre-Launch.** All V1 modules are built and in daily use. The dashboard is a fully populated control center with live data widgets, a monthly budget vs. actuals chart, income vs. expenses forecast, spend-by-group drill-down, AI briefing, and drag/collapse/show-hide layout configurability.
 
-Recent work completed this session:
-- Post-tax income forecast (salary ÷ 12 + bonus month, minus estimated taxes, benefits, 401k) wired into the Income vs. Expenses chart
-- Settings expanded with bonus month selector, benefits ($ or %), 401k %, on-bonus toggle, and live take-home readout
-- Income vs. Expenses chart redesigned to show all 12 months (actuals for past, forecast bars for future) with TODAY marker and full-year KPIs
-- Collapse/expand toggle on every dashboard card (per-card chevron + global Collapse All / Expand All button), persisted to localStorage
+Recent work completed (2026-06-22):
+- **Budget table formatting** — `ScheduleGrid` now mirrors `ForecastGrid`: sticky headers, scrollable max-height, groups expanded by default, per-category drill-down toggle (▸), and individual named line items as sub-rows (↳) at 54px indent
+- **Line-level xlsx upload** — "Upload Budget" now captures individual named line items from detail tabs in the workbook (e.g. "Delta Flight - Philippines Luggage" under Airfare) rather than collapsing to monthly aggregate sums; labels are stored in `budget_line_items.label`
+- **Fixed/Flexible tab matching** — removed the Non-Monthly-only restriction in `parseBudgetWorkbook`; categories like Cloud Services (Fixed) now get their detail-tab data applied automatically
+- **Tab Match Review expanded** — the review dialog now shows all categories with a detected detail tab (regardless of expense type), not just Non-Monthly; Fixed/Flexible auto-matches appear with a type badge so users can see and confirm every tab mapping before saving
 
 ## Hardening priorities
 
