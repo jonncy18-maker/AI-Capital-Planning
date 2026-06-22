@@ -110,3 +110,45 @@ export async function resetForecastToBudget(userId, year) {
   if (delErr) throw delErr
   return seedForecastFromBudget(userId, year)
 }
+
+// Delete all forecast lines for a given category + label (all months).
+export async function deleteForecastItemsByLabel(userId, { year, categoryId, label }) {
+  let q = supabase
+    .from('forecast_line_items')
+    .delete()
+    .eq('user_id', userId)
+    .eq('budget_year', year)
+    .eq('category_id', categoryId)
+  q = label != null ? q.eq('label', label) : q.is('label', null)
+  const { error } = await q
+  if (error) throw error
+}
+
+// Replace all forecast lines for a given category + label in months >= fromMonth
+// with a flat rate. Deletes existing rows in that range, then inserts new ones.
+// Returns the freshly inserted rows.
+export async function setForecastRate(userId, { year, categoryId, label, rate, fromMonth }) {
+  let delQ = supabase
+    .from('forecast_line_items')
+    .delete()
+    .eq('user_id', userId)
+    .eq('budget_year', year)
+    .eq('category_id', categoryId)
+    .gte('month', fromMonth)
+  delQ = label != null ? delQ.eq('label', label) : delQ.is('label', null)
+  const { error: delErr } = await delQ
+  if (delErr) throw delErr
+
+  if (rate <= 0) return []
+
+  const rows = []
+  for (let m = fromMonth; m <= 12; m++) {
+    rows.push({ user_id: userId, budget_year: year, category_id: categoryId, month: m, amount: rate, label: label ?? null, source: 'manual' })
+  }
+  const { data, error } = await supabase
+    .from('forecast_line_items')
+    .insert(rows)
+    .select('*, budget_categories(id, category, "group", type)')
+  if (error) throw error
+  return data ?? []
+}
