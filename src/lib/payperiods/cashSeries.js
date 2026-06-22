@@ -6,7 +6,7 @@ import {
   getBillAmountsRange, getForecastAmountsForBills, splitBillsByPeriod,
 } from '../db/bills.js'
 import { getBudgetLineItems } from '../db/budgetLineItems.js'
-import { getForecastOverrides } from '../db/forecastOverrides.js'
+import { getForecastLineItems } from '../db/forecastLineItems.js'
 import { getIncomeActualsRange } from '../db/income.js'
 import { estimateNet } from '../db/taxBrackets.js'
 import { monthlyNetForecast } from './incomeForecast.js'
@@ -102,12 +102,12 @@ export async function loadOutflowSeries({
   const futureYears = [...new Set(futureSlots.map(s => s.year))]
   if (futureYears.length > 0 && creditCards.length > 0 && bills.some(b => b.credit_card_id)) {
     await Promise.all(futureYears.map(async year => {
-      const [lineItems, overrides] = await Promise.all([
+      const [lineItems, forecastLines] = await Promise.all([
         getBudgetLineItems(userId, { year }),
-        getForecastOverrides(userId, year),
+        getForecastLineItems(userId, year),
       ])
       const cashflow = routeForecastToCards({
-        budgetCategories, lineItems, overrides,
+        budgetCategories, lineItems, forecastLines,
         cards: creditCards, earnRateMap,
         coveragePct: ccCoverage, optimizationPct: ccOptimization,
       })

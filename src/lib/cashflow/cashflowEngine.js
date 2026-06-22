@@ -1,7 +1,8 @@
 // ─── Cash Flow Engine ─────────────────────────────────────────────────────────
 //
-// Translates forecast spend (budget_line_items / forecast_overrides per category
-// per month) into projected cash outflow, accounting for the credit-card float:
+// Translates forecast spend (independent forecast_line_items per category per
+// month, falling back to budget_line_items) into projected cash outflow,
+// accounting for the credit-card float:
 // spend happens during a statement cycle, but cash leaves checking only when the
 // statement is paid (statement close day + due_days_after_close).
 //
@@ -38,7 +39,7 @@ export function daysInMonth(year, month) {
 //   cashByMonth:        { [month]: dollars }                — non-card cash spend
 //   cashDetailByMonth:  { [month]: Array<{ categoryId, name, group, amount, kind }> }
 export function routeForecastToCards({
-  budgetCategories, lineItems, overrides,
+  budgetCategories, lineItems, forecastLines,
   cards, earnRateMap, coveragePct, optimizationPct,
 }) {
   const cardDollarsByMonth = {}
@@ -47,7 +48,7 @@ export function routeForecastToCards({
   for (let m = 1; m <= 12; m++) { cashByMonth[m] = 0; cashDetailByMonth[m] = [] }
   for (const c of (cards ?? [])) cardDollarsByMonth[c.id] = {}
 
-  const { lineItemsByCategory, overridesByCategory } = buildSpendMaps(lineItems, overrides)
+  const spendMaps = buildSpendMaps(lineItems, forecastLines)
   const hasCards = cards && cards.length > 0
   const defaultCard = hasCards ? (cards.find(c => c.is_default) ?? cards[0]) : null
   const coverageFactor = (coveragePct ?? 80) / 100
@@ -65,7 +66,7 @@ export function routeForecastToCards({
     const ccCat = cat.cc_category || 'other'
 
     for (let m = 1; m <= 12; m++) {
-      const spend = resolveMonthlySpend(cat.id, m, lineItemsByCategory, overridesByCategory)
+      const spend = resolveMonthlySpend(cat.id, m, spendMaps)
       if (spend <= 0) continue
 
       // Cash-only categories, or any spend when no cards exist, leave as in-month cash.

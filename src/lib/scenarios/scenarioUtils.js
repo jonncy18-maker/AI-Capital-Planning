@@ -73,12 +73,14 @@ export function computeImpactSummary(adjustments, ctx) {
   }
 }
 
-// Join adjustments to the forecast baseline (override ?? budget), grouped by period.
+// Join adjustments to the forecast baseline, grouped by period. The baseline is
+// the independent forecast (forecast_line_items), falling back to the budget when
+// no forecast has been initialized for the year.
 export function buildComparisonRows(adjustments, ctx) {
   const lineItems = ctx?.budgetLineItems ?? []
-  const overrides = ctx?.forecastOverrides ?? []
+  const forecastLines = ctx?.forecastLineItems ?? []
 
-  // Build forecast index: prefer override, fall back to budget
+  // Budget index by category name + month
   const budgetIndex = {}
   for (const li of lineItems) {
     const cat = (li.budget_categories?.category || '').trim()
@@ -86,13 +88,18 @@ export function buildComparisonRows(adjustments, ctx) {
     const key = `${cat}::${li.month}`
     budgetIndex[key] = (budgetIndex[key] || 0) + Number(li.amount || 0)
   }
-  // Override index wins when present
-  const forecastIndex = { ...budgetIndex }
-  for (const ov of overrides) {
-    const cat = (ov.budget_categories?.category || '').trim()
-    if (!cat) continue
-    const key = `${cat}::${ov.month}`
-    forecastIndex[key] = Number(ov.amount)
+  // Forecast baseline: sum forecast lines when initialized, else the budget.
+  let forecastIndex
+  if (forecastLines.length > 0) {
+    forecastIndex = {}
+    for (const fi of forecastLines) {
+      const cat = (fi.budget_categories?.category || '').trim()
+      if (!cat) continue
+      const key = `${cat}::${fi.month}`
+      forecastIndex[key] = (forecastIndex[key] || 0) + Number(fi.amount || 0)
+    }
+  } else {
+    forecastIndex = { ...budgetIndex }
   }
 
   // Group adjustments by year-month

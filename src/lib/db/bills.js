@@ -151,14 +151,16 @@ export async function upsertAccountBalance(userId, accountId, year, month, perio
 
 // Fetch the effective monthly forecast amount for each bill that has a
 // forecast_category_id. Returns a map of billId → derived amount (after divisor).
-// Resolution: forecast_override ?? sum(budget_line_items) for that category+month.
+// Resolution: sum(forecast_line_items) ?? sum(budget_line_items) for that
+// category+month. The forecast is an independent dataset; where it has lines for
+// the category/month they define the amount, otherwise the budget is used.
 export async function getForecastAmountsForBills(userId, year, month, bills) {
   const linkedBills = bills.filter(b => b.forecast_category_id)
   if (linkedBills.length === 0) return {}
 
   const categoryIds = [...new Set(linkedBills.map(b => b.forecast_category_id))]
 
-  const [{ data: lineItems, error: liErr }, { data: overrides, error: ovErr }] = await Promise.all([
+  const [{ data: lineItems, error: liErr }, { data: forecastLines, error: fErr }] = await Promise.all([
     supabase
       .from('budget_line_items')
       .select('category_id, amount')
@@ -167,7 +169,7 @@ export async function getForecastAmountsForBills(userId, year, month, bills) {
       .eq('month', month)
       .in('category_id', categoryIds),
     supabase
-      .from('forecast_overrides')
+      .from('forecast_line_items')
       .select('category_id, amount')
       .eq('user_id', userId)
       .eq('budget_year', year)
@@ -175,7 +177,7 @@ export async function getForecastAmountsForBills(userId, year, month, bills) {
       .in('category_id', categoryIds),
   ])
   if (liErr) throw liErr
-  if (ovErr) throw ovErr
+  if (fErr) throw fErr
 
   // Sum budget_line_items per category
   const lineItemTotals = {}
@@ -183,15 +185,15 @@ export async function getForecastAmountsForBills(userId, year, month, bills) {
     lineItemTotals[li.category_id] = (lineItemTotals[li.category_id] ?? 0) + Number(li.amount)
   }
 
-  // Override map (a single override row replaces the whole sum)
-  const overrideMap = {}
-  for (const ov of (overrides ?? [])) {
-    overrideMap[ov.category_id] = Number(ov.amount)
+  // Sum forecast_line_items per category (these take precedence when present)
+  const forecastTotals = {}
+  for (const fi of (forecastLines ?? [])) {
+    forecastTotals[fi.category_id] = (forecastTotals[fi.category_id] ?? 0) + Number(fi.amount)
   }
 
   const result = {}
   for (const bill of linkedBills) {
-    const monthly = overrideMap[bill.forecast_category_id] ?? lineItemTotals[bill.forecast_category_id] ?? null
+    const monthly = forecastTotals[bill.forecast_category_id] ?? lineItemTotals[bill.forecast_category_id] ?? null
     if (monthly != null) {
       result[bill.id] = monthly / Math.max(1, bill.forecast_divisor ?? 1)
     }

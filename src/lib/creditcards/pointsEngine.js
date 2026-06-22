@@ -26,32 +26,34 @@ export const CC_CATEGORIES = [
 ]
 
 // Build the lookup maps used to resolve monthly spend per category.
-//   lineItemsByCategory[categoryId][month] = summed budget_line_items amount
-//   overridesByCategory[categoryId][month] = forecast_override amount
-export function buildSpendMaps(lineItems, overrides) {
-  const lineItemsByCategory = {}
+//   budgetByCategory[categoryId][month]   = summed budget_line_items amount
+//   forecastByCategory[categoryId][month] = summed forecast_line_items amount
+// The forecast is an independent dataset (seeded from the budget); when it exists
+// it fully defines spend, otherwise we fall back to the budget.
+export function buildSpendMaps(lineItems, forecastLines) {
+  const budgetByCategory = {}
   for (const li of (lineItems ?? [])) {
-    if (!lineItemsByCategory[li.category_id]) lineItemsByCategory[li.category_id] = {}
-    lineItemsByCategory[li.category_id][li.month] =
-      (lineItemsByCategory[li.category_id][li.month] ?? 0) + Number(li.amount)
+    if (!budgetByCategory[li.category_id]) budgetByCategory[li.category_id] = {}
+    budgetByCategory[li.category_id][li.month] =
+      (budgetByCategory[li.category_id][li.month] ?? 0) + Number(li.amount)
   }
 
-  const overridesByCategory = {}
-  for (const ov of (overrides ?? [])) {
-    if (!overridesByCategory[ov.category_id]) overridesByCategory[ov.category_id] = {}
-    overridesByCategory[ov.category_id][ov.month] = Number(ov.amount)
+  const forecastByCategory = {}
+  for (const fi of (forecastLines ?? [])) {
+    if (!forecastByCategory[fi.category_id]) forecastByCategory[fi.category_id] = {}
+    forecastByCategory[fi.category_id][fi.month] =
+      (forecastByCategory[fi.category_id][fi.month] ?? 0) + Number(fi.amount)
   }
 
-  return { lineItemsByCategory, overridesByCategory }
+  return { budgetByCategory, forecastByCategory, forecastInitialized: (forecastLines ?? []).length > 0 }
 }
 
-// Resolve spend per category for a given month.
-// Priority: forecast_override → sum(budget_line_items) → 0
-export function resolveMonthlySpend(categoryId, month, lineItemsByCategory, overridesByCategory) {
-  if (overridesByCategory[categoryId]?.[month] != null) {
-    return Number(overridesByCategory[categoryId][month])
-  }
-  return lineItemsByCategory[categoryId]?.[month] ?? 0
+// Resolve spend per category for a given month from the spend maps.
+// When a forecast exists for the year it fully defines spend; otherwise the
+// budget is used as the forecast.
+export function resolveMonthlySpend(categoryId, month, maps) {
+  if (maps.forecastInitialized) return maps.forecastByCategory[categoryId]?.[month] ?? 0
+  return maps.budgetByCategory[categoryId]?.[month] ?? 0
 }
 
 // Find the best earn rate for a given cc_category across all active cards.
@@ -81,7 +83,7 @@ export function computePointsForecast({
   earnRateMap,      // { [cardId]: { [cc_category]: rate } }
   budgetCategories, // budget_categories rows (with cc_category, cash_only)
   lineItems,        // budget_line_items rows for the year
-  overrides,        // forecast_overrides rows for the year
+  forecastLines,    // forecast_line_items rows for the year (independent forecast)
   pointsBalances,   // { [cardId]: { balance } } — latest snapshot per card
   redemptions,      // credit_card_point_redemptions rows for the year
   coveragePct,      // 0–100: % of eligible spend that goes on a card
@@ -96,8 +98,8 @@ export function computePointsForecast({
   const coverageFactor = (coveragePct ?? 80) / 100
   const optimizationFactor = (optimizationPct ?? 100) / 100
 
-  // Build lookup maps for line items and overrides
-  const { lineItemsByCategory, overridesByCategory } = buildSpendMaps(lineItems, overrides)
+  // Build lookup maps for budget and forecast spend
+  const spendMaps = buildSpendMaps(lineItems, forecastLines)
 
   // Build redemptions map: { [cardId]: { [month]: pointsAmount } }
   const redemptionMap = {}
@@ -125,7 +127,7 @@ export function computePointsForecast({
       if (cat.cash_only) continue
       if (!cat.is_active) continue
 
-      const spend = resolveMonthlySpend(cat.id, month, lineItemsByCategory, overridesByCategory)
+      const spend = resolveMonthlySpend(cat.id, month, spendMaps)
       if (spend <= 0) continue
 
       const cardableSpend = spend * coverageFactor

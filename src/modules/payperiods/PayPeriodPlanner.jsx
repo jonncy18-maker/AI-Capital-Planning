@@ -12,7 +12,7 @@ import { getProfile, saveMinCheckingBalance } from '../../lib/db/profile.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { getCreditCards, getEarnRates, getCCSettings, buildEarnRateMap } from '../../lib/db/creditCards.js'
 import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
-import { getForecastOverrides } from '../../lib/db/forecastOverrides.js'
+import { getForecastLineItems } from '../../lib/db/forecastLineItems.js'
 import {
   routeForecastToCards, computeStatementForecast,
   projectedBillAmounts, splitCashAcrossPeriods,
@@ -1019,7 +1019,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [ccCoverage, setCcCoverage] = useState(80)
   const [ccOptimization, setCcOptimization] = useState(100)
   const [lineItems, setLineItems] = useState([])           // budget_line_items for navYear
-  const [overrides, setOverrides] = useState([])           // forecast_overrides for navYear
+  const [forecastLines, setForecastLines] = useState([])   // forecast_line_items for navYear
   const [amountsMap, setAmountsMap] = useState({})         // billId → manual amount (for current navMonth)
   const [forecastAmountsMap, setForecastAmountsMap] = useState({}) // billId → forecast-derived amount
   const [balancesMap, setBalancesMap] = useState({})       // `accountId-periodHalf` → balance
@@ -1138,16 +1138,16 @@ export default function PayPeriodPlanner({ userId, mobile }) {
       .catch(() => {})
   }, [userId, navYear, navMonth, bills])
 
-  // Reload budget line items + forecast overrides when the nav year changes —
+  // Reload budget line items + the independent forecast when the nav year changes —
   // these feed the cash-flow engine that projects credit-card statement amounts.
   useEffect(() => {
     if (!userId) return
     Promise.all([
       getBudgetLineItems(userId, { year: navYear }),
-      getForecastOverrides(userId, navYear),
-    ]).then(([li, ov]) => {
+      getForecastLineItems(userId, navYear),
+    ]).then(([li, fl]) => {
       setLineItems(li)
-      setOverrides(ov)
+      setForecastLines(fl)
     }).catch(() => {})
   }, [userId, navYear])
 
@@ -1162,11 +1162,11 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   // (proportional by close day), and derive the payment due in the nav month.
   const cashflow = useMemo(
     () => routeForecastToCards({
-      budgetCategories, lineItems, overrides,
+      budgetCategories, lineItems, forecastLines,
       cards: creditCards, earnRateMap,
       coveragePct: ccCoverage, optimizationPct: ccOptimization, year: navYear,
     }),
-    [budgetCategories, lineItems, overrides, creditCards, earnRateMap, ccCoverage, ccOptimization, navYear]
+    [budgetCategories, lineItems, forecastLines, creditCards, earnRateMap, ccCoverage, ccOptimization, navYear]
   )
   const statementsByCard = useMemo(
     () => computeStatementForecast({ cardDollarsByMonth: cashflow.cardDollarsByMonth, cards: creditCards, year: navYear }),

@@ -744,14 +744,14 @@ function PointsSummaryWidget({ userId }) {
           getBudgetCategories(userId),
         ])
         if (!cancelled && cards.length > 0) {
-          const [{ data: lineItems }, { data: overrides }] = await Promise.all([
+          const [{ data: lineItems }, { data: forecastLines }] = await Promise.all([
             supabase.from('budget_line_items').select('*').eq('user_id', userId).eq('budget_year', year),
-            supabase.from('forecast_overrides').select('*').eq('user_id', userId).eq('budget_year', year),
+            supabase.from('forecast_line_items').select('*').eq('user_id', userId).eq('budget_year', year),
           ])
           const earnRateMap = buildEarnRateMap(rates)
           const { monthlyForecast } = computePointsForecast({
             cards, earnRateMap, budgetCategories: cats,
-            lineItems: lineItems ?? [], overrides: overrides ?? [],
+            lineItems: lineItems ?? [], forecastLines: forecastLines ?? [],
             pointsBalances: balances, redemptions: [],
             coveragePct: settings.coveragePct, optimizationPct: settings.optimizationPct, year,
           })
