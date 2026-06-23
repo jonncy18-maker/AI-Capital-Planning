@@ -26,11 +26,13 @@ npm run dev
 
 **Phase 11 — Polish and Pre-Launch.** All V1 modules are built and in daily use. The dashboard is a fully populated control center with live data widgets, a monthly budget vs. actuals chart, income vs. expenses forecast, spend-by-group drill-down, AI briefing, and drag/collapse/show-hide layout configurability.
 
-Recent work completed (2026-06-22):
-- **Budget table formatting** — `ScheduleGrid` now mirrors `ForecastGrid`: sticky headers, scrollable max-height, groups expanded by default, per-category drill-down toggle (▸), and individual named line items as sub-rows (↳) at 54px indent
-- **Line-level xlsx upload** — "Upload Budget" now captures individual named line items from detail tabs in the workbook (e.g. "Delta Flight - Philippines Luggage" under Airfare) rather than collapsing to monthly aggregate sums; labels are stored in `budget_line_items.label`
-- **Fixed/Flexible tab matching** — removed the Non-Monthly-only restriction in `parseBudgetWorkbook`; categories like Cloud Services (Fixed) now get their detail-tab data applied automatically
-- **Tab Match Review expanded** — the review dialog now shows all categories with a detected detail tab (regardless of expense type), not just Non-Monthly; Fixed/Flexible auto-matches appear with a type badge so users can see and confirm every tab mapping before saving
+Recent work completed (2026-06-23):
+- **Scenario planner rebuild** — complete redesign of `Scenarios.jsx`: sidebar-first navigation (Baseline, Actual Plan, scenario list), Baseline panel showing actuals vs. forecast bars, Actual Plan view listing committed decisions, three-tab ScenarioDetail (Adjustments, Forecast Impact chart, Baseline Comparison chart), and a full-history AI Scenario Composer
+- **Dashboard scenario integration** — committed scenario deltas now fold into the Budget vs. Actuals forecast; interactive `ScenarioDropdown` chip lets users switch between Baseline / All / Individual scenario view without leaving the dashboard
+- **Forecast label-grouped rows** — line items with the same label now collapse into a single 12-month row with a bulk rate input on the left; per-month overrides and per-label delete still work
+- **Budget ScheduleGrid parity** — sub-rows grouped by label in the budget view (one row spanning all 12 months), matching the Forecast grid layout; groups default to collapsed
+- **Supabase 1000-row cap** — audited and paginated all high-volume Supabase queries; root cause was silent truncation of June 2026 transactions (1,117 total) that made June actuals invisible in dashboard charts
+- **AI briefing accuracy** — briefing now uses the same current-year income/expense projection as the Income widget (YTD actuals + salary forecast), and pulls from fresh `yearTxns` rather than the session-start context snapshot
 
 ## Hardening priorities
 
