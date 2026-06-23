@@ -10,6 +10,7 @@ import { getProfile } from '../db/profile.js'
 import { estimateNet } from '../db/taxBrackets.js'
 import { getAIPreferences } from '../db/aiPreferences.js'
 import { formatPreferencesForBrief } from './preferences.js'
+import { incomeVsExpenses } from '../dashboard/widgetData.js'
 
 // How far back the AI's transaction context reaches. A full trailing year
 // captures the user's actual annual cycle (seasonality, annual bills, bonuses)
@@ -135,8 +136,30 @@ export function buildContextBrief(ctx) {
   const lines = []
 
   lines.push('## Financial Context')
+
+  // Current-year projection: YTD actuals + remaining-month forecasts.
+  // This matches the numbers shown in the Income vs. Expenses widget.
+  const yearTxns = (ctx?.transactions ?? []).filter(t => {
+    const d = new Date(t.date)
+    return !Number.isNaN(d.getTime()) && d.getFullYear() === ctx?.thisYear
+  })
+  const ivs = incomeVsExpenses(ctx, yearTxns)
+  if (ivs.hasData || (ctx?.budgetLineItems ?? []).length > 0) {
+    const savingsNote = ivs.fullYearSavingsRate != null
+      ? `, ~${Math.round(ivs.fullYearSavingsRate)}% projected savings rate`
+      : ''
+    const netSign = ivs.fullYearNet >= 0 ? '+' : ''
+    lines.push(
+      `- Current year (${ctx.thisYear}) projection: ` +
+      `~$${Math.round(ivs.fullYearIncome).toLocaleString()} income (YTD actuals + salary forecast for remaining months), ` +
+      `~$${Math.round(ivs.fullYearExpenses).toLocaleString()} expenses (YTD actuals + budget forecast for remaining months), ` +
+      `net ${netSign}$${Math.round(ivs.fullYearNet).toLocaleString()}${savingsNote}`
+    )
+  }
+
+  // Trailing 12-month actuals (spans two calendar years — for trend context only).
   lines.push(
-    `- Transactions (trailing 12 months): ${s.transactionCount} rows, ` +
+    `- Trailing 12-month actuals (${s.transactionCount} rows, spans prior + current year): ` +
     `~$${Math.round(s.spendTrailing).toLocaleString()} spend, ` +
     `~$${Math.round(s.incomeTrailing).toLocaleString()} income`
   )
@@ -144,10 +167,10 @@ export function buildContextBrief(ctx) {
   const inc = ctx.incomeEstimate
   if (inc && inc.netIncome > 0) {
     lines.push(
-      `- Planned income (${inc.year}${inc.estimated ? ', est.' : ''}): ` +
+      `- Salary plan (${inc.year}${inc.estimated ? ', est.' : ''}): ` +
       `$${Math.round(inc.grossWages).toLocaleString()} gross → ` +
-      `~$${Math.round(inc.netIncome).toLocaleString()} take-home ` +
-      `(~${(inc.effectiveRate * 100).toFixed(0)}% est. tax: ` +
+      `~$${Math.round(inc.netIncome).toLocaleString()} annual net take-home ` +
+      `(~${(inc.effectiveRate * 100).toFixed(0)}% est. effective tax rate; ` +
       `federal $${Math.round(inc.federalTax).toLocaleString()}, ` +
       `FICA $${Math.round(inc.ficaTax).toLocaleString()}, ` +
       `state $${Math.round(inc.stateTax).toLocaleString()})`
