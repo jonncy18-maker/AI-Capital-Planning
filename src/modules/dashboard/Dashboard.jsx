@@ -10,10 +10,7 @@ import {
   scenarioImpact,
   incomeVsExpenses,
 } from '../../lib/dashboard/widgetData.js'
-import { getLatestBriefing, saveBriefing } from '../../lib/db/aiBriefings.js'
 import { getTransactionsByMonth } from '../../lib/db/transactions.js'
-import { sendAIMessage } from '../../lib/ai/sendMessage.js'
-import { summarizeContext } from '../../lib/ai/contextLoader.js'
 import BudgetActualsChart from './BudgetActualsChart.jsx'
 import SpendGroupDetail from './SpendGroupDetail.jsx'
 import ModuleHeader from '../common/ModuleHeader.jsx'
@@ -890,94 +887,9 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
   ]
 }
 
-// ── AI Briefing widget (spans full width) ────────────────────────────────────
-
-function BriefingWidget({ userId, ctx, yearTxns, briefing, onGenerated, onCollapse, isCollapsed }) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-
-  async function generate() {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await sendAIMessage({
-        prompt:
-          'Give me a concise briefing (3–5 sentences) on my current financial position. ' +
-          'Highlight the single most important thing to watch over the next quarter, grounded in the data. ' +
-          'No preamble — just the briefing.',
-        context: ctx,
-        yearTxns,
-      })
-      if (res.status !== 'ok' || !res.text) {
-        setError(res.text || 'Could not generate a briefing right now.')
-        return
-      }
-      const summary = summarizeContext(ctx)
-      const saved = await saveBriefing(userId, {
-        narrative: res.text,
-        context_summary: `${summary.transactionCount} txns · ${summary.commitmentCount} commitments · ${summary.budgetYears.length} budget yr(s)`,
-        module_context: 'dashboard',
-      }).catch(() => ({ narrative: res.text, generated_at: new Date().toISOString() }))
-      onGenerated(saved)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 13, background: 'var(--bg-card)', padding: isCollapsed ? '13px 20px' : 20, gridColumn: '1 / -1' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCollapsed ? 0 : 12, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: 'var(--accent)', fontSize: 13 }}>✦</span>
-          <div>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>AI Briefing</span>
-            {!isCollapsed && <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 1 }}>On-demand narrative of your financial position</div>}
-          </div>
-          {!isCollapsed && briefing?.generated_at && (
-            <span style={{ fontSize: 10.5, color: 'var(--tx-3)' }}>
-              · {new Date(briefing.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {!isCollapsed && (
-            <button onClick={generate} disabled={loading} style={{
-              padding: '6px 13px', background: briefing ? 'transparent' : 'var(--accent)',
-              color: briefing ? 'var(--accent)' : 'var(--accent-tx-on)',
-              border: briefing ? '1px solid var(--accent-bd)' : 'none', borderRadius: 7,
-              fontSize: 11.5, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1,
-            }}>
-              {loading ? 'Generating…' : briefing ? '↻ Refresh' : 'Generate Briefing'}
-            </button>
-          )}
-          {onCollapse && (
-            <button
-              onClick={onCollapse}
-              title={isCollapsed ? 'Expand' : 'Collapse'}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-4)', fontSize: 13, padding: '0 0 0 4px', lineHeight: 1 }}
-            >
-              {isCollapsed ? '▸' : '▾'}
-            </button>
-          )}
-        </div>
-      </div>
-      {!isCollapsed && error && <div style={{ fontSize: 12.5, color: 'var(--warn)', lineHeight: 1.5 }}>{error}</div>}
-      {!isCollapsed && !error && briefing?.narrative && (
-        <div style={{ fontSize: 13.5, color: 'var(--tx-1)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>{briefing.narrative}</div>
-      )}
-      {!isCollapsed && !error && !briefing && !loading && (
-        <Empty text="Generate an on-demand narrative summary of your financial position. Cached after generation to avoid repeat token cost." />
-      )}
-    </div>
-  )
-}
-
 // ── Main dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [], reloadSignal, onThresholdChange }) {
-  const [briefing, setBriefing] = useState(null)
   const [configure, setConfigure] = useState(false)
   const [configMenu, setConfigMenu] = useState(false)
   const [addReports, setAddReports] = useState(false)
@@ -1034,21 +946,11 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
     try { localStorage.setItem(LS_LAYOUT, JSON.stringify(next)) } catch { /* ignore */ }
   }, [])
 
-  useEffect(() => {
-    if (!userId) return
-    let cancelled = false
-    getLatestBriefing(userId, 'dashboard')
-      .then(b => { if (!cancelled) setBriefing(b) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [userId])
-
   const blocks = useMemo(() => [
     { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} scenarioMode={scenarioMode} onScenarioModeChange={setScenarioMode} committedScenarios={committedScenarios} /> },
-    { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BriefingWidget userId={userId} ctx={context} yearTxns={yearTxns} briefing={briefing} onGenerated={setBriefing} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
     { id: 'creditPoints', title: 'Credit Card Points', subtitle: 'Balance · earning rate · estimated value', render: () => <PointsSummaryWidget userId={userId} /> },
     ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile),
-  ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing, onThresholdChange, scenarioMode, committedScenarios])
+  ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, onThresholdChange, scenarioMode, committedScenarios])
 
   const ordered = useMemo(() => {
     const byId = Object.fromEntries(blocks.map(b => [b.id, b]))

@@ -273,7 +273,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
             mobile={mobile}
             loading={aiLoading}
             onSubmit={handleAiSubmit}
-            placeholder={`Ask about ${current.short.toLowerCase()}…`}
+            placeholder={conversation.length > 0 ? 'Reply to continue the conversation…' : `Ask about ${current.short.toLowerCase()}…`}
             accessory={
               <AIPrefsButton
                 userId={user.id}
@@ -299,6 +299,8 @@ function replaceLast(messages, next) {
 // Running conversation thread. Renders each turn; the user can keep answering in
 // the command bar and the assistant retains context across turns.
 function ConversationCard({ messages, onClear, onViewScenarios }) {
+  const [collapsed, setCollapsed] = useState(false)
+  const turnCount = messages.filter(m => m.role === 'user').length
   return (
     <div style={{
       border: '1px solid var(--accent-bd)',
@@ -309,30 +311,47 @@ function ConversationCard({ messages, onClear, onViewScenarios }) {
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: '14px', marginBottom: '14px',
+        gap: '14px', marginBottom: collapsed ? 0 : '14px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ color: 'var(--accent)', fontSize: '14px' }}>✦</span>
           <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--tx-1)' }}>Assistant</span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: 'var(--tx-3)', letterSpacing: '0.04em' }}>
+            {turnCount} turn{turnCount !== 1 ? 's' : ''}
+          </span>
         </div>
-        <button
-          onClick={onClear}
-          title="Start a new conversation"
-          style={{
-            flexShrink: 0, background: 'none', border: '1px solid var(--bd)', cursor: 'pointer',
-            color: 'var(--tx-2)', fontFamily: "'DM Mono', monospace", fontSize: '10px',
-            letterSpacing: '0.04em', borderRadius: '7px', padding: '5px 10px',
-          }}
-        >
-          ↺ NEW
-        </button>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <button
+            onClick={() => setCollapsed(c => !c)}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            style={{
+              flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--tx-3)', fontSize: '13px', padding: '4px 8px', lineHeight: 1,
+            }}
+          >
+            {collapsed ? '▸' : '▾'}
+          </button>
+          <button
+            onClick={onClear}
+            title="Start a new conversation"
+            style={{
+              flexShrink: 0, background: 'none', border: '1px solid var(--bd)', cursor: 'pointer',
+              color: 'var(--tx-2)', fontFamily: "'DM Mono', monospace", fontSize: '10px',
+              letterSpacing: '0.04em', borderRadius: '7px', padding: '5px 10px',
+            }}
+          >
+            ↺ NEW
+          </button>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        {messages.map((m, i) => (
-          <Turn key={i} message={m} onViewScenarios={onViewScenarios} />
-        ))}
-      </div>
+      {!collapsed && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {messages.map((m, i) => (
+            <Turn key={i} message={m} onViewScenarios={onViewScenarios} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
