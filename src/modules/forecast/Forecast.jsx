@@ -528,7 +528,7 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
 
 // ── Main module ──────────────────────────────────────────────────────────────
 
-export default function Forecast({ userId, mobile, onDataChange }) {
+export default function Forecast({ userId, mobile, onDataChange, reloadSignal }) {
   const [year, setYear] = useState(CUR_YEAR)
   const [years, setYears] = useState([])
   const [budgetItems, setBudgetItems] = useState([])
@@ -579,7 +579,7 @@ export default function Forecast({ userId, mobile, onDataChange }) {
     }
   }, [userId])
 
-  useEffect(() => { loadData(year) }, [year, loadData])
+  useEffect(() => { loadData(year) }, [year, loadData, reloadSignal])
 
   // Build category rows merging budget (baseline/reference) and forecast (live).
   // catId → { catId, name, group, type, budget[12], forecast[12], items[] (forecast lines) }
