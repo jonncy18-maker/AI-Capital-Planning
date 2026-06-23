@@ -167,7 +167,7 @@ export function commitmentsSummary(ctx) {
 // are dropped so actuals aren't overstated — the same rule loadAIContext applies
 // to the trailing context. The full-year transactions are fetched raw, so we must
 // re-apply the exclusion here against ctx.categories.
-export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
+export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter = 'all') {
   const lineItems = ctx?.budgetLineItems ?? []
   const forecastLines = ctx?.forecastLineItems ?? []
   const year = ctx?.thisYear ?? new Date().getFullYear()
@@ -210,12 +210,15 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   const now = new Date()
   const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
 
-  // Committed scenario deltas for future months only
+  // Committed scenario deltas for future months only.
+  // scenarioFilter: 'all' = apply all committed, 'baseline' = none, id string = only that one.
   const scenarioDeltas = Array(12).fill(0)
   let committedScenarioCount = 0
   for (const s of (ctx?.scenarios ?? [])) {
     if (s.state !== 'committed') continue
     committedScenarioCount++
+    if (scenarioFilter === 'baseline') continue
+    if (scenarioFilter !== 'all' && s.id !== scenarioFilter) continue
     for (const adj of (s.adjustments ?? [])) {
       if (Number(adj.year) !== year) continue
       const m = (adj.month ?? 1) - 1
