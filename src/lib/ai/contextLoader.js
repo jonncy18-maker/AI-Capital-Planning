@@ -166,13 +166,12 @@ export function buildContextBrief(ctx, yearTxns) {
   )
 
   const inc = ctx.incomeEstimate
-  if (inc && inc.netIncome > 0) {
+  if (inc && inc.grossWages > 0) {
     lines.push(
-      `- Salary plan (${inc.year}${inc.estimated ? ', est.' : ''}): ` +
-      `$${Math.round(inc.grossWages).toLocaleString()} gross → ` +
-      `~$${Math.round(inc.netIncome).toLocaleString()} annual net take-home ` +
-      `(~${(inc.effectiveRate * 100).toFixed(0)}% est. effective tax rate; ` +
-      `federal $${Math.round(inc.federalTax).toLocaleString()}, ` +
+      `- Salary profile (${inc.year}${inc.estimated ? ', est.' : ''}, for tax reference only — use "Current year projection" above for actual net income): ` +
+      `$${Math.round(inc.grossWages).toLocaleString()} gross, ` +
+      `~${(inc.effectiveRate * 100).toFixed(0)}% est. effective tax rate ` +
+      `(federal $${Math.round(inc.federalTax).toLocaleString()}, ` +
       `FICA $${Math.round(inc.ficaTax).toLocaleString()}, ` +
       `state $${Math.round(inc.stateTax).toLocaleString()})`
     )
