@@ -12,7 +12,7 @@ import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { runScenarioAgent } from '../../lib/ai/scenarioAgent.js'
 import { headerStyles } from '../common/headerStyles.js'
 import Markdown from '../common/Markdown.jsx'
-import { computeImpactSummary, buildComparisonRows, buildCumulativeTimeline } from '../../lib/scenarios/scenarioUtils.js'
+import { computeImpactSummary, buildComparisonRows } from '../../lib/scenarios/scenarioUtils.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CUR_YEAR = new Date().getFullYear()
@@ -711,154 +711,7 @@ function ComparisonChart({ adjustments, ctx }) {
   )
 }
 
-// ── Timeline chart (improved with explanation) ───────────────────────────────
-
-function TimelineChart({ adjustments }) {
-  const [tooltip, setTooltip] = useState(null)
-  const data = useMemo(() => buildCumulativeTimeline(adjustments), [adjustments])
-
-  if (!data.labels.length) {
-    return (
-      <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--tx-3)', fontSize: 13 }}>
-        No adjustments to chart.
-      </div>
-    )
-  }
-
-  const W = 600, H = 180
-  const padL = 62, padR = 16, padT = 24, padB = 36
-  const drawW = W - padL - padR
-  const drawH = H - padT - padB
-
-  const { labels, values, min, max } = data
-  const range = max - min || 1
-  const n = values.length
-
-  const xPos = (i) => padL + (i / Math.max(n - 1, 1)) * drawW
-  const yPos = (v) => padT + drawH - ((v - min) / range) * drawH
-  const zeroY = yPos(0)
-
-  const linePts = values.map((v, i) => `${xPos(i)},${yPos(v)}`).join(' ')
-  const areaPath = [
-    `M ${xPos(0)} ${zeroY}`,
-    ...values.map((v, i) => `L ${xPos(i)} ${yPos(v)}`),
-    `L ${xPos(n - 1)} ${zeroY}`,
-    'Z',
-  ].join(' ')
-
-  const fmtTick = (v) => {
-    const abs = Math.abs(v)
-    const s = abs >= 1000 ? '$' + Math.round(abs / 1000) + 'k' : '$' + Math.round(abs)
-    return v < 0 ? '−' + s : v > 0 ? '+' + s : s
-  }
-
-  const labelEvery = n > 8 ? 3 : n > 4 ? 2 : 1
-  const yTicks = [...new Set([min, min < 0 && max > 0 ? 0 : null, max].filter(v => v != null))]
-
-  const finalValue = values[values.length - 1]
-  const isPositive = finalValue > 0
-
-  return (
-    <div>
-      {/* Explanation */}
-      <div style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', marginBottom: 4 }}>
-          Cumulative Scenario Impact
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--tx-2)', lineHeight: 1.55 }}>
-          This shows the running total of how much this scenario cumulatively changes your spending over time.
-          A line going <span style={{ color: 'var(--red)', fontWeight: 600 }}>up</span> means you're spending more in total;
-          going <span style={{ color: 'var(--green)', fontWeight: 600 }}>down</span> means you're saving relative to your baseline.
-          By {labels[labels.length - 1]}, the cumulative {isPositive ? 'increase' : 'savings'} is{' '}
-          <strong style={{ color: isPositive ? 'var(--red)' : 'var(--green)' }}>{fmtTick(finalValue)}</strong>.
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 10, fontSize: 11, color: 'var(--tx-3)' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ display: 'inline-block', width: 18, height: 2, background: 'var(--accent)', borderRadius: 1 }} />
-          Cumulative spend change
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontStyle: 'italic', color: 'var(--tx-4)' }}>
-          Hover dots to see values
-        </span>
-      </div>
-
-      <div style={{ position: 'relative' }}>
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet"
-          style={{ width: '100%', display: 'block', overflow: 'visible' }}>
-          {/* Zero baseline */}
-          {min < 0 && max > 0 && (
-            <line x1={padL} y1={zeroY} x2={W - padR} y2={zeroY}
-              stroke="var(--bd)" strokeWidth={1} strokeDasharray="4 3" />
-          )}
-
-          {/* Grid lines */}
-          {yTicks.map((tick, i) => (
-            <line key={i} x1={padL} y1={yPos(tick)} x2={W - padR} y2={yPos(tick)}
-              stroke="var(--bd-light)" strokeWidth={1} />
-          ))}
-
-          {/* Filled area */}
-          <path d={areaPath} fill="var(--accent)" opacity={0.1} />
-
-          {/* Line */}
-          <polyline points={linePts} fill="none" stroke="var(--accent)" strokeWidth={2.5}
-            strokeLinecap="round" strokeLinejoin="round" />
-
-          {/* Dots */}
-          {values.map((v, i) => (
-            <circle key={i} cx={xPos(i)} cy={yPos(v)} r={4}
-              fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={2}
-              style={{ cursor: 'pointer' }}
-              onMouseEnter={e => setTooltip({ label: labels[i], value: v, clientX: e.clientX, clientY: e.clientY })}
-              onMouseLeave={() => setTooltip(null)}
-            />
-          ))}
-
-          {/* X-axis labels */}
-          {labels.map((lbl, i) => i % labelEvery === 0 && (
-            <text key={i} x={xPos(i)} y={H - 4} textAnchor="middle"
-              fontSize={9} fill="var(--tx-3)" fontFamily="'DM Mono', monospace">
-              {lbl}
-            </text>
-          ))}
-
-          {/* Y-axis ticks */}
-          {yTicks.map((tick, i) => (
-            <text key={i} x={padL - 5} y={yPos(tick)} textAnchor="end" dominantBaseline="middle"
-              fontSize={8.5} fill="var(--tx-3)" fontFamily="'DM Mono', monospace">
-              {fmtTick(tick)}
-            </text>
-          ))}
-        </svg>
-
-        {tooltip && (
-          <div style={{
-            position: 'fixed', top: tooltip.clientY - 10, left: tooltip.clientX + 14,
-            zIndex: 300, background: 'var(--bg-card)', border: '1px solid var(--bd)',
-            borderRadius: 8, padding: '9px 13px', boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-            pointerEvents: 'none', fontSize: 12,
-          }}>
-            <div style={{ fontWeight: 600, color: 'var(--tx-1)', marginBottom: 4 }}>{tooltip.label}</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
-              <span style={{ color: 'var(--tx-3)' }}>Cumulative total</span>
-              <span style={{
-                fontFamily: "'DM Mono', monospace", fontWeight: 700,
-                color: tooltip.value < 0 ? 'var(--green)' : tooltip.value > 0 ? 'var(--red)' : 'var(--tx-2)',
-              }}>
-                {fmtTick(tooltip.value)}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Forecast impact chart (new tab) ─────────────────────────────────────────
+// ── Forecast impact chart ───────────────────────────────────────────────────
 
 function ForecastImpactChart({ adjustments, ctx }) {
   const [tooltip, setTooltip] = useState(null)
@@ -1312,9 +1165,8 @@ function BaselinePanel({ ctx }) {
           </div>
         )}
 
-        <div style={{ marginTop: 18, padding: '12px 16px', background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 8, fontSize: 12, color: 'var(--tx-2)', lineHeight: 1.6 }}>
-          <strong style={{ color: 'var(--tx-1)' }}>How to use this:</strong> Switch to the <strong>Scenarios</strong> tab in the sidebar to model "what if" changes.
-          Each scenario shows its impact as a delta against this baseline. When you're ready to commit a scenario, promote it — and it will appear in the <strong>Forecast → Scenarios</strong> layer.
+        <div style={{ marginTop: 18, padding: '11px 15px', background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 8, fontSize: 12, color: 'var(--tx-2)', lineHeight: 1.6 }}>
+          Select a scenario in the sidebar to see its delta against this baseline. Commit a scenario to lock it into your plan — committed scenarios flow automatically into the Forecast.
         </div>
       </div>
     </div>
@@ -1579,23 +1431,23 @@ function ScenarioDetail({
               <button onClick={handlePromote} disabled={promoting} style={{
                 padding: '7px 14px', background: 'rgba(46,204,113,0.12)', color: 'var(--green)',
                 border: '1px solid rgba(46,204,113,0.25)', borderRadius: 6, fontSize: 12, fontWeight: 600,
-                cursor: promoting ? 'not-allowed' : 'pointer', opacity: promoting ? 0.6 : 1,
+                cursor: promoting ? 'not-allowed' : 'pointer', opacity: promoting ? 0.6 : 1, whiteSpace: 'nowrap',
               }}>
-                {promoting ? 'Promoting…' : '✓ Promote to Committed'}
+                {promoting ? 'Committing…' : '✓ Commit'}
               </button>
             )}
             {confirmDelete ? (
               <>
-                <button onClick={() => onDelete(scenario.id)} style={{ padding: '7px 12px', background: 'rgba(229,57,53,0.12)', color: 'var(--red)', border: '1px solid rgba(229,57,53,0.25)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  Confirm Delete
+                <button onClick={() => onDelete(scenario.id)} style={{ padding: '7px 12px', background: 'rgba(229,57,53,0.12)', color: 'var(--red)', border: '1px solid rgba(229,57,53,0.25)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  Confirm delete
                 </button>
                 <button onClick={() => setConfirmDelete(false)} style={{ padding: '7px 10px', background: 'transparent', color: 'var(--tx-2)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
                   Cancel
                 </button>
               </>
             ) : (
-              <button onClick={() => setConfirmDelete(true)} style={{ padding: '7px 10px', background: 'transparent', color: 'var(--tx-3)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
-                Delete
+              <button onClick={() => setConfirmDelete(true)} title="Delete scenario" style={{ padding: '6px 10px', background: 'transparent', color: 'var(--tx-4)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 14, lineHeight: 1, cursor: 'pointer' }}>
+                ×
               </button>
             )}
           </div>
@@ -1779,29 +1631,6 @@ function ActualPlanView({ scenarios, adjustments, adjLoading, onViewScenario }) 
   )
 }
 
-// ── Empty state ──────────────────────────────────────────────────────────────
-
-function EmptyState({ viewMode, committedCount, modeledCount }) {
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      justifyContent: 'center', height: '100%', padding: 40, textAlign: 'center',
-    }}>
-      <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>◑</div>
-      <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 600, color: 'var(--tx-1)' }}>
-        {viewMode === 'actual-plan' && committedCount === 0 ? 'No committed scenarios yet' : 'Select a scenario'}
-      </h3>
-      <p style={{ margin: 0, fontSize: 13, color: 'var(--tx-2)', maxWidth: 360, lineHeight: 1.6 }}>
-        {viewMode === 'actual-plan' && committedCount === 0
-          ? 'Promote a modeled scenario to committed to lock it into your actual plan.'
-          : modeledCount + committedCount === 0
-          ? 'Create a scenario to start modeling "what if" decisions against your baseline.'
-          : 'Select a scenario from the list to view its details.'}
-      </p>
-    </div>
-  )
-}
-
 // ── Main module ──────────────────────────────────────────────────────────────
 
 export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange, openScenarioId, onGoToForecast }) {
@@ -1934,13 +1763,10 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Module header */}
-      <div style={{ padding: mobile ? '14px 18px 12px' : '18px 28px 14px', borderBottom: '1px solid var(--bd)', flexShrink: 0 }}>
+      <div style={{ padding: mobile ? '12px 18px 10px' : '14px 24px 12px', borderBottom: '1px solid var(--bd)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={headerStyles.icon}>◑</span>
           <h1 style={headerStyles.title(mobile)}>Scenario Planner</h1>
-        </div>
-        <div style={{ ...headerStyles.subtitle, marginTop: 6, marginLeft: 30 }}>
-          Model one-off and recurring changes against your real baseline.
         </div>
       </div>
 
@@ -1949,12 +1775,12 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
         {/* Sidebar — always visible on desktop; on mobile only when no detail showing */}
         {(!mobile || (!selectedId && viewMode === 'scenario')) && (
           <div style={{
-            width: mobile ? '100%' : 260, flexShrink: 0,
+            width: mobile ? '100%' : 240, flexShrink: 0,
             borderRight: mobile ? 'none' : '1px solid var(--bd)',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }}>
-            {/* Nav items */}
-            <div style={{ borderBottom: '1px solid var(--bd-light)' }}>
+            {/* Views nav */}
+            <div style={{ padding: '6px 0' }}>
               {[
                 { key: 'baseline', label: 'Baseline', icon: '▤' },
                 { key: 'actual-plan', label: 'Actual Plan', icon: '✓' },
@@ -1964,22 +1790,20 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                   <button key={key} onClick={() => {
                     setViewMode(key)
                     setSelectedId(null)
-                    if (key === 'actual-plan') {
-                      committed.forEach(s => loadAdjustments(s.id))
-                    }
+                    if (key === 'actual-plan') committed.forEach(s => loadAdjustments(s.id))
                   }} style={{
-                    display: 'block', width: '100%', textAlign: 'left',
-                    padding: '10px 16px', background: isActive ? 'var(--accent-bg)' : 'transparent',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    width: '100%', textAlign: 'left',
+                    padding: '9px 16px', background: isActive ? 'var(--accent-bg)' : 'transparent',
                     border: 'none', borderLeft: `2px solid ${isActive ? 'var(--accent)' : 'transparent'}`,
                     color: isActive ? 'var(--accent)' : 'var(--tx-2)', cursor: 'pointer',
-                    fontSize: 12.5, fontWeight: isActive ? 600 : 400,
-                    display: 'flex', alignItems: 'center', gap: 8,
+                    fontSize: 13, fontWeight: isActive ? 600 : 400,
                   }}>
                     <span style={{ fontSize: 11, opacity: 0.7 }}>{icon}</span>
                     {label}
                     {key === 'actual-plan' && committed.length > 0 && (
                       <span style={{
-                        marginLeft: 'auto', fontSize: 9.5, fontFamily: "'DM Mono', monospace",
+                        marginLeft: 'auto', fontSize: 9, fontFamily: "'DM Mono', monospace",
                         color: isActive ? 'var(--accent)' : 'var(--tx-4)',
                         background: isActive ? 'var(--accent-bd)' : 'var(--hover)',
                         borderRadius: 10, padding: '1px 6px',
@@ -1990,14 +1814,24 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
               })}
             </div>
 
-            {/* New scenario button */}
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--bd-light)' }}>
-              <button onClick={() => { setShowNewForm(true); setSelectedId(null); setViewMode('scenario') }} style={{
-                width: '100%', padding: '8px 12px', background: 'var(--accent)',
-                color: 'var(--accent-tx-on)', border: 'none', borderRadius: 6,
-                fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              }}>
-                + New Scenario
+            {/* Scenarios section — label + new button inline */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '8px 16px 4px', borderTop: '1px solid var(--bd-light)',
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Scenarios
+              </span>
+              <button
+                onClick={() => { setShowNewForm(f => !f); setSelectedId(null); setViewMode('scenario') }}
+                title="New scenario"
+                style={{
+                  background: 'transparent', border: '1px solid var(--bd)', color: 'var(--accent)',
+                  cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: '1px 7px',
+                  borderRadius: 5, fontWeight: 300,
+                }}
+              >
+                +
               </button>
             </div>
 
@@ -2006,12 +1840,14 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
             )}
 
             {/* Scenario list */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
+            <div style={{ flex: 1, overflow: 'auto', padding: '4px 0 8px' }}>
               {modeled.length > 0 && (
                 <>
-                  <div style={{ padding: '4px 16px 6px', fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    Modeled
-                  </div>
+                  {committed.length > 0 && (
+                    <div style={{ padding: '6px 16px 3px', fontSize: 9.5, fontWeight: 700, color: 'var(--tx-4)', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                      Modeled
+                    </div>
+                  )}
                   {modeled.map(s => (
                     <ScenarioListItem key={s.id} scenario={s}
                       selected={selectedId === s.id && viewMode === 'scenario'}
@@ -2021,9 +1857,11 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
               )}
               {committed.length > 0 && (
                 <>
-                  <div style={{ padding: `${modeled.length ? '12px' : '4px'} 16px 6px`, fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    Committed
-                  </div>
+                  {modeled.length > 0 && (
+                    <div style={{ padding: '8px 16px 3px', fontSize: 9.5, fontWeight: 700, color: 'var(--tx-4)', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                      Committed
+                    </div>
+                  )}
                   {committed.map(s => (
                     <ScenarioListItem key={s.id} scenario={s}
                       selected={selectedId === s.id && viewMode === 'scenario'}
@@ -2032,14 +1870,10 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                 </>
               )}
               {scenarios.length === 0 && !showNewForm && (
-                <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.6 }}>
-                  No scenarios yet.<br />Create one to start modeling.
+                <div style={{ padding: '16px 16px 20px', textAlign: 'center', fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.6 }}>
+                  No scenarios yet.<br />Press + to create one.
                 </div>
               )}
-            </div>
-
-            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--bd-light)', fontSize: 11, color: 'var(--tx-3)', lineHeight: 1.5 }}>
-              Use the AI composer or "+ New Scenario" to model changes.
             </div>
           </div>
         )}
@@ -2079,11 +1913,11 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                     onOpenScenario={handleOpenScenario}
                     mobile={mobile}
                   />
-                  <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--tx-3)', lineHeight: 1.6, marginTop: 18 }}>
-                    {scenarios.length === 0
-                      ? 'Or build one manually with "+ New Scenario".'
-                      : 'Pick a scenario on the left to view its details, or describe a new one above.'}
-                  </div>
+                  {scenarios.length > 0 && (
+                    <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--tx-4)', lineHeight: 1.6, marginTop: 14 }}>
+                      Or select a scenario on the left.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
