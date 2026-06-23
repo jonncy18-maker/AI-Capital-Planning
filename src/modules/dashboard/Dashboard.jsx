@@ -1016,7 +1016,13 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
     return () => { cancelled = true }
   }, [userId, context?.thisYear])
 
-  const monthly = useMemo(() => monthlyBudgetVsActual(context, yearTxns), [context, yearTxns])
+  const [scenarioMode, setScenarioMode] = useState('all')
+  const committedScenarios = useMemo(
+    () => (context?.scenarios ?? []).filter(s => s.state === 'committed'),
+    [context]
+  )
+
+  const monthly = useMemo(() => monthlyBudgetVsActual(context, yearTxns, scenarioMode), [context, yearTxns, scenarioMode])
 
   const [layout, setLayout] = useState(() => {
     try { return JSON.parse(localStorage.getItem(LS_LAYOUT)) || DEFAULT_LAYOUT }
@@ -1037,11 +1043,11 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
   }, [userId])
 
   const blocks = useMemo(() => [
-    { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
+    { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} scenarioMode={scenarioMode} onScenarioModeChange={setScenarioMode} committedScenarios={committedScenarios} /> },
     { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
     { id: 'creditPoints', title: 'Credit Card Points', subtitle: 'Balance · earning rate · estimated value', render: () => <PointsSummaryWidget userId={userId} /> },
     ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile),
-  ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing, onThresholdChange])
+  ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing, onThresholdChange, scenarioMode, committedScenarios])
 
   const ordered = useMemo(() => {
     const byId = Object.fromEntries(blocks.map(b => [b.id, b]))

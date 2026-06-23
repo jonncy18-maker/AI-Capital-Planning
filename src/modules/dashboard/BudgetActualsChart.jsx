@@ -34,7 +34,7 @@ function LegendDot({ color, dashed, label }) {
   )
 }
 
-export default function BudgetActualsChart({ data, mobile, onThresholdChange, onCollapse, isCollapsed }) {
+export default function BudgetActualsChart({ data, mobile, onThresholdChange, onCollapse, isCollapsed, scenarioMode = 'all', onScenarioModeChange, committedScenarios = [] }) {
   const [hover, setHover] = useState(null)
 
   const max = useMemo(() => {
@@ -50,7 +50,7 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange, on
   // No budget yet — show a clear empty state inside the same card frame.
   if (!data.hasBudget) {
     return (
-      <ChartCard data={data} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed}>
+      <ChartCard data={data} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} scenarioMode={scenarioMode} onScenarioModeChange={onScenarioModeChange} committedScenarios={committedScenarios}>
         <div style={{
           padding: '40px 8px', textAlign: 'center', color: 'var(--tx-2)',
           fontSize: 13.5, lineHeight: 1.6,
@@ -64,7 +64,7 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange, on
   }
 
   return (
-    <ChartCard data={data} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed}>
+    <ChartCard data={data} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} scenarioMode={scenarioMode} onScenarioModeChange={onScenarioModeChange} committedScenarios={committedScenarios}>
       <div style={{ position: 'relative', marginTop: 8 }}>
         {/* Tooltip */}
         {hover != null && (() => {
@@ -324,7 +324,103 @@ function FullYearPill({ data }) {
   )
 }
 
-function ChartCard({ data, children, onThresholdChange, onCollapse, isCollapsed }) {
+function ScenarioDropdown({ scenarioMode, onScenarioModeChange, committedScenarios }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const activeScenario = scenarioMode !== 'all' && scenarioMode !== 'baseline'
+    ? committedScenarios.find(s => s.id === scenarioMode)
+    : null
+
+  const chipLabel = scenarioMode === 'baseline'
+    ? 'Baseline'
+    : activeScenario
+      ? `✓ ${activeScenario.name}`
+      : `✓ ${committedScenarios.length} scenario${committedScenarios.length !== 1 ? 's' : ''} applied`
+
+  const isActive = scenarioMode !== 'baseline'
+
+  function select(mode) {
+    onScenarioModeChange(mode)
+    setOpen(false)
+  }
+
+  const options = [
+    { key: 'baseline', label: 'Baseline' },
+    { key: 'all', label: 'All scenarios applied' },
+    ...committedScenarios.map(s => ({ key: s.id, label: s.name })),
+  ]
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '3px 9px', borderRadius: 6, cursor: 'pointer',
+          background: open ? 'var(--accent-bg)' : isActive ? 'rgba(46,204,113,0.08)' : 'transparent',
+          border: `1px solid ${open ? 'var(--accent-bd)' : isActive ? 'rgba(46,204,113,0.2)' : 'var(--bd)'}`,
+        }}
+      >
+        <span style={{
+          fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.05em',
+          color: open ? 'var(--accent)' : isActive ? 'var(--green)' : 'var(--tx-3)',
+          textTransform: 'uppercase',
+        }}>
+          {chipLabel}
+        </span>
+        <span style={{ fontSize: 7, color: open ? 'var(--accent)' : 'var(--tx-4)' }}>▾</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+          background: 'var(--bg-app)', border: '1px solid var(--bd)',
+          borderRadius: 10, padding: '6px 0', minWidth: 210, zIndex: 40,
+          boxShadow: '0 8px 28px rgba(0,0,0,0.4)',
+        }}>
+          <div style={{
+            padding: '4px 14px 8px',
+            fontFamily: "'DM Mono', monospace", fontSize: 8.5,
+            color: 'var(--tx-3)', letterSpacing: '0.06em',
+          }}>
+            SCENARIO VIEW
+          </div>
+          {options.map(({ key, label }) => {
+            const isSelected = scenarioMode === key
+            return (
+              <button
+                key={key}
+                onClick={() => select(key)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  width: '100%', textAlign: 'left', padding: '7px 14px',
+                  background: isSelected ? 'var(--accent-bg)' : 'transparent',
+                  border: 'none', cursor: 'pointer',
+                  color: isSelected ? 'var(--accent)' : 'var(--tx-2)',
+                  fontSize: 12.5,
+                }}
+              >
+                <span style={{ fontSize: 8, color: isSelected ? 'var(--accent)' : 'transparent' }}>●</span>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChartCard({ data, children, onThresholdChange, onCollapse, isCollapsed, scenarioMode, onScenarioModeChange, committedScenarios = [] }) {
   return (
     <div style={{
       border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)',
@@ -353,14 +449,12 @@ function ChartCard({ data, children, onThresholdChange, onCollapse, isCollapsed 
             <LegendDot color="var(--red)" label="Over" />
             <LegendDot dashed label="Forecast" />
             {data.hasActuals && <FullYearPill data={data} />}
-            {data.hasCommittedScenarios && (
-              <span style={{
-                fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.04em',
-                color: 'var(--green)', background: 'rgba(46,204,113,0.08)',
-                border: '1px solid rgba(46,204,113,0.2)', borderRadius: 5, padding: '2px 7px',
-              }}>
-                ✓ {data.committedScenarioCount} scenario{data.committedScenarioCount !== 1 ? 's' : ''} applied
-              </span>
+            {committedScenarios.length > 0 && onScenarioModeChange && (
+              <ScenarioDropdown
+                scenarioMode={scenarioMode}
+                onScenarioModeChange={onScenarioModeChange}
+                committedScenarios={committedScenarios}
+              />
             )}
           </>}
           {onCollapse && (
