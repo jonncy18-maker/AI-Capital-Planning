@@ -401,9 +401,9 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
   }
   const groupNames = Object.keys(grouped).sort()
 
-  // Groups open by default (mirror forecast table behavior)
-  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
-  const toggleGroup = g => setCollapsedGroups(prev => {
+  // Groups collapsed by default
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set())
+  const toggleGroup = g => setExpandedGroups(prev => {
     const next = new Set(prev)
     next.has(g) ? next.delete(g) : next.add(g)
     return next
@@ -466,7 +466,7 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
             const gTotals = Array(12).fill(0)
             for (const r of gRows) for (let m = 0; m < 12; m++) gTotals[m] += r.months[m]
             const gTotal = gTotals.reduce((a, b) => a + b, 0)
-            const groupOpen = !collapsedGroups.has(g)
+            const groupOpen = expandedGroups.has(g)
             return (
               <Fragment key={`group-${g}`}>
                 <tr style={{ background: 'var(--hover)', cursor: 'pointer' }} onClick={() => toggleGroup(g)}>

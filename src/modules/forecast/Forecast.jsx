@@ -330,7 +330,7 @@ function CategoryLineItems({ row, cellStyle, colBg, curMonth, editable, onAddLin
 
 // ── Forecast grid ────────────────────────────────────────────────────────────
 
-function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, layer, forecastReady, onEdit, saving, editKey, collapsedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onUpdateLine, onDeleteLabel, onSetRate }) {
+function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, layer, forecastReady, onEdit, saving, editKey, expandedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onUpdateLine, onDeleteLabel, onSetRate }) {
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1 // highlight current month
   const canEditForecast = layer === 'forecast' && forecastReady
 
@@ -436,7 +436,7 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
               }
             }
             const gTotal = gForecast.reduce((a, b) => a + b, 0)
-            const groupOpen = !collapsedGroups.has(g)
+            const groupOpen = expandedGroups.has(g)
             return (
               <Fragment key={`group-${g}`}>
                 <tr style={{ background: 'var(--hover)', cursor: 'pointer' }} onClick={() => onToggleGroup(g)}>
@@ -545,7 +545,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   // Editing state: { catId, month, budgetValue, currentValue, lineId, key }
   const [editCell, setEditCell] = useState(null)
 
-  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set())
   const [expandedCats, setExpandedCats] = useState(() => new Set())
 
   const loadData = useCallback(async (yr) => {
@@ -669,17 +669,17 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     () => [...new Set(catRows.map(r => r.group || '—'))].sort(),
     [catRows]
   )
-  const allCollapsed = groupNames.length > 0 && groupNames.every(g => collapsedGroups.has(g))
+  const allCollapsed = groupNames.length > 0 && groupNames.every(g => !expandedGroups.has(g))
 
   function toggleGroup(g) {
-    setCollapsedGroups(prev => {
+    setExpandedGroups(prev => {
       const next = new Set(prev)
       next.has(g) ? next.delete(g) : next.add(g)
       return next
     })
   }
   function toggleAllGroups() {
-    setCollapsedGroups(allCollapsed ? new Set() : new Set(groupNames))
+    setExpandedGroups(allCollapsed ? new Set(groupNames) : new Set())
   }
   function toggleCat(catId) {
     setExpandedCats(prev => {
@@ -991,7 +991,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               onEdit={handleEdit}
               saving={saving}
               editKey={editCell?.key ?? null}
-              collapsedGroups={collapsedGroups}
+              expandedGroups={expandedGroups}
               onToggleGroup={toggleGroup}
               expandedCats={expandedCats}
               onToggleCat={toggleCat}
