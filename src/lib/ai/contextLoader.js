@@ -130,7 +130,7 @@ export function summarizeContext(ctx) {
 
 // Structured text brief — formatted for the AI to reason against immediately.
 // Used once the Edge Function proxy is wired (see sendMessage.js).
-export function buildContextBrief(ctx) {
+export function buildContextBrief(ctx, yearTxns) {
   if (!ctx) return 'No financial context loaded.'
   const s = summarizeContext(ctx)
   const lines = []
@@ -138,12 +138,13 @@ export function buildContextBrief(ctx) {
   lines.push('## Financial Context')
 
   // Current-year projection: YTD actuals + remaining-month forecasts.
-  // This matches the numbers shown in the Income vs. Expenses widget.
-  const yearTxns = (ctx?.transactions ?? []).filter(t => {
+  // Prefer the freshly-fetched yearTxns (same dataset the dashboard widgets use);
+  // fall back to filtering ctx.transactions when yearTxns isn't passed.
+  const currentYearTxns = yearTxns ?? (ctx?.transactions ?? []).filter(t => {
     const d = new Date(t.date)
     return !Number.isNaN(d.getTime()) && d.getFullYear() === ctx?.thisYear
   })
-  const ivs = incomeVsExpenses(ctx, yearTxns)
+  const ivs = incomeVsExpenses(ctx, currentYearTxns)
   if (ivs.hasData || (ctx?.budgetLineItems ?? []).length > 0) {
     const savingsNote = ivs.fullYearSavingsRate != null
       ? `, ~${Math.round(ivs.fullYearSavingsRate)}% projected savings rate`
