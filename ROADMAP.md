@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-06-22 (Phases 0–11 largely built; in daily use)
+**Last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 
 ### Done so far
 - **Phase 0 complete** — Vite + React SPA, GitHub Pages deploy (auto on push to `main`), Supabase project live, client configured.
@@ -80,6 +80,35 @@
   - Fixed/Flexible categories now matched against detail tabs (removed Non-Monthly-only restriction in `parseBudgetWorkbook`).
   - `TabMatchReview` dialog expanded to show all categories with matched tabs (not just Non-Monthly), with a type badge for Fixed/Flexible entries.
 
+- **Forecast + Budget: label-grouped line items (2026-06-22):**
+  - `src/lib/db/forecastLineItems.js` — added `setForecastRate(userId, categoryId, label, rate)` (batch-sets all future months) and `deleteForecastItemsByLabel(userId, categoryId, label)`.
+  - `src/modules/forecast/Forecast.jsx` — labels now group into a single 12-month row; a `$` rate input on the left bulk-sets all future months; individual cells remain editable for overrides; past months read-only; Add form simplified to label + rate; delete removes the whole label at once.
+  - `src/modules/budget/Budget.jsx` — `ScheduleGrid` sub-rows now grouped by label (one row spanning all 12 columns), matching the Forecast grid layout.
+  - `src/modules/shell/AppShell.jsx` + `src/modules/dashboard/Dashboard.jsx` — `dataNonce` bumped on import completion, threaded as `reloadSignal` to Dashboard so `yearTxns` refetches automatically after a transaction import (fixes stale charts post-import).
+
+- **Scenario planner full rebuild (2026-06-22–23):**
+  - `src/modules/scenarios/Scenarios.jsx` — complete rebuild (~2000→3000 lines):
+    - **Sidebar-first nav:** removed 3-button top toggle; sidebar is now always-visible primary nav with Baseline + Actual Plan items at top, then scenario list; inline `+` button to add a scenario.
+    - **Baseline panel:** past months show actual transaction spending (gray bars), current/future months show budget/forecast (accent bars); category group breakdown with dual-segment progress bars and legend.
+    - **Actual Plan view:** lists all committed scenarios as summary cards (name, commit date, net delta chip, adjustment count, View Details link).
+    - **ScenarioDetail tabs (3):** Adjustments (period-grouped table, colored badge chips, hover-reveal delete, net total row), Forecast Impact (12-month side-by-side bar chart vs baseline, hover tooltips, annual summary stats), Baseline Comparison (SVG grouped bars per period, delta chips, hover tooltips).
+    - **AiScenarioComposer:** full conversation history maintained across sends, right-aligned user bubbles, AI responses with ✦ icon, CLEAR button.
+    - **UI cleanup pass:** removed dead code (TimelineChart, EmptyState, buildCumulativeTimeline), collapsed sidebar dividers to 1, tightened module header padding, shortened button labels ("✓ Commit", × delete icon), removed redundant empty-state hint.
+  - `src/lib/dashboard/widgetData.js` — `monthlyBudgetVsActual()` now accepts a `scenarioFilter` param (`'all'` | `'baseline'` | scenario id) and folds committed scenario adjustment deltas into future forecast months accordingly.
+  - `src/modules/dashboard/BudgetActualsChart.jsx` — replaced static "N scenarios applied" badge with interactive `ScenarioDropdown` chip (Baseline / All / Individual); follows same chip/popover pattern as `ThresholdChip`.
+  - `src/modules/shell/AppShell.jsx` — passes `onGoToForecast` callback and `reloadSignal` to Scenarios; Scenarios passes `reloadSignal` to Forecast so promoting a scenario triggers a Forecast reload.
+
+- **Data integrity hardening (2026-06-23):**
+  - `src/lib/db/transactions.js` — `getTransactionsByMonth` and `getTransactionsForYear` now use `.range()` pagination loops (same pattern as `getTransactionsForAnalysis`). Root cause: with 1,117 transactions in 2026, the default Supabase 1000-row cap silently truncated all 114 June rows, making June actuals invisible in the Income vs Expenses chart.
+  - Full pagination audit — added `.range()` loops to all high-volume queries: `getRecentTransactions` (transactions.js), `getDistinctTransactionAccounts` (creditCards.js), `getIncomeTransactions` (income.js), `getBudgetLineItems` + `getBudgetYears` (budgetLineItems.js), `getBillAmountsForBill` + `getBillAmountsRange` (bills.js).
+  - `src/lib/ai/contextLoader.js` — `buildContextBrief` now computes the same current-year income/expense projection as the Income widget: YTD actuals + salary/budget forecast for remaining months via `incomeVsExpenses()`. Previously used trailing-12-month figures that spanned two calendar years, producing AI briefings inconsistent with dashboard numbers.
+  - `src/lib/ai/sendMessage.js` + `src/modules/dashboard/Dashboard.jsx` — `yearTxns` (Jan–Dec current year, fresh on each dashboard render) now threaded from `BriefingWidget` → `sendAIMessage` → `buildContextBrief`, bypassing stale `ctx.transactions` and the 1000-row cap. Falls back to filtering `ctx.transactions` for the AI command bar where `yearTxns` is not available.
+  - `src/modules/budget/Budget.jsx` + `src/modules/forecast/Forecast.jsx` — groups default to collapsed (track `expandedGroups` opt-in set instead of `collapsedGroups` opt-out set).
+
+- **Documentation trail infrastructure (2026-06-23):**
+  - `.claude/skills/update-docs.md` — `/update-docs` skill: at end of each session, synthesizes git log + conversation and updates ROADMAP.md (new dated entry), ARCHITECTURE.md (if architectural change), README.md (if phase/status changed), then commits and pushes.
+  - `.gitignore` — changed `.claude/` (fully ignored) to `.claude/*` + `!.claude/skills/` so skills are committed and survive fresh clones; local config (settings.json, etc.) still ignored.
+
 ### Known follow-ups / gotchas
 - **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
 - **Retire the browser-side path:** `src/lib/anthropic.js` (direct browser call via `VITE_ANTHROPIC_API_KEY`) is now superseded by the Edge Function and should not be used. Keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty; rotate the key if it was ever exposed.
@@ -87,6 +116,8 @@
 - **Apply schema additions for income/settings** — `variance_threshold`, `bonus_month`, `benefits_amount`, `benefits_pct`, `four01k_pct`, `four01k_on_bonus` columns must exist in `user_profiles` for Settings save and income forecast to work. Add via SQL Editor if the migration wasn't applied.
 - **Test with real Monarch CSV** — dedup logic and parser logic are written but not tested against an actual 12–24 month export.
 - **No error boundary** — unhandled React render errors still produce a blank page. Add one soon.
+- ~~**Supabase 1000-row truncation**~~ — resolved: all high-volume queries now use `.range()` pagination loops.
+- ~~**AI briefing income figures inconsistent with dashboard**~~ — resolved: AI context now uses the same current-year `incomeVsExpenses()` projection as the Income widget.
 - Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
 
 ### Recommended next session
@@ -100,9 +131,13 @@
 4. **Real Monarch CSV end-to-end test** — run an actual 12–24 month export through parse → dedup → unmapped-category screen → insert. Validates the whole import pipeline.
 5. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars are correct vs. hand-calculated take-home.
 
+**AI quality**
+6. **Preview-before-write for AI scenario mutations** — `create_scenario` currently commits to the DB immediately. AI-computed deltas and category mappings should land in a preview step the user approves before persisting; creation should also be idempotent so retried tool loops don't double-create.
+7. **AI command bar yearTxns** — the command bar still uses `ctx.transactions` (trailing 365 days) rather than `yearTxns`; if the year has >1000 transactions, AI chat responses will be based on truncated data. Thread `yearTxns` to the command bar path.
+
 **Polish**
-6. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; pay special attention to the new 12-month bar charts.
-7. **Security cleanup** — delete `src/lib/anthropic.js`, confirm `VITE_ANTHROPIC_API_KEY` is empty in GitHub secrets.
+8. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; pay special attention to the Scenario planner sidebar and the new Forecast/Budget collapsed-group defaults.
+9. **Security cleanup** — delete `src/lib/anthropic.js`, confirm `VITE_ANTHROPIC_API_KEY` is empty in GitHub secrets.
 
 ---
 

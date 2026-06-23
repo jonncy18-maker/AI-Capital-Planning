@@ -105,13 +105,22 @@ The core decision engine. Where the user goes to answer "what happens if" questi
 - **Modeled:** Exploratory. Does not affect baseline or other scenarios.
 - **Committed:** Promoted to ground truth. Layers on top of baseline. Both baseline and committed view always accessible for audit.
 
-**View modes:**
-- Baseline only
-- Baseline + committed (labeled "Actual Plan")
-- Any modeled scenario vs. baseline
-- Side-by-side scenario comparison
+**Navigation model** *(updated 2026-06-23):* Sidebar is the primary nav. Top of sidebar has fixed Baseline and Actual Plan items; below is the scrollable scenario list with an inline `+` to add a scenario. There is no top-of-canvas toggle; the sidebar is always visible on desktop.
 
-**Interaction:** Levers and sliders for direct manipulation. AI command bar for complex or multi-variable scenarios. AI can drive the levers; user can also move them manually without invoking AI.
+**Baseline panel:** Past months render actual transaction spending (gray bars); current and future months render the budget/forecast plan (accent bars). Category group breakdown shows dual-segment progress bars (actuals vs. budget).
+
+**Actual Plan view:** Lists all committed scenarios as summary cards — name, commit date, net delta chip, adjustment count, and a link to view details. Provides an audit trail of what decisions have been locked in against the baseline.
+
+**ScenarioDetail tabs (3):**
+- **Adjustments:** Period-grouped table with colored badge chips (green savings / red increases), hover-reveal delete, net total row.
+- **Forecast Impact:** 12-month side-by-side bar chart (baseline vs. with-scenario); hover tooltips; annual summary stats. Pulls from `forecastLineItems` + `budgetLineItems` in context.
+- **Baseline Comparison:** SVG grouped bars per period, delta chips, hover tooltips.
+
+**AI Scenario Composer:** Full conversation history maintained across sends. User messages right-aligned, AI responses with ✦ icon. CLEAR button resets thread. The AI reads the full scenario state and can propose adjustments directly.
+
+**Dashboard integration** *(added 2026-06-23):* `monthlyBudgetVsActual()` in `widgetData.js` accepts a `scenarioFilter` param (`'all'` | `'baseline'` | scenario id) and folds committed scenario adjustment deltas into future forecast months. `BudgetActualsChart` exposes an interactive `ScenarioDropdown` chip that lets the user switch between Baseline, All Committed, or a single scenario view without leaving the dashboard.
+
+**Promote → Forecast flow:** When a scenario is committed, `AppShell` receives `onGoToForecast` so the user can navigate directly to the Forecast module. A `reloadSignal` propagates from Scenarios to Forecast to trigger a fresh data load after promotion.
 
 **Deduplication:** Scenarios are versioned. Promoting a scenario to committed creates an audit record of the prior baseline state.
 
@@ -325,6 +334,12 @@ At session start, the app automatically loads the following from Supabase into t
 - AI personalization preferences (from `ai_preferences`) — rendered into the brief as explicit "how to brief this user" guidance the AI honors
 
 This gives the AI enough context to answer any decision question without requiring the user to re-explain their financial situation each session. The context is structured, not a raw data dump — it's formatted as a financial brief the AI can reason against immediately.
+
+**Current-year income/expense projection in context** *(added 2026-06-23):* `buildContextBrief` now computes the same current-year projection as the Income vs. Expenses dashboard widget: YTD actuals from `yearTxns` (Jan–Dec, current year) + salary/budget forecast for remaining months via `incomeVsExpenses()`. This ensures AI briefings quote the same income and expense figures the user sees on screen. The command bar path still uses `ctx.transactions` (trailing 365 days); this is a known gap to resolve.
+
+**yearTxns threading** *(added 2026-06-23):* The dashboard `BriefingWidget` now passes `yearTxns` (the same fresh Jan–Dec slice the widgets use) into `sendAIMessage` → `buildContextBrief`, bypassing `ctx.transactions` which is loaded once at session start and subject to the Supabase 1000-row default limit on the trailing-365-day window.
+
+**Supabase query pagination** *(added 2026-06-23):* All DB helper functions that could realistically return >1000 rows now use a `.range()`-based pagination loop. The 1000-row default limit is silent (no error, no warning) — it simply returns a truncated result set. Affected functions: `getRecentTransactions`, `getTransactionsByMonth`, `getTransactionsForYear`, `getDistinctTransactionAccounts`, `getIncomeTransactions`, `getBudgetLineItems`, `getBudgetYears`, `getBillAmountsForBill`, `getBillAmountsRange`. Low-volume tables (categories, commitments, scenarios, snapshots, etc.) are left with default limits.
 
 ### 5.3 Deduplication Logic
 
