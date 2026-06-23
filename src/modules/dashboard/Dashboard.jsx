@@ -892,7 +892,7 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
 
 // ── AI Briefing widget (spans full width) ────────────────────────────────────
 
-function BriefingWidget({ userId, ctx, briefing, onGenerated, onCollapse, isCollapsed }) {
+function BriefingWidget({ userId, ctx, yearTxns, briefing, onGenerated, onCollapse, isCollapsed }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -906,6 +906,7 @@ function BriefingWidget({ userId, ctx, briefing, onGenerated, onCollapse, isColl
           'Highlight the single most important thing to watch over the next quarter, grounded in the data. ' +
           'No preamble — just the briefing.',
         context: ctx,
+        yearTxns,
       })
       if (res.status !== 'ok' || !res.text) {
         setError(res.text || 'Could not generate a briefing right now.')
@@ -1044,7 +1045,7 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
 
   const blocks = useMemo(() => [
     { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} scenarioMode={scenarioMode} onScenarioModeChange={setScenarioMode} committedScenarios={committedScenarios} /> },
-    { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BriefingWidget userId={userId} ctx={context} briefing={briefing} onGenerated={setBriefing} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
+    { id: 'briefing', title: 'AI Briefing', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BriefingWidget userId={userId} ctx={context} yearTxns={yearTxns} briefing={briefing} onGenerated={setBriefing} onCollapse={onCollapse} isCollapsed={isCollapsed} /> },
     { id: 'creditPoints', title: 'Credit Card Points', subtitle: 'Balance · earning rate · estimated value', render: () => <PointsSummaryWidget userId={userId} /> },
     ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile),
   ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, briefing, onThresholdChange, scenarioMode, committedScenarios])

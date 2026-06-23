@@ -22,8 +22,8 @@ If the context includes a "How To Brief This User (personalization)" section, tr
 // raw content blocks, and stop_reason so callers can drive multi-step tool use.
 // `systemExtra` appends to the system prompt (e.g. a tool-specific instruction
 // and the user's category names). Returns { status, text, content, stop_reason }.
-export async function invokeAIChat({ messages, tools, context, systemExtra = '', maxTokens = 1024 }) {
-  const brief = buildContextBrief(context)
+export async function invokeAIChat({ messages, tools, context, yearTxns, systemExtra = '', maxTokens = 1024 }) {
+  const brief = buildContextBrief(context, yearTxns)
   const system = [`${SYSTEM_PROMPT}\n\n${brief}`, systemExtra].filter(Boolean).join('\n\n')
 
   const body = {
@@ -64,11 +64,11 @@ export async function invokeAIChat({ messages, tools, context, systemExtra = '',
 
 // Accepts either a single `prompt` (one-shot, e.g. the AI Briefing) or a full
 // `messages` history ([{ role, content }]) for a multi-turn conversation.
-export async function sendAIMessage({ prompt, messages, context }) {
+export async function sendAIMessage({ prompt, messages, context, yearTxns }) {
   const convo = Array.isArray(messages) && messages.length
     ? messages.map(m => ({ role: m.role, content: m.content }))
     : [{ role: 'user', content: prompt }]
 
-  const res = await invokeAIChat({ messages: convo, context })
+  const res = await invokeAIChat({ messages: convo, context, yearTxns })
   return { status: res.status, text: res.text }
 }
