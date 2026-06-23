@@ -145,17 +145,29 @@ export async function deletePointRedemption(id) {
 
 // Returns distinct account names from transactions with their transaction counts,
 // for the AI to classify as credit cards. Caller passes result to parseCreditCardsFromTransactions.
+// Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getDistinctTransactionAccounts(userId) {
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('account')
-    .eq('user_id', userId)
-    .not('account', 'is', null)
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('account')
+      .eq('user_id', userId)
+      .not('account', 'is', null)
+      .range(from, from + PAGE - 1)
 
-  if (error) throw error
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
 
   const counts = {}
-  for (const t of (data ?? [])) {
+  for (const t of all) {
     counts[t.account] = (counts[t.account] ?? 0) + 1
   }
 
