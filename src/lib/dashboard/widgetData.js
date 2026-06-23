@@ -210,12 +210,25 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
   const now = new Date()
   const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
 
+  // Committed scenario deltas for future months only
+  const scenarioDeltas = Array(12).fill(0)
+  let committedScenarioCount = 0
+  for (const s of (ctx?.scenarios ?? [])) {
+    if (s.state !== 'committed') continue
+    committedScenarioCount++
+    for (const adj of (s.adjustments ?? [])) {
+      if (Number(adj.year) !== year) continue
+      const m = (adj.month ?? 1) - 1
+      if (m >= 0 && m < 12 && m > currentMonth) scenarioDeltas[m] += Number(adj.delta_amount) || 0
+    }
+  }
+
   const varThreshold = ctx?.varianceThreshold ?? 10   // percent, e.g. 10 means ±10%
   const varRatio = varThreshold / 100                  // decimal form, e.g. 0.10
 
   const months = MONTHS.map((label, m) => {
     const b = budget[m]
-    const f = forecast[m]          // forecast = override ?? budget for this month
+    const f = forecast[m] + scenarioDeltas[m]   // forecast + committed scenario deltas
     const hasOverride = f !== b    // at least one category overridden
     const isPast = m < currentMonth
     const isCurrent = m === currentMonth
@@ -269,6 +282,8 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = []) {
     fullYearProjected,
     fullYearPct,
     onTrack,
+    committedScenarioCount,
+    hasCommittedScenarios: committedScenarioCount > 0,
     varThreshold,
   }
 }
