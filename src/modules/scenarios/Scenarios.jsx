@@ -1094,26 +1094,61 @@ function BaselinePanel({ ctx }) {
   const baselineItems = forecastItems.length > 0 ? forecastItems : budgetItems
   const isUsingForecast = forecastItems.length > 0
 
-  // Monthly totals
-  const monthly = Array(12).fill(0)
+  const year = CUR_YEAR
+  const excluded = new Set((ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category))
+
+  // Actual spending from transactions for past months
+  const monthlyActual = Array(12).fill(0)
+  for (const t of (ctx?.transactions ?? [])) {
+    const amt = Number(t.amount) || 0
+    if (amt >= 0) continue
+    if (excluded.has(t.category)) continue
+    const d = new Date(t.date)
+    if (isNaN(d.getTime()) || d.getFullYear() !== year) continue
+    monthlyActual[d.getMonth()] += Math.abs(amt)
+  }
+
+  // Planned monthly from forecast/budget
+  const monthlyPlan = Array(12).fill(0)
   for (const item of baselineItems) {
     const m = (item.month ?? 1) - 1
-    if (m >= 0 && m < 12) monthly[m] += Number(item.amount) || 0
+    if (m >= 0 && m < 12) monthlyPlan[m] += Number(item.amount) || 0
   }
+
+  // Display: past months use actual, current/future use plan
+  const monthly = Array(12).fill(0).map((_, m) =>
+    m < CUR_MONTH ? monthlyActual[m] : monthlyPlan[m]
+  )
 
   const annualTotal = monthly.reduce((a, b) => a + b, 0)
   const nonZeroMonths = monthly.filter(v => v > 0)
-  const monthlyAvg = nonZeroMonths.length > 0
-    ? nonZeroMonths.reduce((a, b) => a + b, 0) / nonZeroMonths.length
-    : 0
+  const monthlyAvg = nonZeroMonths.length > 0 ? nonZeroMonths.reduce((a, b) => a + b, 0) / nonZeroMonths.length : 0
 
-  // Category group breakdown
-  const byGroup = {}
-  for (const item of baselineItems) {
-    const group = item.budget_categories?.group || 'Other'
-    byGroup[group] = (byGroup[group] || 0) + Number(item.amount || 0)
+  // Category group breakdown: past = actual from transactions, future = plan
+  const actualByGroup = {}
+  for (const t of (ctx?.transactions ?? [])) {
+    const amt = Number(t.amount) || 0
+    if (amt >= 0) continue
+    if (excluded.has(t.category)) continue
+    const d = new Date(t.date)
+    if (isNaN(d.getTime()) || d.getFullYear() !== year || d.getMonth() >= CUR_MONTH) continue
+    const group = t.group || 'Other'
+    actualByGroup[group] = (actualByGroup[group] || 0) + Math.abs(amt)
   }
-  const groups = Object.entries(byGroup).sort((a, b) => b[1] - a[1])
+  const plannedByGroup = {}
+  for (const item of baselineItems) {
+    const m = (item.month ?? 1) - 1
+    if (m < CUR_MONTH) continue
+    const group = item.budget_categories?.group || 'Other'
+    plannedByGroup[group] = (plannedByGroup[group] || 0) + Number(item.amount || 0)
+  }
+  const allGroupNames = new Set([...Object.keys(actualByGroup), ...Object.keys(plannedByGroup)])
+  const groups = Array.from(allGroupNames).map(g => ({
+    group: g,
+    actual: actualByGroup[g] || 0,
+    planned: plannedByGroup[g] || 0,
+    total: (actualByGroup[g] || 0) + (plannedByGroup[g] || 0),
+  })).sort((a, b) => b.total - a.total)
 
   if (!baselineItems.length) {
     return (
@@ -1127,7 +1162,6 @@ function BaselinePanel({ ctx }) {
     )
   }
 
-  // Chart dims
   const W = 700, H = 150
   const PL = 58, PR = 16, PT = 14, PB = 32
   const dW = W - PL - PR
@@ -1142,21 +1176,19 @@ function BaselinePanel({ ctx }) {
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
-        {/* Header */}
         <div style={{ marginBottom: 22 }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--tx-1)', marginBottom: 5 }}>
             Your {CUR_YEAR} Financial Baseline
           </h2>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--tx-2)', lineHeight: 1.6 }}>
-            This is your current planned spending, based on your {isUsingForecast ? 'initialized forecast' : 'budget'} — before any scenario adjustments.
-            Scenarios model "what if" changes against this baseline. Promoting a scenario to committed layers it onto your actual plan.
+            Past months show <strong>actual spending</strong>; current and future months show your {isUsingForecast ? 'forecast' : 'budget'} plan.
+            Scenarios model "what if" changes against this baseline.
           </p>
         </div>
 
-        {/* Summary stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
           {[
-            { label: `${CUR_YEAR} Annual Plan`, value: '$' + Math.round(annualTotal).toLocaleString() },
+            { label: `${CUR_YEAR} Projected`, value: '$' + Math.round(annualTotal).toLocaleString() },
             { label: 'Monthly Average', value: '$' + Math.round(monthlyAvg).toLocaleString() },
             { label: 'Categories Budgeted', value: String((ctx?.categories ?? []).length) },
           ].map((stat, i) => (
@@ -1171,10 +1203,21 @@ function BaselinePanel({ ctx }) {
           ))}
         </div>
 
-        {/* Monthly chart */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 10, padding: '18px 20px 14px', marginBottom: 18 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>
-            Monthly Spending Plan — {CUR_YEAR}  ·  {isUsingForecast ? 'Forecast' : 'Budget'}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              Monthly Spending — {CUR_YEAR} · {isUsingForecast ? 'Forecast' : 'Budget'}
+            </div>
+            <div style={{ display: 'flex', gap: 14, fontSize: 10, color: 'var(--tx-3)' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: 'rgba(120,120,145,0.65)', display: 'inline-block' }} />
+                Actual
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--accent)', opacity: 0.65, display: 'inline-block' }} />
+                Plan
+              </span>
+            </div>
           </div>
           <div style={{ position: 'relative' }}>
             <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block', overflow: 'visible' }}>
@@ -1187,24 +1230,25 @@ function BaselinePanel({ ctx }) {
                 </g>
               ))}
               {monthly.map((v, m) => {
+                const isActual = m < CUR_MONTH
                 const isCur = m === CUR_MONTH
                 const isPast = m < CUR_MONTH
                 const barH = v > 0 ? Math.max(2, dH - (yScale(v) - PT)) : 0
+                const fill = isActual ? 'rgba(120,120,145,0.65)' : 'var(--accent)'
+                const opacity = isActual ? 1 : isCur ? 1 : 0.55
                 return (
                   <g key={m}
-                    onMouseEnter={e => setTooltip({ m, v, clientX: e.clientX, clientY: e.clientY })}
+                    onMouseEnter={e => setTooltip({ m, v, isActual, clientX: e.clientX, clientY: e.clientY })}
                     onMouseLeave={() => setTooltip(null)}
                     style={{ cursor: 'pointer' }}
                   >
                     {isCur && <rect x={PL + m * barSpacing} y={PT} width={barSpacing} height={dH} fill="var(--accent)" opacity={0.04} />}
                     {v > 0 && (
                       <rect x={xBar(m)} y={yScale(v)} width={barW} height={barH}
-                        fill={isCur ? 'var(--accent)' : 'var(--accent)'}
-                        fillOpacity={isPast ? 0.35 : isCur ? 1 : 0.6}
-                        rx={3} />
+                        fill={fill} fillOpacity={opacity} rx={3} />
                     )}
                     <text x={xBar(m) + barW / 2} y={H - PB + 14} textAnchor="middle" fontSize={8.5}
-                      fill={isCur ? 'var(--accent)' : 'var(--tx-3)'}
+                      fill={isCur ? 'var(--accent)' : isPast ? 'var(--tx-4)' : 'var(--tx-3)'}
                       fontWeight={isCur ? 700 : 400}
                       fontFamily="'DM Mono', monospace">
                       {MONTHS[m]}
@@ -1214,7 +1258,6 @@ function BaselinePanel({ ctx }) {
               })}
               <line x1={PL} y1={yScale(0)} x2={W - PR} y2={yScale(0)} stroke="var(--bd)" strokeWidth={1} />
             </svg>
-
             {tooltip && (
               <div style={{
                 position: 'fixed', top: tooltip.clientY - 10, left: tooltip.clientX + 14,
@@ -1224,7 +1267,7 @@ function BaselinePanel({ ctx }) {
               }}>
                 <div style={{ fontWeight: 700, color: 'var(--tx-1)', marginBottom: 4 }}>{MONTHS[tooltip.m]} {CUR_YEAR}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
-                  <span style={{ color: 'var(--tx-3)' }}>Planned spend</span>
+                  <span style={{ color: 'var(--tx-3)' }}>{tooltip.isActual ? 'Actual spend' : 'Planned spend'}</span>
                   <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: 'var(--tx-1)' }}>
                     ${Math.round(tooltip.v).toLocaleString()}
                   </span>
@@ -1234,15 +1277,15 @@ function BaselinePanel({ ctx }) {
           </div>
         </div>
 
-        {/* Group breakdown */}
         {groups.length > 0 && (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 10, padding: '18px 20px' }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 16 }}>
               Spending by Category Group
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-              {groups.slice(0, 8).map(([group, total], i) => {
+              {groups.slice(0, 8).map(({ group, actual, planned, total }, i) => {
                 const pct = annualTotal > 0 ? (total / annualTotal) * 100 : 0
+                const actualPct = total > 0 ? (actual / total) * 100 : 0
                 return (
                   <div key={i}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
@@ -1254,8 +1297,13 @@ function BaselinePanel({ ctx }) {
                         </span>
                       </div>
                     </div>
-                    <div style={{ height: 6, background: 'var(--bd-light)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent)', borderRadius: 3, opacity: 0.65 }} />
+                    <div style={{ height: 6, background: 'var(--bd-light)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
+                      {actual > 0 && (
+                        <div style={{ height: '100%', width: `${actualPct}%`, background: 'rgba(120,120,145,0.65)', borderRadius: '3px 0 0 3px', flexShrink: 0 }} />
+                      )}
+                      {planned > 0 && (
+                        <div style={{ height: '100%', width: `${100 - actualPct}%`, background: 'var(--accent)', opacity: 0.55, borderRadius: actual > 0 ? '0 3px 3px 0' : 3 }} />
+                      )}
                     </div>
                   </div>
                 )
@@ -1264,9 +1312,8 @@ function BaselinePanel({ ctx }) {
           </div>
         )}
 
-        {/* Footer hint */}
         <div style={{ marginTop: 18, padding: '12px 16px', background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 8, fontSize: 12, color: 'var(--tx-2)', lineHeight: 1.6 }}>
-          <strong style={{ color: 'var(--tx-1)' }}>How to use this:</strong> Switch to the <strong>Scenarios</strong> tab to model "what if" changes.
+          <strong style={{ color: 'var(--tx-1)' }}>How to use this:</strong> Switch to the <strong>Scenarios</strong> tab in the sidebar to model "what if" changes.
           Each scenario shows its impact as a delta against this baseline. When you're ready to commit a scenario, promote it — and it will appear in the <strong>Forecast → Scenarios</strong> layer.
         </div>
       </div>
@@ -1598,9 +1645,6 @@ function ScenarioDetail({
         <button style={tabStyle(activeTab === 'comparison')} onClick={() => setActiveTab('comparison')}>
           Baseline Comparison
         </button>
-        <button style={tabStyle(activeTab === 'timeline')} onClick={() => setActiveTab('timeline')}>
-          Cumulative Timeline
-        </button>
       </div>
 
       {/* Tab content */}
@@ -1631,11 +1675,105 @@ function ScenarioDetail({
           </>
         ) : activeTab === 'forecast-impact' ? (
           <ForecastImpactChart adjustments={adjustments} ctx={context} />
-        ) : activeTab === 'comparison' ? (
-          <ComparisonChart adjustments={adjustments} ctx={context} />
         ) : (
-          <TimelineChart adjustments={adjustments} />
+          <ComparisonChart adjustments={adjustments} ctx={context} />
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Actual Plan view (committed scenario cards) ──────────────────────────────
+
+function ActualPlanView({ scenarios, adjustments, adjLoading, onViewScenario }) {
+  if (!scenarios.length) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 40, textAlign: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 14, opacity: 0.3 }}>✓</div>
+        <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 600, color: 'var(--tx-1)' }}>No committed scenarios yet</h3>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--tx-2)', maxWidth: 340, lineHeight: 1.65 }}>
+          Promote a modeled scenario to lock it into your actual plan. Committed scenarios flow into the Forecast module automatically.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        <div style={{ marginBottom: 22 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--tx-1)', marginBottom: 6 }}>Actual Plan</h2>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--tx-2)', lineHeight: 1.6 }}>
+            These scenarios have been committed and are now part of your financial plan. Their adjustments are locked and flow into the Forecast's <strong>+ Scenarios</strong> layer.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {scenarios.map(s => {
+            const adjs = adjustments[s.id] ?? []
+            const loading = adjLoading[s.id]
+            const netDelta = adjs.reduce((sum, a) => sum + Number(a.delta_amount), 0)
+            const periodSet = new Set(adjs.map(a => `${a.year}-${a.month}`))
+            const periodCount = periodSet.size
+
+            return (
+              <div key={s.id} style={{
+                background: 'var(--bg-card)', border: '1px solid var(--bd)',
+                borderRadius: 12, padding: '18px 20px',
+                display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase',
+                      color: 'var(--green)', background: 'rgba(46,204,113,0.1)',
+                      border: '1px solid rgba(46,204,113,0.25)', borderRadius: 10, padding: '2px 8px',
+                    }}>✓ Committed</span>
+                    {s.committed_at && (
+                      <span style={{ fontSize: 11, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace" }}>
+                        {new Date(s.committed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-1)', marginBottom: s.description ? 4 : 10 }}>
+                    {s.name}
+                  </div>
+                  {s.description && (
+                    <p style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--tx-2)', lineHeight: 1.5 }}>{s.description}</p>
+                  )}
+                  {loading ? (
+                    <div style={{ fontSize: 11, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace" }}>Loading…</div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{
+                        display: 'inline-block', padding: '4px 11px', borderRadius: 20,
+                        fontSize: 12, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                        background: netDelta < 0 ? 'rgba(46,204,113,0.1)' : netDelta > 0 ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
+                        color: netDelta < 0 ? 'var(--green)' : netDelta > 0 ? 'var(--red)' : 'var(--tx-2)',
+                        border: `1px solid ${netDelta < 0 ? 'rgba(46,204,113,0.25)' : netDelta > 0 ? 'rgba(229,57,53,0.25)' : 'var(--bd)'}`,
+                      }}>
+                        {netDelta === 0 ? '$0' : (netDelta < 0 ? '−' : '+') + '$' + Math.abs(Math.round(netDelta)).toLocaleString()}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>
+                        {adjs.length} adjustment{adjs.length !== 1 ? 's' : ''}
+                        {periodCount > 0 && ` · ${periodCount} month${periodCount !== 1 ? 's' : ''}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => onViewScenario(s.id)} style={{
+                  flexShrink: 0, padding: '8px 16px', background: 'transparent',
+                  color: 'var(--accent)', border: '1px solid var(--accent-bd)',
+                  borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  alignSelf: 'center',
+                }}>
+                  View Details →
+                </button>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -1781,10 +1919,6 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
   const selectedAdjs = adjustments[selectedId] ?? []
   const isAdjLoading = adjLoading[selectedId] ?? false
 
-  const visibleSelected = viewMode === 'actual-plan' ? (committed[0] ?? null) : selected
-
-  const btnBase = { padding: '6px 14px', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 500, transition: 'all 0.15s' }
-
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--tx-3)', fontSize: 14 }}>
@@ -1800,163 +1934,160 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Module header */}
-      <div style={{
-        padding: mobile ? '16px 16px 12px' : '18px 24px 14px',
-        borderBottom: '1px solid var(--bd)', flexShrink: 0,
-        display: 'flex', alignItems: mobile ? 'flex-start' : 'flex-end', gap: 12, flexWrap: 'wrap',
-      }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={headerStyles.icon}>◑</span>
-            <h1 style={headerStyles.title(mobile)}>Scenario Planner</h1>
-          </div>
-          <div style={{ ...headerStyles.subtitle, marginTop: 6, marginLeft: 30 }}>
-            Model one-off and recurring changes against your real baseline.
-          </div>
+      <div style={{ padding: mobile ? '14px 18px 12px' : '18px 28px 14px', borderBottom: '1px solid var(--bd)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={headerStyles.icon}>◑</span>
+          <h1 style={headerStyles.title(mobile)}>Scenario Planner</h1>
         </div>
-        {/* View mode toggle */}
-        <div style={{ display: 'flex', gap: 0, background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 8, overflow: 'hidden' }}>
-          {[
-            { key: 'baseline', label: 'Baseline' },
-            { key: 'actual-plan', label: 'Actual Plan' },
-            { key: 'scenario', label: 'Scenarios' },
-          ].map(({ key, label }, i, arr) => (
-            <button key={key} onClick={() => setViewMode(key)} style={{
-              ...btnBase, border: 'none',
-              borderRight: i < arr.length - 1 ? '1px solid var(--bd)' : 'none',
-              background: viewMode === key ? 'var(--accent-bg)' : 'transparent',
-              color: viewMode === key ? 'var(--accent)' : 'var(--tx-2)',
-              fontWeight: viewMode === key ? 600 : 400,
-              borderRadius: 0,
-            }}>
-              {label}
-            </button>
-          ))}
+        <div style={{ ...headerStyles.subtitle, marginTop: 6, marginLeft: 30 }}>
+          Model one-off and recurring changes against your real baseline.
         </div>
       </div>
 
       {/* Body */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
-        {/* Baseline view mode */}
-        {viewMode === 'baseline' && (
-          <BaselinePanel ctx={context} />
+        {/* Sidebar — always visible on desktop; on mobile only when no detail showing */}
+        {(!mobile || (!selectedId && viewMode === 'scenario')) && (
+          <div style={{
+            width: mobile ? '100%' : 260, flexShrink: 0,
+            borderRight: mobile ? 'none' : '1px solid var(--bd)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}>
+            {/* Nav items */}
+            <div style={{ borderBottom: '1px solid var(--bd-light)' }}>
+              {[
+                { key: 'baseline', label: 'Baseline', icon: '▤' },
+                { key: 'actual-plan', label: 'Actual Plan', icon: '✓' },
+              ].map(({ key, label, icon }) => {
+                const isActive = viewMode === key
+                return (
+                  <button key={key} onClick={() => {
+                    setViewMode(key)
+                    setSelectedId(null)
+                    if (key === 'actual-plan') {
+                      committed.forEach(s => loadAdjustments(s.id))
+                    }
+                  }} style={{
+                    display: 'block', width: '100%', textAlign: 'left',
+                    padding: '10px 16px', background: isActive ? 'var(--accent-bg)' : 'transparent',
+                    border: 'none', borderLeft: `2px solid ${isActive ? 'var(--accent)' : 'transparent'}`,
+                    color: isActive ? 'var(--accent)' : 'var(--tx-2)', cursor: 'pointer',
+                    fontSize: 12.5, fontWeight: isActive ? 600 : 400,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <span style={{ fontSize: 11, opacity: 0.7 }}>{icon}</span>
+                    {label}
+                    {key === 'actual-plan' && committed.length > 0 && (
+                      <span style={{
+                        marginLeft: 'auto', fontSize: 9.5, fontFamily: "'DM Mono', monospace",
+                        color: isActive ? 'var(--accent)' : 'var(--tx-4)',
+                        background: isActive ? 'var(--accent-bd)' : 'var(--hover)',
+                        borderRadius: 10, padding: '1px 6px',
+                      }}>{committed.length}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* New scenario button */}
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--bd-light)' }}>
+              <button onClick={() => { setShowNewForm(true); setSelectedId(null); setViewMode('scenario') }} style={{
+                width: '100%', padding: '8px 12px', background: 'var(--accent)',
+                color: 'var(--accent-tx-on)', border: 'none', borderRadius: 6,
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}>
+                + New Scenario
+              </button>
+            </div>
+
+            {showNewForm && (
+              <NewScenarioForm onSubmit={handleCreate} onCancel={() => setShowNewForm(false)} />
+            )}
+
+            {/* Scenario list */}
+            <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
+              {modeled.length > 0 && (
+                <>
+                  <div style={{ padding: '4px 16px 6px', fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    Modeled
+                  </div>
+                  {modeled.map(s => (
+                    <ScenarioListItem key={s.id} scenario={s}
+                      selected={selectedId === s.id && viewMode === 'scenario'}
+                      onClick={() => { setViewMode('scenario'); handleSelect(s.id) }} />
+                  ))}
+                </>
+              )}
+              {committed.length > 0 && (
+                <>
+                  <div style={{ padding: `${modeled.length ? '12px' : '4px'} 16px 6px`, fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    Committed
+                  </div>
+                  {committed.map(s => (
+                    <ScenarioListItem key={s.id} scenario={s}
+                      selected={selectedId === s.id && viewMode === 'scenario'}
+                      onClick={() => { setViewMode('scenario'); handleSelect(s.id) }} />
+                  ))}
+                </>
+              )}
+              {scenarios.length === 0 && !showNewForm && (
+                <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.6 }}>
+                  No scenarios yet.<br />Create one to start modeling.
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--bd-light)', fontSize: 11, color: 'var(--tx-3)', lineHeight: 1.5 }}>
+              Use the AI composer or "+ New Scenario" to model changes.
+            </div>
+          </div>
         )}
 
-        {/* Scenario / Actual-plan modes */}
-        {viewMode !== 'baseline' && (
-          <>
-            {/* Left panel: scenario list */}
-            {(viewMode === 'scenario' || !mobile) && (
-              <div style={{
-                width: mobile ? '100%' : 260, flexShrink: 0,
-                borderRight: mobile ? 'none' : '1px solid var(--bd)',
-                display: 'flex', flexDirection: 'column', overflow: 'hidden',
-              }}>
-                {viewMode === 'scenario' && (
-                  <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--bd-light)' }}>
-                    <button onClick={() => { setShowNewForm(true); setSelectedId(null) }} style={{
-                      width: '100%', padding: '8px 12px', background: 'var(--accent)',
-                      color: 'var(--accent-tx-on)', border: 'none', borderRadius: 6,
-                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}>
-                      + New Scenario
-                    </button>
-                  </div>
-                )}
-
-                {showNewForm && viewMode === 'scenario' && (
-                  <NewScenarioForm onSubmit={handleCreate} onCancel={() => setShowNewForm(false)} />
-                )}
-
-                <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
-                  {viewMode === 'actual-plan' && (
-                    <div style={{ padding: '6px 14px 8px', fontSize: 10, fontWeight: 600, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                      Committed to Plan
-                    </div>
-                  )}
-
-                  {modeled.length > 0 && viewMode === 'scenario' && (
-                    <>
-                      <div style={{ padding: '4px 14px 6px', fontSize: 10, fontWeight: 600, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                        Modeled
-                      </div>
-                      {modeled.map(s => (
-                        <ScenarioListItem key={s.id} scenario={s} selected={selectedId === s.id} onClick={() => handleSelect(s.id)} />
-                      ))}
-                    </>
-                  )}
-
-                  {committed.length > 0 && (
-                    <>
-                      <div style={{ padding: `${modeled.length && viewMode === 'scenario' ? '14px' : '4px'} 14px 6px`, fontSize: 10, fontWeight: 600, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                        Committed
-                      </div>
-                      {committed.map(s => (
-                        <ScenarioListItem key={s.id} scenario={s} selected={selectedId === s.id} onClick={() => handleSelect(s.id)} />
-                      ))}
-                    </>
-                  )}
-
-                  {scenarios.length === 0 && !showNewForm && viewMode === 'scenario' && (
-                    <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: 12, color: 'var(--tx-3)' }}>
-                      No scenarios yet.<br />Create one to start modeling.
-                    </div>
-                  )}
-
-                  {viewMode === 'actual-plan' && committed.length === 0 && (
-                    <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 12, color: 'var(--tx-3)' }}>
-                      No committed scenarios yet.<br />Promote a modeled scenario to add it to your plan.
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ padding: '10px 14px', borderTop: '1px solid var(--bd-light)', fontSize: 11, color: 'var(--tx-3)', lineHeight: 1.5 }}>
-                  Use the AI composer or "+ New Scenario" to model changes.
-                </div>
-              </div>
-            )}
-
-            {/* Main panel */}
-            {(viewMode !== 'scenario' || !mobile || selectedId) && (
-              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                {visibleSelected ? (
-                  <ScenarioDetail
-                    scenario={visibleSelected}
-                    adjustments={viewMode === 'actual-plan'
-                      ? (adjustments[visibleSelected.id] ?? [])
-                      : selectedAdjs}
-                    categories={categories}
+        {/* Main panel */}
+        {(!mobile || selectedId || viewMode !== 'scenario') && (
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {viewMode === 'baseline' ? (
+              <BaselinePanel ctx={context} />
+            ) : viewMode === 'actual-plan' ? (
+              <ActualPlanView
+                scenarios={committed}
+                adjustments={adjustments}
+                adjLoading={adjLoading}
+                onViewScenario={(id) => { setViewMode('scenario'); handleSelect(id) }}
+              />
+            ) : selected ? (
+              <ScenarioDetail
+                scenario={selected}
+                adjustments={selectedAdjs}
+                categories={categories}
+                context={context}
+                onPromote={handlePromote}
+                onDelete={handleDelete}
+                onAddAdj={handleAddAdj}
+                onDeleteAdj={handleDeleteAdj}
+                loading={isAdjLoading}
+                onGoToForecast={onGoToForecast}
+              />
+            ) : (
+              <div style={{ flex: 1, overflow: 'auto', padding: mobile ? 16 : 24 }}>
+                <div style={{ maxWidth: 720, margin: '0 auto' }}>
+                  <AiScenarioComposer
+                    userId={userId}
                     context={context}
-                    onPromote={handlePromote}
-                    onDelete={handleDelete}
-                    onAddAdj={handleAddAdj}
-                    onDeleteAdj={handleDeleteAdj}
-                    loading={viewMode === 'actual-plan' ? (adjLoading[visibleSelected?.id] ?? false) : isAdjLoading}
-                    onGoToForecast={onGoToForecast}
+                    onCreated={handleAiCreated}
+                    onOpenScenario={handleOpenScenario}
+                    mobile={mobile}
                   />
-                ) : viewMode === 'scenario' ? (
-                  <div style={{ flex: 1, overflow: 'auto', padding: mobile ? 16 : 24 }}>
-                    <div style={{ maxWidth: 720, margin: '0 auto' }}>
-                      <AiScenarioComposer
-                        userId={userId}
-                        context={context}
-                        onCreated={handleAiCreated}
-                        onOpenScenario={handleOpenScenario}
-                        mobile={mobile}
-                      />
-                      <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--tx-3)', lineHeight: 1.6, marginTop: 18 }}>
-                        {scenarios.length === 0
-                          ? 'Or build one manually with "+ New Scenario".'
-                          : 'Pick a scenario on the left to view its details, or describe a new one above.'}
-                      </div>
-                    </div>
+                  <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--tx-3)', lineHeight: 1.6, marginTop: 18 }}>
+                    {scenarios.length === 0
+                      ? 'Or build one manually with "+ New Scenario".'
+                      : 'Pick a scenario on the left to view its details, or describe a new one above.'}
                   </div>
-                ) : (
-                  <EmptyState viewMode={viewMode} committedCount={committed.length} modeledCount={modeled.length} />
-                )}
+                </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>

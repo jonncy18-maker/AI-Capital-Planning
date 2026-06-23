@@ -353,6 +353,15 @@ function ChartCard({ data, children, onThresholdChange, onCollapse, isCollapsed 
             <LegendDot color="var(--red)" label="Over" />
             <LegendDot dashed label="Forecast" />
             {data.hasActuals && <FullYearPill data={data} />}
+            {data.hasCommittedScenarios && (
+              <span style={{
+                fontFamily: "'DM Mono', monospace", fontSize: 9, letterSpacing: '0.04em',
+                color: 'var(--green)', background: 'rgba(46,204,113,0.08)',
+                border: '1px solid rgba(46,204,113,0.2)', borderRadius: 5, padding: '2px 7px',
+              }}>
+                ✓ {data.committedScenarioCount} scenario{data.committedScenarioCount !== 1 ? 's' : ''} applied
+              </span>
+            )}
           </>}
           {onCollapse && (
             <button
