@@ -3,8 +3,10 @@
 .env.local
 .env.production
 
-# Claude Code agent working directory
-.claude/
+# Claude Code agent working directory — ignore local config, track shared skills
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 
 # Logs
 logs
