@@ -52,19 +52,32 @@ export async function importTransactions(userId, rows) {
 
 // Fetch recent transactions for AI context (last N days, summary level).
 // Defaults to a full trailing year so the AI sees the whole annual cycle.
+// Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getRecentTransactions(userId, days = 365) {
   const since = new Date()
   since.setDate(since.getDate() - days)
+  const sinceStr = since.toISOString().slice(0, 10)
 
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('date, merchant, category, "group", amount, account')
-    .eq('user_id', userId)
-    .gte('date', since.toISOString().slice(0, 10))
-    .order('date', { ascending: false })
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('date, merchant, category, "group", amount, account')
+      .eq('user_id', userId)
+      .gte('date', sinceStr)
+      .order('date', { ascending: false })
+      .range(from, from + PAGE - 1)
 
-  if (error) throw error
-  return data ?? []
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
+  return all
 }
 
 // Fetch transactions with optional filters.

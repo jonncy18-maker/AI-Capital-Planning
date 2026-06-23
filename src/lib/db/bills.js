@@ -75,26 +75,52 @@ export async function getBillAmounts(userId, year, month) {
   return data ?? []
 }
 
+// Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getBillAmountsForBill(billId) {
-  const { data, error } = await supabase
-    .from('bill_amounts')
-    .select('*')
-    .eq('bill_id', billId)
-    .order('year', { ascending: false })
-    .order('month', { ascending: false })
-  if (error) throw error
-  return data ?? []
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    const { data, error } = await supabase
+      .from('bill_amounts')
+      .select('*')
+      .eq('bill_id', billId)
+      .order('year', { ascending: false })
+      .order('month', { ascending: false })
+      .range(from, from + PAGE - 1)
+
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
+  return all
 }
 
+// Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getBillAmountsRange(userId, startYear, endYear) {
-  const { data, error } = await supabase
-    .from('bill_amounts')
-    .select('*')
-    .eq('user_id', userId)
-    .gte('year', startYear)
-    .lte('year', endYear)
-  if (error) throw error
-  return data ?? []
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    const { data, error } = await supabase
+      .from('bill_amounts')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('year', startYear)
+      .lte('year', endYear)
+      .range(from, from + PAGE - 1)
+
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
+  return all
 }
 
 export async function upsertBillAmount(userId, billId, year, month, amount, notes = null) {

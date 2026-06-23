@@ -1,27 +1,51 @@
 import { supabase } from '../supabase.js'
 
+// Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getBudgetLineItems(userId, { year } = {}) {
-  let q = supabase
-    .from('budget_line_items')
-    .select('*, budget_categories(id, category, "group", type)')
-    .eq('user_id', userId)
-    .order('month', { ascending: true })
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    let q = supabase
+      .from('budget_line_items')
+      .select('*, budget_categories(id, category, "group", type)')
+      .eq('user_id', userId)
+      .order('month', { ascending: true })
+      .range(from, from + PAGE - 1)
 
-  if (year) q = q.eq('budget_year', year)
+    if (year) q = q.eq('budget_year', year)
 
-  const { data, error } = await q
-  if (error) throw error
-  return data ?? []
+    const { data, error } = await q
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
+  return all
 }
 
+// Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getBudgetYears(userId) {
-  const { data, error } = await supabase
-    .from('budget_line_items')
-    .select('budget_year')
-    .eq('user_id', userId)
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    const { data, error } = await supabase
+      .from('budget_line_items')
+      .select('budget_year')
+      .eq('user_id', userId)
+      .range(from, from + PAGE - 1)
 
-  if (error) throw error
-  const years = [...new Set((data ?? []).map(r => r.budget_year))].sort((a, b) => a - b)
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
+  const years = [...new Set(all.map(r => r.budget_year))].sort((a, b) => a - b)
   return years
 }
 

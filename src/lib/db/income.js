@@ -41,14 +41,27 @@ export async function deleteIncomeActual(userId, year, month) {
 
 // Positive (income) transactions in a date range, for the "pull from history"
 // action. Caller aggregates by month and drops excluded categories.
+// Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getIncomeTransactions(userId, startDate, endDate) {
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('date, amount, category')
-    .eq('user_id', userId)
-    .gt('amount', 0)
-    .gte('date', startDate)
-    .lte('date', endDate)
-  if (error) throw error
-  return data ?? []
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('date, amount, category')
+      .eq('user_id', userId)
+      .gt('amount', 0)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .range(from, from + PAGE - 1)
+
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
+  return all
 }
