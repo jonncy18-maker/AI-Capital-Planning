@@ -152,9 +152,45 @@ export function buildContextBrief(ctx, yearTxns) {
     const netSign = ivs.fullYearNet >= 0 ? '+' : ''
     lines.push(
       `- Current year (${ctx.thisYear}) projection: ` +
-      `~$${Math.round(ivs.fullYearIncome).toLocaleString()} income (YTD actuals + salary forecast for remaining months), ` +
-      `~$${Math.round(ivs.fullYearExpenses).toLocaleString()} expenses (YTD actuals + budget forecast for remaining months), ` +
+      `~$${Math.round(ivs.fullYearIncome).toLocaleString()} net take-home income (post-tax, post-401k/benefits deductions; YTD actuals + salary forecast for remaining months), ` +
+      `~$${Math.round(ivs.fullYearExpenses).toLocaleString()} expenses (YTD actuals + budget targets for remaining months), ` +
       `net ${netSign}$${Math.round(ivs.fullYearNet).toLocaleString()}${savingsNote}`
+    )
+
+    // Clarify 401k and benefits deductions so the AI can reconcile net take-home
+    // against any external "total savings" or "net cash flow" figure the user has.
+    const p = ctx.profile
+    if (p) {
+      const salary = Number(p.annual_income) || 0
+      const bonus = Number(p.annual_bonus) || 0
+      const four01kPct = Number(p.four01k_pct) || 0
+      const four01kOnBonus = p.four01k_on_bonus ?? false
+      const benefitsAmt = Number(p.benefits_amount) || 0
+      const benefitsPct = Number(p.benefits_pct) || 0
+      const totalGross = salary + bonus
+      const annualBenefits = benefitsAmt > 0 ? benefitsAmt
+        : (benefitsPct > 0 ? totalGross * benefitsPct / 100 : 0)
+      const annual401k = four01kPct > 0
+        ? salary * four01kPct / 100 + (four01kOnBonus ? bonus * four01kPct / 100 : 0)
+        : 0
+      if (annual401k > 0 || annualBenefits > 0) {
+        const parts = []
+        if (annual401k > 0) parts.push(`~$${Math.round(annual401k).toLocaleString()} 401k`)
+        if (annualBenefits > 0) parts.push(`~$${Math.round(annualBenefits).toLocaleString()} benefits`)
+        const totalSavings = (ivs.fullYearNet || 0) + annual401k
+        lines.push(
+          `  - Pre-tax deduction note: the income figure above already has ${parts.join(' + ')} subtracted. ` +
+          `Total savings including retirement contributions = ~$${Math.round(Math.max(totalSavings, 0)).toLocaleString()} ` +
+          `(net take-home + 401k). If the user cites a "net cash flow" or "total savings" figure higher than the net above, ` +
+          `the difference is most likely 401k contributions (~$${Math.round(annual401k).toLocaleString()}/yr) ` +
+          `flowing to a retirement account rather than checking.`
+        )
+      }
+    }
+
+    lines.push(
+      `  - Expense methodology note: forward months (after today) use budget target amounts, not actual run-rate. ` +
+      `If actual spending is tracking under budget, the real net will exceed the projected figure above.`
     )
   }
 
@@ -164,6 +200,16 @@ export function buildContextBrief(ctx, yearTxns) {
     `~$${Math.round(s.spendTrailing).toLocaleString()} spend, ` +
     `~$${Math.round(s.incomeTrailing).toLocaleString()} income`
   )
+
+  // Excluded categories — important for the AI to understand what's filtered out
+  // and why certain transactions don't appear in income/expense totals.
+  const excludedCats = (ctx.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
+  if (excludedCats.length > 0) {
+    lines.push(
+      `- Categories excluded from all income/expense totals (transfers and credit-card payments, ` +
+      `filtered to prevent double-counting cash that moves between accounts): ${excludedCats.join(', ')}`
+    )
+  }
 
   const inc = ctx.incomeEstimate
   if (inc && inc.grossWages > 0) {
