@@ -164,10 +164,19 @@ export function buildContextBrief(ctx, yearTxns) {
   }
 
   // Trailing 12-month actuals (spans two calendar years — for trend context only).
+  // Include the trailing net so the AI can explain gaps between this and the
+  // current-year projection: the gap is almost always budget conservatism
+  // (forward months use budget targets > actual run-rate) or one-time income items.
+  const trailingNet = s.incomeTrailing - s.spendTrailing
+  const trailingNetSign = trailingNet >= 0 ? '+' : ''
   lines.push(
     `- Trailing 12-month actuals (${s.transactionCount} rows, spans prior + current year): ` +
     `~$${Math.round(s.spendTrailing).toLocaleString()} spend, ` +
-    `~$${Math.round(s.incomeTrailing).toLocaleString()} income`
+    `~$${Math.round(s.incomeTrailing).toLocaleString()} income, ` +
+    `net ${trailingNetSign}$${Math.round(trailingNet).toLocaleString()}. ` +
+    `If this trailing net differs from the current-year projection net above, the gap is typically: ` +
+    `(1) budget targets for forward months are more conservative than actual run-rate spending — if spending tracks under budget, the real year-end net will be higher than projected; ` +
+    `(2) the trailing window spans two calendar years and may include one-time income (tax refunds, bonuses, reimbursements) not captured in the salary forecast for remaining months.`
   )
 
   // Excluded categories — important for the AI to understand what's filtered out
