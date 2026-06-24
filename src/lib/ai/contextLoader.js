@@ -152,18 +152,42 @@ export function buildContextBrief(ctx, yearTxns) {
     const netSign = ivs.fullYearNet >= 0 ? '+' : ''
     lines.push(
       `- Current year (${ctx.thisYear}) projection: ` +
-      `~$${Math.round(ivs.fullYearIncome).toLocaleString()} income (YTD actuals + salary forecast for remaining months), ` +
-      `~$${Math.round(ivs.fullYearExpenses).toLocaleString()} expenses (YTD actuals + budget forecast for remaining months), ` +
+      `~$${Math.round(ivs.fullYearIncome).toLocaleString()} net take-home income (post-tax; 401k and benefits are payroll deductions that never appear in bank transactions — this figure IS take-home pay; YTD actuals + salary forecast for remaining months), ` +
+      `~$${Math.round(ivs.fullYearExpenses).toLocaleString()} expenses (YTD actuals + budget targets for remaining months), ` +
       `net ${netSign}$${Math.round(ivs.fullYearNet).toLocaleString()}${savingsNote}`
+    )
+
+    lines.push(
+      `  - Expense methodology note: forward months (after today) use budget target amounts, not actual run-rate. ` +
+      `If actual spending is tracking under budget, the real net will exceed the projected figure above.`
     )
   }
 
   // Trailing 12-month actuals (spans two calendar years — for trend context only).
+  // Include the trailing net so the AI can explain gaps between this and the
+  // current-year projection: the gap is almost always budget conservatism
+  // (forward months use budget targets > actual run-rate) or one-time income items.
+  const trailingNet = s.incomeTrailing - s.spendTrailing
+  const trailingNetSign = trailingNet >= 0 ? '+' : ''
   lines.push(
     `- Trailing 12-month actuals (${s.transactionCount} rows, spans prior + current year): ` +
     `~$${Math.round(s.spendTrailing).toLocaleString()} spend, ` +
-    `~$${Math.round(s.incomeTrailing).toLocaleString()} income`
+    `~$${Math.round(s.incomeTrailing).toLocaleString()} income, ` +
+    `net ${trailingNetSign}$${Math.round(trailingNet).toLocaleString()}. ` +
+    `If this trailing net differs from the current-year projection net above, the gap is typically: ` +
+    `(1) budget targets for forward months are more conservative than actual run-rate spending — if spending tracks under budget, the real year-end net will be higher than projected; ` +
+    `(2) the trailing window spans two calendar years and may include one-time income (tax refunds, bonuses, reimbursements) not captured in the salary forecast for remaining months.`
   )
+
+  // Excluded categories — important for the AI to understand what's filtered out
+  // and why certain transactions don't appear in income/expense totals.
+  const excludedCats = (ctx.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
+  if (excludedCats.length > 0) {
+    lines.push(
+      `- Categories excluded from all income/expense totals (transfers and credit-card payments, ` +
+      `filtered to prevent double-counting cash that moves between accounts): ${excludedCats.join(', ')}`
+    )
+  }
 
   const inc = ctx.incomeEstimate
   if (inc && inc.grossWages > 0) {
