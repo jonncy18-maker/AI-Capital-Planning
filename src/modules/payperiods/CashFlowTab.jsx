@@ -225,17 +225,28 @@ export default function CashFlowTab({
   const max = Math.max(1, ...data.map(s => Math.max(s.inflow, s.outflow)))
   const chartH = mobile ? 150 : 200
 
-  // 12-month (calendar-year) figures — actuals for elapsed months, forecast for the rest.
-  const monthsN = data.length || 1
-  const totalIn = data.reduce((s, m) => s + m.inflow, 0)
-  const totalOut = data.reduce((s, m) => s + m.outflow, 0)
-  const avgIn = totalIn / monthsN
-  const avgOut = totalOut / monthsN
-  const annualNet = totalIn - totalOut
-  const periodYear = data[0]?.year ?? ''
-  // Net margin = how much of inflow is left after outflow. Green at/above the
-  // dashboard's variance threshold, red below it (including a deficit).
-  const netPct = avgIn > 0 ? ((avgIn - avgOut) / avgIn) * 100 : (avgOut > 0 ? -100 : 0)
+  // Separate elapsed actuals from forecast (current month + future months).
+  // A bonus in a past month must not inflate the forward-looking run-rate stats.
+  const pastMonths  = data.filter(m => !m.isFuture && !m.isCurrent)
+  const fcastMonths = data.filter(m =>  m.isFuture ||  m.isCurrent)
+
+  const ytdIn  = pastMonths.reduce((s, m) => s + m.inflow, 0)
+  const ytdOut = pastMonths.reduce((s, m) => s + m.outflow, 0)
+  const ytdNet = ytdIn - ytdOut
+
+  const nFcast   = fcastMonths.length
+  const fcastIn  = fcastMonths.reduce((s, m) => s + m.inflow, 0)
+  const fcastOut = fcastMonths.reduce((s, m) => s + m.outflow, 0)
+  const fcastNet = fcastIn - fcastOut
+
+  const projYearNet = ytdNet + fcastNet
+  const periodYear  = data[0]?.year ?? ''
+
+  // Net margin on the forecast period only so a bonus in actuals doesn't
+  // inflate the percentage. Green at/above the dashboard's variance threshold.
+  const avgFcastIn  = nFcast > 0 ? fcastIn  / nFcast : 0
+  const avgFcastOut = nFcast > 0 ? fcastOut / nFcast : 0
+  const netPct = avgFcastIn > 0 ? ((avgFcastIn - avgFcastOut) / avgFcastIn) * 100 : (avgFcastOut > 0 ? -100 : 0)
   const threshold = Number(profile?.variance_threshold) || 10
   const netColor = netPct >= threshold ? INFLOW_COLOR : WARN_COLOR
 
@@ -361,12 +372,12 @@ export default function CashFlowTab({
         </div>
       </div>
 
-      {/* Summary stats — separate cards, 12-month (calendar-year) basis */}
+      {/* Summary stats — YTD actuals vs. remaining salary forecast, not blended average */}
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 12, marginTop: 24 }}>
-        <StatCard label="Avg Inflow / mo" value={fmt(avgIn)} sub={`${periodYear} · 12-mo avg`} color={INFLOW_COLOR} mobile={mobile} />
-        <StatCard label="Avg Outflow / mo" value={fmt(avgOut)} sub={`${periodYear} · 12-mo avg`} color={OUTFLOW_COLOR} mobile={mobile} />
-        <StatCard label="Net Margin" value={(netPct >= 0 ? '+' : '') + netPct.toFixed(0) + '%'} sub={`≥ ${threshold}% target`} color={netColor} mobile={mobile} />
-        <StatCard label="Projected Annual Net" value={fmtSigned(annualNet)} sub={annualNet >= 0 ? 'surplus' : 'shortfall'} color={annualNet >= 0 ? INFLOW_COLOR : WARN_COLOR} mobile={mobile} />
+        <StatCard label="YTD Net" value={fmtSigned(ytdNet)} sub={`${periodYear} · ${pastMonths.length} mo actuals`} color={ytdNet >= 0 ? INFLOW_COLOR : WARN_COLOR} mobile={mobile} />
+        <StatCard label="Forecast Net" value={fmtSigned(fcastNet)} sub={`${nFcast} mo remaining · salary / 12`} color={fcastNet >= 0 ? INFLOW_COLOR : WARN_COLOR} mobile={mobile} />
+        <StatCard label="Net Margin" value={(netPct >= 0 ? '+' : '') + netPct.toFixed(0) + '%'} sub={`≥ ${threshold}% target · fcast`} color={netColor} mobile={mobile} />
+        <StatCard label="Projected Year-End" value={fmtSigned(projYearNet)} sub={projYearNet >= 0 ? 'surplus' : 'shortfall'} color={projYearNet >= 0 ? INFLOW_COLOR : WARN_COLOR} mobile={mobile} />
       </div>
 
       {/* Per-month override */}

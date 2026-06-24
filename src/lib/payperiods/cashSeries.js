@@ -8,6 +8,7 @@ import {
 import { getBudgetLineItems } from '../db/budgetLineItems.js'
 import { getForecastLineItems } from '../db/forecastLineItems.js'
 import { getIncomeActualsRange } from '../db/income.js'
+import { getExpenseActualsByCategories } from '../db/transactions.js'
 import { estimateNet } from '../db/taxBrackets.js'
 import { monthlyNetForecast } from './incomeForecast.js'
 import {
@@ -95,6 +96,25 @@ export async function loadOutflowSeries({
     }))
   }
 
+  // For bills linked to an expense category (actuals_category), fetch the real
+  // transaction totals per month so past periods show what actually went out
+  // instead of requiring manual bill_amounts entries. Only past + current months
+  // need this — future months still use the forecast mechanism.
+  const actualsLinkedBills = bills.filter(b => b.actuals_category)
+  const categoryActualsIndex = {} // [year][month][category] = total outflow
+  if (actualsLinkedBills.length > 0) {
+    const cats = [...new Set(actualsLinkedBills.map(b => b.actuals_category))]
+    const txns = await getExpenseActualsByCategories(userId, cats, startYear, endYear)
+    for (const t of txns) {
+      const d = new Date(t.date)
+      const y = d.getFullYear(), m = d.getMonth() + 1
+      if (!categoryActualsIndex[y]) categoryActualsIndex[y] = {}
+      if (!categoryActualsIndex[y][m]) categoryActualsIndex[y][m] = {}
+      const cat = t.category
+      categoryActualsIndex[y][m][cat] = (categoryActualsIndex[y][m][cat] ?? 0) + Math.abs(Number(t.amount))
+    }
+  }
+
   // Projected credit-card statements for every year the forecast window spans,
   // merged per card so a statement is matched by its due date regardless of which
   // year it closes in (e.g. a December statement paid in January).
@@ -121,7 +141,17 @@ export async function loadOutflowSeries({
   }
 
   return slots.map(slot => {
-    const billAmountsMap = amountIndex[slot.year]?.[slot.month] ?? {}
+    // Start with manually-entered/pulled bill_amounts, then overlay category
+    // actuals for bills linked to a transaction category (past months only).
+    let billAmountsMap = amountIndex[slot.year]?.[slot.month] ?? {}
+    if (!slot.isFuture && actualsLinkedBills.length > 0) {
+      const monthCatActuals = categoryActualsIndex[slot.year]?.[slot.month] ?? {}
+      const overlay = {}
+      for (const bill of actualsLinkedBills) {
+        overlay[bill.id] = monthCatActuals[bill.actuals_category] ?? 0
+      }
+      billAmountsMap = { ...billAmountsMap, ...overlay }
+    }
     const cardStatementMap = slot.isFuture
       ? projectedBillAmounts({ bills, statementsByCard, year: slot.year, month: slot.month })
       : {}

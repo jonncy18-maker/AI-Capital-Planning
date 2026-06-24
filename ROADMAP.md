@@ -109,6 +109,18 @@
   - `.claude/skills/update-docs.md` — `/update-docs` skill: at end of each session, synthesizes git log + conversation and updates ROADMAP.md (new dated entry), ARCHITECTURE.md (if architectural change), README.md (if phase/status changed), then commits and pushes.
   - `.gitignore` — changed `.claude/` (fully ignored) to `.claude/*` + `!.claude/skills/` so skills are committed and survive fresh clones; local config (settings.json, etc.) still ignored.
 
+- **Pay Period Planner — Cash Flow tab fixes (2026-06-24):**
+  - **Stat card redesign:** replaced "Avg Inflow / mo · Avg Outflow / mo · Net Margin · Projected Annual Net" with a two-part split: YTD Net (elapsed actual months), Forecast Net (remaining months at salary/12), Net Margin (forecast period only), Projected Year-End (YTD + forecast). A bonus in actuals no longer inflates the forward-looking rate.
+  - **Bill → Expense Actuals linking:** new `actuals_category` (text) column on `bills` (migration 013, applied). When set, `loadOutflowSeries()` sums actual transactions in that category per past month and injects into `billAmountsMap` — so historical Cash Flow outflow for that bill automatically reflects real spending instead of showing $0 (no manual entries needed). Future months still use forecast/fixed. `resolveBillAmount()` updated to honor the injected value over `fixed_amount`. BillForm gains "LINK TO EXPENSE ACTUALS" dropdown; bill rows show `↙ ACTUALS` badge.
+  - **Root cause of historical asymmetry** (Philippine transfers): bill had a forecast budget amount but no `bill_amounts` entries → past months $0, future months showed budget. Fix: link the bill's `actuals_category` to the expense category in transactions.
+
+- **AI context brief fixes (2026-06-24, merged into PR #134):**
+  - Income label corrected: now explicitly states "401k and benefits are payroll deductions that never appear in bank transactions — this figure IS take-home pay"
+  - Removed incorrect 401k reconciliation block that suggested 401k as a cash flow gap explanation (401k is pre-payroll, never in bank transactions)
+  - Added trailing 12-month net with explanation of why it may differ from the current-year projection
+  - Added excluded-categories list with double-counting explanation
+  - Added expense methodology note: forward months use budget targets, actual net may exceed projection
+
 ### Known follow-ups / gotchas
 - **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
 - **Retire the browser-side path:** `src/lib/anthropic.js` (direct browser call via `VITE_ANTHROPIC_API_KEY`) is now superseded by the Edge Function and should not be used. Keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty; rotate the key if it was ever exposed.

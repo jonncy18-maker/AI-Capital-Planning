@@ -154,6 +154,35 @@ export async function getTransactionsForYear(userId, year) {
   return all
 }
 
+// Fetch outflow (negative amount) transactions for the given category names
+// across a year range. Used to compute per-month actuals for bills that are
+// linked to an expense category instead of manual bill_amounts entries.
+// Returns rows with { date, category, amount } (amount is always negative).
+export async function getExpenseActualsByCategories(userId, categories, startYear, endYear) {
+  if (!categories || categories.length === 0) return []
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  let more = true
+  while (more) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('date, category, amount')
+      .eq('user_id', userId)
+      .in('category', categories)
+      .lt('amount', 0)
+      .gte('date', `${startYear}-01-01`)
+      .lte('date', `${endYear}-12-31`)
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    const batch = data ?? []
+    all.push(...batch)
+    more = batch.length === PAGE
+    from += PAGE
+  }
+  return all
+}
+
 // Fetch transactions in a date range for cash flow calendar aggregation.
 // Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getTransactionsByMonth(userId, fromDate, toDate) {
