@@ -12,6 +12,7 @@ export default function CommandBar({
   onViewScenarios,
 }) {
   const [open, setOpen] = useState(false)
+  const [maximized, setMaximized] = useState(false)
   const [input, setInput] = useState('')
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
@@ -55,7 +56,10 @@ export default function CommandBar({
     setOpen(false)
   }
 
-  const popupWidth = mobile ? 'calc(100vw - 36px)' : '400px'
+  const popupWidth = mobile
+    ? 'calc(100vw - 36px)'
+    : maximized ? 'min(760px, calc(100vw - 80px))' : '400px'
+  const popupHeight = maximized ? 'calc(100dvh - 100px)' : '520px'
 
   return (
     <>
@@ -124,8 +128,9 @@ export default function CommandBar({
             bottom: '82px',
             zIndex: 199,
             width: popupWidth,
-            height: '520px',
-            maxHeight: 'calc(100dvh - 120px)',
+            height: popupHeight,
+            maxHeight: 'calc(100dvh - 100px)',
+            transition: 'width 0.2s ease, height 0.2s ease',
             display: 'flex',
             flexDirection: 'column',
             background: 'var(--bg-card)',
@@ -154,6 +159,24 @@ export default function CommandBar({
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {accessory}
+                {!mobile && (
+                  <button
+                    onClick={() => setMaximized(m => !m)}
+                    title={maximized ? 'Restore' : 'Maximize'}
+                    style={{
+                      background: 'none',
+                      border: '1px solid var(--bd)',
+                      cursor: 'pointer',
+                      color: 'var(--tx-2)',
+                      fontSize: '13px',
+                      borderRadius: '7px',
+                      padding: '4px 8px',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {maximized ? '⊟' : '⊞'}
+                  </button>
+                )}
                 {hasMessages && (
                   <button
                     onClick={() => { onClear(); }}
