@@ -90,3 +90,18 @@ export async function deleteAdjustment(adjustmentId) {
 
   if (error) throw error
 }
+
+export async function cloneScenario(userId, scenarioId, { name, description = '' }) {
+  const newScenario = await createScenario(userId, { name, description })
+  const adjs = await getAdjustments(userId, scenarioId)
+  for (const adj of adjs) {
+    await addAdjustment(userId, newScenario.id, {
+      category_id: adj.category_id,
+      month: adj.month,
+      year: adj.year,
+      delta_amount: adj.delta_amount,
+      label: adj.label || '',
+    })
+  }
+  return newScenario
+}

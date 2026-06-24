@@ -116,7 +116,7 @@ async function executeCreateScenario(userId, input) {
 // the prior display turns ([{ role, content }]). Drives the tool loop and returns
 // { status, text, created } where `created` lists any scenarios built this turn.
 // `onStatus(text)` is called with progress strings (e.g. "Building …").
-export async function runScenarioAgent({ userId, history = [], prompt, context, onStatus }) {
+export async function runScenarioAgent({ userId, history = [], prompt, context, yearTxns, onStatus }) {
   const categoryNames = (context?.categories ?? [])
     .map(c => c.category)
     .filter(Boolean)
@@ -132,7 +132,7 @@ export async function runScenarioAgent({ userId, history = [], prompt, context, 
   const created = []
 
   for (let step = 0; step < 5; step++) {
-    const res = await invokeAIChat({ messages, tools: [CREATE_SCENARIO_TOOL], context, systemExtra, maxTokens: 1500 })
+    const res = await invokeAIChat({ messages, tools: [CREATE_SCENARIO_TOOL], context, yearTxns, systemExtra, maxTokens: 1500 })
     if (res.status !== 'ok') return { status: res.status, text: res.text, created }
 
     messages.push({ role: 'assistant', content: res.content })

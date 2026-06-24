@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../../lib/theme/useTheme.js'
 import { loadAIContext, summarizeContext } from '../../lib/ai/contextLoader.js'
 import { runScenarioAgent } from '../../lib/ai/scenarioAgent.js'
+import { getTransactionsByMonth } from '../../lib/db/transactions.js'
 import { getModule } from '../registry.js'
 import Sidebar from './Sidebar.jsx'
 import CommandBar from './CommandBar.jsx'
@@ -73,6 +74,19 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
 
   const summary = useMemo(() => summarizeContext(aiContext), [aiContext])
 
+  // yearTxns lives here so the AI command bar uses the same fresh data as the
+  // dashboard widgets (not the stale ctx.transactions which is capped at 1000 rows).
+  const [yearTxns, setYearTxns] = useState([])
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    const year = aiContext?.thisYear ?? new Date().getFullYear()
+    getTransactionsByMonth(user.id, `${year}-01-01`, `${year}-12-31`)
+      .then(rows => { if (!cancelled) setYearTxns(rows) })
+      .catch(() => { if (!cancelled) setYearTxns([]) })
+    return () => { cancelled = true }
+  }, [user?.id, aiContext?.thisYear, dataNonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleAiSubmit(prompt) {
     // Build history from completed turns, then run the agent (tool-enabled, so it
     // can actually create a scenario rather than only describing it).
@@ -93,6 +107,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
         history,
         prompt,
         context: aiContext,
+        yearTxns,
         onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
       })
       setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
@@ -124,6 +139,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
             summary={summary}
             mobile={mobile}
             userId={user.id}
+            yearTxns={yearTxns}
             periodOptions={profile?.period_options ?? []}
             periodDefault={profile?.period_default ?? null}
             reloadSignal={dataNonce}

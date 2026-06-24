@@ -7,6 +7,7 @@ import {
   getAdjustments,
   addAdjustment,
   deleteAdjustment,
+  cloneScenario,
 } from '../../lib/db/scenarios.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { runScenarioAgent } from '../../lib/ai/scenarioAgent.js'
@@ -147,7 +148,20 @@ function StateBadge({ state }) {
 
 // ── Scenario list item ───────────────────────────────────────────────────────
 
-function ScenarioListItem({ scenario, selected, onClick }) {
+function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
+  const adjs = adjustments ?? []
+  const netDelta = adjs.reduce((s, a) => s + Number(a.delta_amount), 0)
+  const hasData = adjs.length > 0
+
+  let span = null
+  if (hasData) {
+    const sorted = [...adjs].sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
+    const first = sorted[0]
+    const last = sorted[sorted.length - 1]
+    const fmtP = (a) => `${MONTHS[a.month - 1]} '${String(a.year).slice(-2)}`
+    span = (first.year === last.year && first.month === last.month) ? fmtP(first) : `${fmtP(first)} – ${fmtP(last)}`
+  }
+
   return (
     <button onClick={onClick} style={{
       display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px',
@@ -156,17 +170,32 @@ function ScenarioListItem({ scenario, selected, onClick }) {
       color: 'var(--tx-1)', cursor: 'pointer', borderRadius: '0 6px 6px 0',
       marginBottom: 2, transition: 'background 0.15s',
     }}>
-      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 3, color: selected ? 'var(--accent)' : 'var(--tx-1)' }}>
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: hasData ? 5 : 3, color: selected ? 'var(--accent)' : 'var(--tx-1)' }}>
         {scenario.name}
       </div>
-      {scenario.description && (
-        <div style={{ fontSize: 11, color: 'var(--tx-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      {!hasData && scenario.description && (
+        <div style={{ fontSize: 11, color: 'var(--tx-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 }}>
           {scenario.description}
         </div>
       )}
-      <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 4 }}>
-        {new Date(scenario.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-      </div>
+      {hasData ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{
+            display: 'inline-block', padding: '2px 7px', borderRadius: 10,
+            fontSize: 10.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+            background: netDelta < 0 ? 'rgba(46,204,113,0.1)' : netDelta > 0 ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
+            color: netDelta < 0 ? 'var(--green)' : netDelta > 0 ? 'var(--red)' : 'var(--tx-3)',
+            border: `1px solid ${netDelta < 0 ? 'rgba(46,204,113,0.2)' : netDelta > 0 ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
+          }}>
+            {netDelta === 0 ? '$0' : (netDelta < 0 ? '−' : '+') + fmtAbs(netDelta)}
+          </span>
+          {span && <span style={{ fontSize: 10, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>{span}</span>}
+        </div>
+      ) : (
+        <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 4 }}>
+          {new Date(scenario.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        </div>
+      )}
     </button>
   )
 }
@@ -1372,21 +1401,235 @@ function AiScenarioComposer({ userId, context, onCreated, onOpenScenario, mobile
   )
 }
 
+// ── Waterfall / bridge chart ─────────────────────────────────────────────────
+
+function WaterfallChart({ adjustments }) {
+  const [tooltip, setTooltip] = useState(null)
+
+  if (!adjustments.length) {
+    return (
+      <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--tx-3)', fontSize: 13 }}>
+        No adjustments to break down. Add adjustments to see how they add up.
+      </div>
+    )
+  }
+
+  // Group by category_id + label, preserving first-occurrence order
+  const groupOrder = []
+  const groups = {}
+  const sortedAdjs = [...adjustments].sort((a, b) =>
+    a.year !== b.year ? a.year - b.year : a.month - b.month
+  )
+  for (const adj of sortedAdjs) {
+    const cat = adj.budget_categories?.category ?? '—'
+    const lbl = adj.label?.trim() || ''
+    const key = `${adj.category_id}::${lbl}`
+    if (!groups[key]) {
+      groups[key] = { key, display: lbl ? `${cat} · ${lbl}` : cat, delta: 0, count: 0 }
+      groupOrder.push(key)
+    }
+    groups[key].delta += Number(adj.delta_amount)
+    groups[key].count++
+  }
+
+  const items = groupOrder.map(k => groups[k]).filter(g => Math.abs(g.delta) > 0.01)
+  if (!items.length) return null
+
+  const netDelta = items.reduce((s, g) => s + g.delta, 0)
+
+  // Build running totals to determine Y range
+  let running = 0
+  const snapshots = [0]
+  for (const item of items) {
+    running += item.delta
+    snapshots.push(running)
+  }
+
+  const allY = [...snapshots, 0]
+  const rawMin = Math.min(...allY)
+  const rawMax = Math.max(...allY)
+  const range = rawMax - rawMin || 1
+  const yMin = rawMin - range * 0.18
+  const yMax = rawMax + range * 0.18
+
+  const W = 700, H = 220
+  const PL = 66, PR = 20, PT = 22, PB = 52
+  const dW = W - PL - PR
+  const dH = H - PT - PB
+  const n = items.length + 1
+  const groupW = dW / n
+  const barW = Math.min(groupW * 0.55, 56)
+
+  const yScale = v => PT + dH - ((v - yMin) / (yMax - yMin)) * dH
+  const barCx = i => PL + i * groupW + groupW / 2
+  const barLeft = i => barCx(i) - barW / 2
+
+  const yTicks = [rawMin, 0, rawMax].filter((v, i, arr) =>
+    arr.indexOf(v) === i && Math.abs(v - (arr[i - 1] ?? -Infinity)) > range * 0.1
+  )
+
+  return (
+    <div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-1)', marginBottom: 4 }}>Adjustment Breakdown</div>
+      <div style={{ fontSize: 12, color: 'var(--tx-2)', lineHeight: 1.5, marginBottom: 14 }}>
+        How each change contributes to the net impact — grouped by item, summed across months.
+      </div>
+
+      <div style={{ position: 'relative' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block', overflow: 'visible' }}>
+          {/* Grid & Y labels */}
+          {yTicks.map((tick, i) => (
+            <g key={i}>
+              <line x1={PL} y1={yScale(tick)} x2={W - PR} y2={yScale(tick)}
+                stroke={tick === 0 ? 'var(--bd)' : 'var(--bd-light)'}
+                strokeWidth={tick === 0 ? 1.5 : 1}
+                strokeDasharray={tick === 0 ? undefined : '3,3'} />
+              <text x={PL - 5} y={yScale(tick)} textAnchor="end" dominantBaseline="middle"
+                fontSize={8} fill="var(--tx-3)" fontFamily="'DM Mono', monospace">
+                {tick === 0 ? '$0' : (tick < 0 ? '−' : '+') + fmtAbs(tick)}
+              </text>
+            </g>
+          ))}
+
+          {/* Bars */}
+          {(() => {
+            let run = 0
+            const els = []
+
+            items.forEach((item, i) => {
+              const before = run
+              run += item.delta
+              const y1 = yScale(before)
+              const y2 = yScale(run)
+              const bY = Math.min(y1, y2)
+              const bH = Math.max(3, Math.abs(y1 - y2))
+              const bX = barLeft(i)
+              const fill = item.delta < 0 ? '#2ecc71' : '#e05252'
+
+              if (i > 0) {
+                els.push(
+                  <line key={`c${i}`}
+                    x1={barLeft(i - 1) + barW} y1={yScale(before)}
+                    x2={bX} y2={yScale(before)}
+                    stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="2,3" />
+                )
+              }
+
+              els.push(
+                <g key={`b${i}`}
+                  onMouseEnter={e => setTooltip({ item, clientX: e.clientX, clientY: e.clientY })}
+                  onMouseLeave={() => setTooltip(null)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <rect x={bX} y={bY} width={barW} height={bH}
+                    fill={fill} fillOpacity={0.75} rx={3}
+                    stroke={fill} strokeOpacity={0.45} strokeWidth={1} />
+                  <text x={barCx(i)} y={item.delta < 0 ? bY - 5 : bY + bH + 11}
+                    textAnchor="middle" fontSize={8.5} fontWeight={700}
+                    fill={fill} fontFamily="'DM Mono', monospace">
+                    {item.delta < 0 ? '−' : '+'}{fmtAbs(item.delta)}
+                  </text>
+                  <text x={barCx(i)} y={H - PB + 14} textAnchor="middle"
+                    fontSize={7.5} fill="var(--tx-3)" fontFamily="'DM Mono', monospace">
+                    {item.display.length > 15 ? item.display.slice(0, 14) + '…' : item.display}
+                  </text>
+                  {item.count > 1 && (
+                    <text x={barCx(i)} y={H - PB + 25} textAnchor="middle"
+                      fontSize={7} fill="var(--tx-4)" fontFamily="'DM Mono', monospace">
+                      ×{item.count} mo
+                    </text>
+                  )}
+                </g>
+              )
+            })
+
+            // Net bar (0 → netDelta)
+            const ni = items.length
+            const nX = barLeft(ni)
+            const y1 = yScale(0)
+            const y2 = yScale(netDelta)
+            const bY = Math.min(y1, y2)
+            const bH = Math.max(3, Math.abs(y1 - y2))
+            const netFill = netDelta < 0 ? '#2ecc71' : 'var(--accent)'
+
+            if (items.length > 0) {
+              els.push(
+                <line key="c-net"
+                  x1={barLeft(ni - 1) + barW} y1={yScale(netDelta)}
+                  x2={nX} y2={yScale(netDelta)}
+                  stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="2,3" />
+              )
+            }
+            els.push(
+              <g key="b-net">
+                <rect x={nX} y={bY} width={barW} height={bH}
+                  fill={netFill} fillOpacity={0.9} rx={3}
+                  stroke={netFill} strokeOpacity={0.5} strokeWidth={1.5} />
+                <text x={barCx(ni)} y={netDelta < 0 ? bY - 5 : bY + bH + 11}
+                  textAnchor="middle" fontSize={8.5} fontWeight={700}
+                  fill={netFill} fontFamily="'DM Mono', monospace">
+                  {netDelta === 0 ? '$0' : (netDelta < 0 ? '−' : '+') + fmtAbs(netDelta)}
+                </text>
+                <text x={barCx(ni)} y={H - PB + 14} textAnchor="middle"
+                  fontSize={7.5} fill="var(--tx-2)" fontFamily="'DM Mono', monospace" fontWeight={700}>
+                  Net Total
+                </text>
+              </g>
+            )
+            return els
+          })()}
+        </svg>
+
+        {tooltip && (
+          <div style={{
+            position: 'fixed', top: tooltip.clientY - 10, left: tooltip.clientX + 14,
+            zIndex: 300, background: 'var(--bg-card)', border: '1px solid var(--bd)',
+            borderRadius: 9, padding: '10px 14px', boxShadow: '0 6px 22px rgba(0,0,0,0.18)',
+            pointerEvents: 'none', fontSize: 12, minWidth: 180,
+          }}>
+            <div style={{ fontWeight: 700, color: 'var(--tx-1)', marginBottom: 6 }}>{tooltip.item.display}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+              <span style={{ color: 'var(--tx-3)' }}>Total delta</span>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: tooltip.item.delta < 0 ? 'var(--green)' : 'var(--red)' }}>
+                {tooltip.item.delta < 0 ? '−' : '+'}{fmtAbs(tooltip.item.delta)}
+              </span>
+            </div>
+            {tooltip.item.count > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginTop: 4 }}>
+                <span style={{ color: 'var(--tx-3)' }}>Spread across</span>
+                <span style={{ fontFamily: "'DM Mono', monospace", color: 'var(--tx-2)' }}>{tooltip.item.count} months</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Scenario detail panel ────────────────────────────────────────────────────
 
 function ScenarioDetail({
   scenario, adjustments, categories, context,
-  onPromote, onDelete, onAddAdj, onDeleteAdj, loading, onGoToForecast,
+  onPromote, onDelete, onAddAdj, onDeleteAdj, onClone, loading, onGoToForecast, mobile,
 }) {
-  const [activeTab, setActiveTab] = useState('adjustments')
+  const [rightView, setRightView] = useState('forecast')
+  const [showAdjModal, setShowAdjModal] = useState(false)
+  const [sensitivity, setSensitivity] = useState(1.0)
+  const [cloning, setCloning] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [promoting, setPromoting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [promotedBanner, setPromotedBanner] = useState(false)
 
+  const scaledAdjs = useMemo(
+    () => sensitivity === 1 ? adjustments : adjustments.map(a => ({ ...a, delta_amount: Number(a.delta_amount) * sensitivity })),
+    [adjustments, sensitivity]
+  )
+
   const impactSummary = useMemo(
-    () => computeImpactSummary(adjustments, context),
-    [adjustments, context]
+    () => computeImpactSummary(scaledAdjs, context),
+    [scaledAdjs, context]
   )
 
   const isCommitted = scenario.state === 'committed'
@@ -1407,12 +1650,16 @@ function ScenarioDetail({
     setShowAddForm(false)
   }
 
-  const tabStyle = (active) => ({
-    padding: '8px 16px', background: 'transparent', border: 'none',
-    borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
-    color: active ? 'var(--accent)' : 'var(--tx-2)',
-    fontSize: 12.5, fontWeight: active ? 600 : 400, cursor: 'pointer',
-    transition: 'color 0.15s', whiteSpace: 'nowrap',
+  async function handleClone() {
+    setCloning(true)
+    try { await onClone(scenario.id) } finally { setCloning(false) }
+  }
+
+  const chartToggleBtnStyle = (active) => ({
+    padding: '5px 12px', border: 'none', fontSize: 11, cursor: 'pointer', transition: 'background 0.15s',
+    background: active ? 'var(--accent)' : 'transparent',
+    color: active ? 'var(--accent-tx-on)' : 'var(--tx-3)',
+    fontWeight: active ? 600 : 400,
   })
 
   return (
@@ -1427,6 +1674,19 @@ function ScenarioDetail({
             <StateBadge state={scenario.state} />
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={() => setShowAdjModal(true)} style={{
+              padding: '7px 12px', background: 'transparent', color: 'var(--tx-2)',
+              border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+            }}>
+              {adjustments.length > 0 ? `${adjustments.length} adjustment${adjustments.length !== 1 ? 's' : ''}` : '+ Adjustments'}
+            </button>
+            <button onClick={handleClone} disabled={cloning} style={{
+              padding: '7px 12px', background: 'transparent', color: 'var(--tx-2)',
+              border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: cloning ? 'not-allowed' : 'pointer',
+              opacity: cloning ? 0.5 : 1, whiteSpace: 'nowrap',
+            }}>
+              {cloning ? 'Cloning…' : '⧉ Clone'}
+            </button>
             {!isCommitted && (
               <button onClick={handlePromote} disabled={promoting} style={{
                 padding: '7px 14px', background: 'rgba(46,204,113,0.12)', color: 'var(--green)',
@@ -1486,51 +1746,81 @@ function ScenarioDetail({
         {!loading && <ImpactSummaryStrip summary={impactSummary} />}
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--bd)', flexShrink: 0, overflowX: 'auto' }}>
-        <button style={tabStyle(activeTab === 'adjustments')} onClick={() => setActiveTab('adjustments')}>
-          Adjustments {adjustments.length > 0 ? `(${adjustments.length})` : ''}
-        </button>
-        <button style={tabStyle(activeTab === 'forecast-impact')} onClick={() => setActiveTab('forecast-impact')}>
-          Forecast Impact
-        </button>
-        <button style={tabStyle(activeTab === 'comparison')} onClick={() => setActiveTab('comparison')}>
-          Baseline Comparison
-        </button>
+      {/* Chart — full width */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', minWidth: 0 }}>
+        {/* Sensitivity slider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '8px 12px', background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>Sensitivity</span>
+          <span style={{ fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace" }}>0.5×</span>
+          <input type="range" min={0.5} max={2} step={0.1} value={sensitivity}
+            onChange={e => setSensitivity(Number(e.target.value))}
+            style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer', margin: 0 }} />
+          <span style={{ fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace" }}>2×</span>
+          <span style={{
+            fontSize: 12, fontWeight: 700, fontFamily: "'DM Mono', monospace", minWidth: 32,
+            color: sensitivity !== 1 ? 'var(--accent)' : 'var(--tx-3)',
+          }}>{sensitivity.toFixed(1)}×</span>
+          {sensitivity !== 1 && (
+            <button onClick={() => setSensitivity(1)} style={{ fontSize: 10, color: 'var(--tx-4)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0, whiteSpace: 'nowrap' }}>reset</button>
+          )}
+        </div>
+
+        {/* View toggle */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <div style={{ display: 'flex', border: '1px solid var(--bd)', borderRadius: 7, overflow: 'hidden', background: 'var(--bg-app)' }}>
+            {[{ key: 'forecast', label: 'Monthly' }, { key: 'comparison', label: 'Breakdown' }].map(({ key, label }) => (
+              <button key={key} onClick={() => setRightView(key)} style={chartToggleBtnStyle(rightView === key)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {rightView === 'forecast'
+          ? <ForecastImpactChart adjustments={scaledAdjs} ctx={context} />
+          : <WaterfallChart adjustments={scaledAdjs} />}
       </div>
 
-      {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-        {loading ? (
-          <div style={{ color: 'var(--tx-3)', fontSize: 13 }}>Loading adjustments…</div>
-        ) : activeTab === 'adjustments' ? (
-          <>
-            <AdjustmentsTable adjustments={adjustments} onDelete={onDeleteAdj} readOnly={isCommitted} />
-            {!isCommitted && (
-              showAddForm ? (
-                <AddAdjustmentForm categories={categories} onSubmit={handleAddAdj} onCancel={() => setShowAddForm(false)} />
-              ) : (
-                <button onClick={() => setShowAddForm(true)} style={{
-                  marginTop: 14, padding: '8px 16px', background: 'transparent',
-                  color: 'var(--accent)', border: '1px solid var(--accent-bd)',
-                  borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                }}>
-                  + Add Adjustment
-                </button>
-              )
-            )}
-            {isCommitted && (
-              <div style={{ marginTop: 14, padding: '10px 14px', background: 'rgba(46,204,113,0.06)', border: '1px solid rgba(46,204,113,0.15)', borderRadius: 6, fontSize: 12, color: 'var(--tx-2)' }}>
-                This scenario is committed — its adjustments are locked as your actual plan baseline.
+      {/* Adjustments modal */}
+      {showAdjModal && (
+        <div
+          onClick={() => { setShowAdjModal(false); setShowAddForm(false) }}
+          style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 14, width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,0,0.35)' }}
+          >
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--bd)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+              <div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-1)' }}>Adjustments</span>
+                <span style={{ fontSize: 12, color: 'var(--tx-3)', marginLeft: 8 }}>{scenario.name}</span>
               </div>
-            )}
-          </>
-        ) : activeTab === 'forecast-impact' ? (
-          <ForecastImpactChart adjustments={adjustments} ctx={context} />
-        ) : (
-          <ComparisonChart adjustments={adjustments} ctx={context} />
-        )}
-      </div>
+              <button onClick={() => { setShowAdjModal(false); setShowAddForm(false) }} style={{ background: 'none', border: 'none', color: 'var(--tx-3)', fontSize: 20, cursor: 'pointer', padding: '2px 6px', lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
+              {loading ? (
+                <div style={{ color: 'var(--tx-3)', fontSize: 13 }}>Loading adjustments…</div>
+              ) : (
+                <>
+                  <AdjustmentsTable adjustments={adjustments} onDelete={onDeleteAdj} readOnly={isCommitted} />
+                  {!isCommitted && (showAddForm ? (
+                    <AddAdjustmentForm categories={categories} onSubmit={handleAddAdj} onCancel={() => setShowAddForm(false)} />
+                  ) : (
+                    <button onClick={() => setShowAddForm(true)} style={{ marginTop: 14, padding: '8px 16px', background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent-bd)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                      + Add Adjustment
+                    </button>
+                  ))}
+                  {isCommitted && (
+                    <div style={{ marginTop: 14, padding: '10px 14px', background: 'rgba(46,204,113,0.06)', border: '1px solid rgba(46,204,113,0.15)', borderRadius: 6, fontSize: 12, color: 'var(--tx-2)' }}>
+                      This scenario is committed — its adjustments are locked as your actual plan baseline.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1745,6 +2035,19 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     setAdjustments(prev => ({ ...prev, [selectedId]: (prev[selectedId] ?? []).filter(a => a.id !== adjId) }))
   }
 
+  async function handleClone(scenarioId) {
+    const source = scenarios.find(s => s.id === scenarioId)
+    const cloned = await cloneScenario(userId, scenarioId, {
+      name: source.name + ' (copy)',
+      description: source.description || '',
+    })
+    const list = await getScenarios(userId)
+    setScenarios(list)
+    setSelectedId(cloned.id)
+    setAdjustments(prev => ({ ...prev, [cloned.id]: [] }))
+    loadAdjustments(cloned.id)
+  }
+
   const selectedAdjs = adjustments[selectedId] ?? []
   const isAdjLoading = adjLoading[selectedId] ?? false
 
@@ -1851,7 +2154,8 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                   {modeled.map(s => (
                     <ScenarioListItem key={s.id} scenario={s}
                       selected={selectedId === s.id && viewMode === 'scenario'}
-                      onClick={() => { setViewMode('scenario'); handleSelect(s.id) }} />
+                      onClick={() => { setViewMode('scenario'); handleSelect(s.id) }}
+                      adjustments={adjustments[s.id]} />
                   ))}
                 </>
               )}
@@ -1865,7 +2169,8 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                   {committed.map(s => (
                     <ScenarioListItem key={s.id} scenario={s}
                       selected={selectedId === s.id && viewMode === 'scenario'}
-                      onClick={() => { setViewMode('scenario'); handleSelect(s.id) }} />
+                      onClick={() => { setViewMode('scenario'); handleSelect(s.id) }}
+                      adjustments={adjustments[s.id]} />
                   ))}
                 </>
               )}
@@ -1900,8 +2205,10 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                 onDelete={handleDelete}
                 onAddAdj={handleAddAdj}
                 onDeleteAdj={handleDeleteAdj}
+                onClone={handleClone}
                 loading={isAdjLoading}
                 onGoToForecast={onGoToForecast}
+                mobile={mobile}
               />
             ) : (
               <div style={{ flex: 1, overflow: 'auto', padding: mobile ? 16 : 24 }}>

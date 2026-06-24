@@ -889,13 +889,14 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
 
 // ── Main dashboard ───────────────────────────────────────────────────────────
 
-export default function Dashboard({ context, summary, mobile, userId, periodDefault, periodOptions = [], reloadSignal, onThresholdChange }) {
+export default function Dashboard({ context, summary, mobile, userId, yearTxns: yearTxnsProp, periodDefault, periodOptions = [], reloadSignal, onThresholdChange }) {
   const [configure, setConfigure] = useState(false)
   const [configMenu, setConfigMenu] = useState(false)
   const [addReports, setAddReports] = useState(false)
   const [dragId, setDragId] = useState(null)
   const [activePeriod, setActivePeriod] = useState(periodDefault)
-  const [yearTxns, setYearTxns] = useState([])
+  const [yearTxnsLocal, setYearTxnsLocal] = useState([])
+  const yearTxns = yearTxnsProp ?? yearTxnsLocal
   const [priorYearTxns, setPriorYearTxns] = useState([])
   const menuRef = useRef(null)
 
@@ -909,15 +910,17 @@ export default function Dashboard({ context, summary, mobile, userId, periodDefa
     return () => document.removeEventListener('mousedown', handler)
   }, [configMenu])
 
+  // Only fetch locally if the parent (AppShell) didn't provide yearTxns.
   useEffect(() => {
+    if (yearTxnsProp !== undefined) return
     if (!userId) return
     let cancelled = false
     const year = context?.thisYear ?? new Date().getFullYear()
     getTransactionsByMonth(userId, `${year}-01-01`, `${year}-12-31`)
-      .then(rows => { if (!cancelled) setYearTxns(rows) })
-      .catch(() => { if (!cancelled) setYearTxns([]) })
+      .then(rows => { if (!cancelled) setYearTxnsLocal(rows) })
+      .catch(() => { if (!cancelled) setYearTxnsLocal([]) })
     return () => { cancelled = true }
-  }, [userId, context?.thisYear, reloadSignal])
+  }, [userId, context?.thisYear, reloadSignal, yearTxnsProp])
 
   useEffect(() => {
     if (!userId) return
