@@ -1698,12 +1698,21 @@ function ScenarioDetail({
             )}
             {confirmDelete ? (
               <>
-                <button onClick={() => onDelete(scenario.id)} style={{ padding: '7px 12px', background: 'rgba(229,57,53,0.12)', color: 'var(--red)', border: '1px solid rgba(229,57,53,0.25)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  Confirm delete
-                </button>
-                <button onClick={() => setConfirmDelete(false)} style={{ padding: '7px 10px', background: 'transparent', color: 'var(--tx-2)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
-                  Cancel
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  {isCommitted && (
+                    <div style={{ fontSize: 10, color: 'var(--red)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      This will remove it from your plan
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => onDelete(scenario.id)} style={{ padding: '7px 12px', background: 'rgba(229,57,53,0.12)', color: 'var(--red)', border: '1px solid rgba(229,57,53,0.25)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      Confirm delete
+                    </button>
+                    <button onClick={() => setConfirmDelete(false)} style={{ padding: '7px 10px', background: 'transparent', color: 'var(--tx-2)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               </>
             ) : (
               <button onClick={() => setConfirmDelete(true)} title="Delete scenario" style={{ padding: '6px 10px', background: 'transparent', color: 'var(--tx-4)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 14, lineHeight: 1, cursor: 'pointer' }}>
@@ -1827,7 +1836,9 @@ function ScenarioDetail({
 
 // ── Actual Plan view (committed scenario cards) ──────────────────────────────
 
-function ActualPlanView({ scenarios, adjustments, adjLoading, onViewScenario }) {
+function ActualPlanView({ scenarios, adjustments, adjLoading, onViewScenario, onDelete }) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+
   if (!scenarios.length) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 40, textAlign: 'center' }}>
@@ -1904,18 +1915,50 @@ function ActualPlanView({ scenarios, adjustments, adjLoading, onViewScenario }) 
                     </div>
                   )}
                 </div>
-                <button onClick={() => onViewScenario(s.id)} style={{
-                  flexShrink: 0, padding: '8px 16px', background: 'transparent',
-                  color: 'var(--accent)', border: '1px solid var(--accent-bd)',
-                  borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  alignSelf: 'center',
-                }}>
-                  View Details →
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0, alignSelf: 'center' }}>
+                  <button onClick={() => onViewScenario(s.id)} style={{
+                    padding: '8px 16px', background: 'transparent',
+                    color: 'var(--accent)', border: '1px solid var(--accent-bd)',
+                    borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    View Details →
+                  </button>
+                  {confirmDeleteId === s.id ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => { onDelete(s.id); setConfirmDeleteId(null) }} style={{
+                        flex: 1, padding: '6px 10px', background: 'rgba(229,57,53,0.12)', color: 'var(--red)',
+                        border: '1px solid rgba(229,57,53,0.25)', borderRadius: 6, fontSize: 11,
+                        fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                      }}>
+                        Confirm delete
+                      </button>
+                      <button onClick={() => setConfirmDeleteId(null)} style={{
+                        padding: '6px 8px', background: 'transparent', color: 'var(--tx-2)',
+                        border: '1px solid var(--bd)', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                      }}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteId(s.id)} style={{
+                      padding: '6px 10px', background: 'transparent', color: 'var(--tx-4)',
+                      border: '1px solid var(--bd)', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}
         </div>
+        {confirmDeleteId && (
+          <div style={{ marginTop: 14, padding: '10px 14px', background: 'rgba(229,57,53,0.06)', border: '1px solid rgba(229,57,53,0.2)', borderRadius: 8, fontSize: 12, color: 'var(--tx-2)' }}>
+            Deleting a committed scenario will remove it from your plan and the Forecast layer. This cannot be undone.
+          </div>
+        )}
       </div>
     </div>
   )
@@ -2194,6 +2237,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                 adjustments={adjustments}
                 adjLoading={adjLoading}
                 onViewScenario={(id) => { setViewMode('scenario'); handleSelect(id) }}
+                onDelete={handleDelete}
               />
             ) : selected ? (
               <ScenarioDetail
