@@ -238,6 +238,10 @@ export function resolveBillAmount(bill, billAmountsMap, forecastAmountsMap = {},
   // statement projections below are estimates a manual entry may still override.)
   const forecastAmt = bill.forecast_category_id != null ? forecastAmountsMap[bill.id] : null
   if (forecastAmt != null) return forecastAmt
+  // For actuals-linked bills the category-transaction total (injected into
+  // billAmountsMap by loadOutflowSeries) wins over both fixed_amount and card
+  // projections — the actual beats any estimate.
+  if (bill.actuals_category != null && billAmountsMap[bill.id] != null) return billAmountsMap[bill.id]
   // Manual per-month entries apply only to plain variable bills. A stored amount
   // on a fixed bill is stale data from a prior variable config and must not
   // override the fixed amount (otherwise it double-counts in trends/schedule).

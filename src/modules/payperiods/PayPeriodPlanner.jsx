@@ -385,6 +385,7 @@ function BillForm({ initial, accounts, budgetCategories = [], creditCards = [], 
   const [forecastCategoryId, setForecastCategoryId] = useState(initial?.forecast_category_id ?? null)
   const [forecastDivisor, setForecastDivisor] = useState(initial?.forecast_divisor ?? 1)
   const [creditCardId, setCreditCardId] = useState(initial?.credit_card_id ?? null)
+  const [actualsCategoryName, setActualsCategoryName] = useState(initial?.actuals_category ?? null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -410,6 +411,7 @@ function BillForm({ initial, accounts, budgetCategories = [], creditCards = [], 
         forecast_category_id: forecastCategoryId || null,
         forecast_divisor: forecastCategoryId ? Math.max(1, forecastDivisor || 1) : 1,
         credit_card_id: creditCardId || null,
+        actuals_category: actualsCategoryName || null,
       })
     } catch (e) {
       setErr(e.message)
@@ -631,6 +633,34 @@ function BillForm({ initial, accounts, budgetCategories = [], creditCards = [], 
               fontSize: 11, color: 'var(--accent)', lineHeight: 1.5,
             }}>
               Amount will be pulled from your forecast budget each month. Set a fixed amount above as a fallback when no forecast data exists.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Actuals category link */}
+      {budgetCategories.length > 0 && (
+        <div style={{ ...fieldGap, borderTop: '1px solid var(--bd)', paddingTop: 14 }}>
+          <label style={labelStyle}>LINK TO EXPENSE ACTUALS (OPTIONAL)</label>
+          <select
+            style={{ ...inputStyle, cursor: 'pointer' }}
+            value={actualsCategoryName || ''}
+            onChange={e => setActualsCategoryName(e.target.value || null)}
+          >
+            <option value="">— No actuals link —</option>
+            {budgetCategories.map(c => (
+              <option key={c.id} value={c.category}>
+                {c.group ? `${c.group} › ${c.category}` : c.category}
+              </option>
+            ))}
+          </select>
+          {actualsCategoryName && (
+            <div style={{
+              marginTop: 10, padding: '8px 10px', borderRadius: 7,
+              background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
+              fontSize: 11, color: 'var(--accent)', lineHeight: 1.5,
+            }}>
+              Past months will show the sum of actual transactions in <strong>{actualsCategoryName}</strong> — no manual entries needed. Future months still use the forecast or fixed amount above.
             </div>
           )}
         </div>
@@ -2144,7 +2174,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                   </div>
                                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
                                     <Badge label={bill.payment_method === 'auto' ? 'AUTO' : 'MANUAL'} variant={bill.payment_method === 'auto' ? 'auto' : 'manual'} />
-                                    {bill.forecast_category_id != null ? (
+                                    {bill.actuals_category != null ? (
+                                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--accent)', letterSpacing: '0.04em' }}>↙ ACTUALS</span>
+                                    ) : bill.forecast_category_id != null ? (
                                       <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--accent)', letterSpacing: '0.04em' }}>↗ FORECAST</span>
                                     ) : bill.fixed_amount != null ? (
                                       <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: 'var(--tx-1)', lineHeight: 1 }}>
