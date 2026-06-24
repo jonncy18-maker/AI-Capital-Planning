@@ -386,6 +386,7 @@ function BillForm({ initial, accounts, budgetCategories = [], creditCards = [], 
   const [forecastDivisor, setForecastDivisor] = useState(initial?.forecast_divisor ?? 1)
   const [creditCardId, setCreditCardId] = useState(initial?.credit_card_id ?? null)
   const [actualsCategoryName, setActualsCategoryName] = useState(initial?.actuals_category ?? null)
+  const [excludeFromSchedule, setExcludeFromSchedule] = useState(initial?.exclude_from_schedule ?? false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -412,6 +413,7 @@ function BillForm({ initial, accounts, budgetCategories = [], creditCards = [], 
         forecast_divisor: forecastCategoryId ? Math.max(1, forecastDivisor || 1) : 1,
         credit_card_id: creditCardId || null,
         actuals_category: actualsCategoryName || null,
+        exclude_from_schedule: excludeFromSchedule,
       })
     } catch (e) {
       setErr(e.message)
@@ -665,6 +667,26 @@ function BillForm({ initial, accounts, budgetCategories = [], creditCards = [], 
           )}
         </div>
       )}
+
+      {/* Scheduling option */}
+      <div style={{ borderTop: '1px solid var(--bd)', paddingTop: 14, marginTop: 4 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={excludeFromSchedule}
+            onChange={e => setExcludeFromSchedule(e.target.checked)}
+            style={{ width: 15, height: 15, accentColor: 'var(--accent)', cursor: 'pointer' }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--tx-2)' }}>
+            Exclude from pay period schedule
+          </span>
+        </label>
+        {excludeFromSchedule && (
+          <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 6, marginLeft: 25, lineHeight: 1.5 }}>
+            This bill won't appear in Period 1 / Period 2 planning cards. It still counts as outflow in the Cash Flow and Trends charts.
+          </div>
+        )}
+      </div>
 
       {err && <div style={{ fontSize: 12, color: 'var(--warn)', marginBottom: 12 }}>{err}</div>}
 
@@ -1214,7 +1236,10 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   )
 
   // Split bills: period 1 = pay_day < pay_day_2, period 2 = pay_day >= pay_day_2
-  const { period1, period2 } = splitBillsByPeriod(bills, amountsMap, payDay2 - 1, forecastAmountsMap, cardStatementMap)
+  // Bills marked exclude_from_schedule are omitted — they still appear in the
+  // Cash Flow and Trends tabs as outflows but don't need a planned pay date.
+  const scheduleBills = bills.filter(b => !b.exclude_from_schedule)
+  const { period1, period2 } = splitBillsByPeriod(scheduleBills, amountsMap, payDay2 - 1, forecastAmountsMap, cardStatementMap)
 
   const primaryChecking = accounts.find(a => a.is_primary_checking && a.type === 'checking') ?? null
 
