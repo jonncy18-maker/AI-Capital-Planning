@@ -60,7 +60,15 @@ export async function syncMonarchTransactions({ email, password, mfaCode, since 
   })
 
   if (error) {
-    // Function not deployed yet, or a network/auth failure reaching it.
+    // FunctionsHttpError means the function ran but returned a non-2xx status —
+    // the real error message is in the response body. Try to extract it first.
+    // Any other error type (relay/network) means the function isn't reachable.
+    if (error.context?.json) {
+      try {
+        const body = await error.context.json()
+        if (body?.error) return { status: 'error', message: body.error }
+      } catch {}
+    }
     return {
       status: 'gated',
       message:
