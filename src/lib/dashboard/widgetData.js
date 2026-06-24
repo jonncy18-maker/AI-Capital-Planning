@@ -1,7 +1,7 @@
 // Derives dashboard widget data from the loaded AI context. Pure functions so
 // widgets render deterministically from Supabase data with zero AI token cost.
 
-import { aggregateCommitmentsForYear } from '../commitments/schedule.js'
+import { aggregateCommitmentsForYear, commitmentMonthlyDemand } from '../commitments/schedule.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -597,6 +597,62 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
   }
 
   return { rows, max, currentMonth, groupMonthlyActual, groupMonthlyBudget }
+}
+
+// Forward 6-month cash demand forecast: active commitment demand + Non-Monthly
+// budget line items. Used by the dashboard Cash Flow widget. Cross-year aware —
+// if the window spans into next year the commitment and budget lookups use the
+// correct calendar year for each month.
+export function cashFlowForecast(ctx, windowMonths = 6) {
+  const now = new Date()
+  const year = ctx?.thisYear ?? now.getFullYear()
+  const currentMonthIdx = now.getFullYear() === year ? now.getMonth() : 0
+  const commitments = (ctx?.commitments ?? []).filter(c => c.status === 'active')
+  const lineItems = ctx?.budgetLineItems ?? []
+
+  const range = []
+  for (let i = 0; i < windowMonths; i++) {
+    const d = new Date(year, currentMonthIdx + i, 1)
+    range.push({ year: d.getFullYear(), month: d.getMonth() + 1, label: MONTHS[d.getMonth()] })
+  }
+
+  // Non-Monthly budget items (non-commitment-sourced) indexed by "budgetYear-month"
+  const budgetByYM = {}
+  for (const li of lineItems) {
+    const cat = li.budget_categories || {}
+    if (cat.type !== 'Non-Monthly') continue
+    if (li.commitment_id) continue
+    const key = `${li.budget_year}-${li.month}`
+    if (!budgetByYM[key]) budgetByYM[key] = []
+    budgetByYM[key].push({ name: li.label || cat.category || 'Budget item', amount: Number(li.amount) || 0 })
+  }
+
+  const data = range.map(({ year: y, month: m, label }) => {
+    const sources = []
+    let commitmentDemand = 0
+    for (const c of commitments) {
+      const demand = commitmentMonthlyDemand(c, y, m)
+      if (demand > 0) {
+        sources.push({ name: c.name || 'Commitment', kind: 'commitment', amount: demand })
+        commitmentDemand += demand
+      }
+    }
+    let budgetDemand = 0
+    for (const b of budgetByYM[`${y}-${m}`] || []) {
+      sources.push({ name: b.name, kind: 'budget', amount: b.amount })
+      budgetDemand += b.amount
+    }
+    return { year: y, month: m, label, commitmentDemand, budgetDemand, total: commitmentDemand + budgetDemand, sources }
+  })
+
+  const max = data.reduce((m, d) => Math.max(m, d.total), 0) || 1
+  const half = Math.ceil(data.length / 2)
+  const quarters = [
+    { label: data.slice(0, half).map(d => d.label).join('–'), total: data.slice(0, half).reduce((s, d) => s + d.total, 0) },
+    { label: data.slice(half).map(d => d.label).join('–'), total: data.slice(half).reduce((s, d) => s + d.total, 0) },
+  ]
+
+  return { data, max, hasData: data.some(d => d.total > 0), quarters }
 }
 
 export { MONTHS }
