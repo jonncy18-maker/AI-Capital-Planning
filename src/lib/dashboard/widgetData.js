@@ -599,10 +599,9 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
   return { rows, max, currentMonth, groupMonthlyActual, groupMonthlyBudget }
 }
 
-// Forward 6-month cash demand forecast: active commitment demand + Non-Monthly
-// budget line items. Used by the dashboard Cash Flow widget. Cross-year aware —
-// if the window spans into next year the commitment and budget lookups use the
-// correct calendar year for each month.
+// Full-year net cash flow: income minus expenses for actual months; forecast
+// income (salary profile) minus commitment + non-monthly budget demand for
+// future months. Bars can be positive or negative.
 export function cashFlowForecast(ctx, yearTxns = []) {
   const now = new Date()
   const year = ctx?.thisYear ?? now.getFullYear()
@@ -611,7 +610,7 @@ export function cashFlowForecast(ctx, yearTxns = []) {
   const lineItems = ctx?.budgetLineItems ?? []
   const excluded = new Set((ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category))
 
-  // Non-Monthly budget items (non-commitment-sourced) indexed by "budgetYear-month"
+  // Non-Monthly budget items indexed by "budgetYear-month"
   const budgetByYM = {}
   for (const li of lineItems) {
     const cat = li.budget_categories || {}
@@ -622,22 +621,48 @@ export function cashFlowForecast(ctx, yearTxns = []) {
     budgetByYM[key].push({ name: li.label || cat.category || 'Budget item', amount: Number(li.amount) || 0 })
   }
 
-  // Actual total spending per month from yearTxns (expenses only)
-  const actualByMonth = Array(12).fill(0)
+  // Net cash flow per actual month (income − expenses, sign preserved)
+  const netByMonth = Array(12).fill(0)
   for (const t of yearTxns) {
     const amt = Number(t.amount) || 0
-    if (amt >= 0) continue
+    if (amt === 0) continue
     if (excluded.has(t.category)) continue
     const d = new Date(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
-    actualByMonth[d.getMonth()] += Math.abs(amt)
+    netByMonth[d.getMonth()] += amt
   }
 
-  // Full Jan–Dec range: past months use actuals, current + future use forecast
+  // Income forecast per month from salary profile (mirrors incomeVsExpenses logic)
+  const profile = ctx?.profile
+  const salary = Number(profile?.annual_income) || 0
+  const annualBonus = Number(profile?.annual_bonus) || 0
+  const bonusMonthIdx = profile?.bonus_month != null ? Number(profile.bonus_month) - 1 : null
+  let monthlyIncomeForecast = null
+  if (salary > 0) {
+    const totalGross = salary + annualBonus
+    const benefitsAmount = Number(profile?.benefits_amount) || 0
+    const benefitsPct = Number(profile?.benefits_pct) || 0
+    const annualBenefits = benefitsAmount > 0 ? benefitsAmount : (benefitsPct > 0 ? totalGross * benefitsPct / 100 : 0)
+    const monthlyBenefits = annualBenefits / 12
+    const totalTax = Number(ctx?.incomeEstimate?.totalTax) || 0
+    const effectiveTaxRate = totalGross > 0 ? totalTax / totalGross : 0
+    const four01kPct = Number(profile?.four01k_pct) || 0
+    const four01kOnBonus = profile?.four01k_on_bonus ?? false
+    const monthly401kSalary = salary / 12 * four01kPct / 100
+    monthlyIncomeForecast = Array(12).fill(0).map((_, m) => {
+      const isBonus = bonusMonthIdx !== null && m === bonusMonthIdx
+      const grossMonth = salary / 12 + (isBonus ? annualBonus : 0)
+      const taxMonth = grossMonth * effectiveTaxRate
+      const month401k = monthly401kSalary + (isBonus && four01kOnBonus ? annualBonus * four01kPct / 100 : 0)
+      return Math.max(0, grossMonth - taxMonth - month401k - monthlyBenefits)
+    })
+  }
+
+  // Full Jan–Dec: actual months use transaction net; forecast months use income − outflows
   const data = MONTHS.map((label, i) => {
     const m = i + 1
     if (i < currentMonthIdx) {
-      return { year, month: m, label, isActual: true, commitmentDemand: 0, budgetDemand: 0, total: actualByMonth[i], sources: [] }
+      return { year, month: m, label, isActual: true, commitmentDemand: 0, budgetDemand: 0, forecastIncome: 0, total: netByMonth[i], sources: [] }
     }
     const sources = []
     let commitmentDemand = 0
@@ -653,16 +678,20 @@ export function cashFlowForecast(ctx, yearTxns = []) {
       sources.push({ name: b.name, kind: 'budget', amount: b.amount })
       budgetDemand += b.amount
     }
-    return { year, month: m, label, isActual: false, commitmentDemand, budgetDemand, total: commitmentDemand + budgetDemand, sources }
+    const forecastIncome = monthlyIncomeForecast ? monthlyIncomeForecast[i] : 0
+    const total = forecastIncome - (commitmentDemand + budgetDemand)
+    return { year, month: m, label, isActual: false, commitmentDemand, budgetDemand, forecastIncome, total, sources }
   })
 
-  const max = data.reduce((m, d) => Math.max(m, d.total), 0) || 1
+  const max = data.reduce((m, d) => Math.max(m, Math.abs(d.total)), 0) || 1
   const halves = [
     { label: 'H1 · JAN–JUN', total: data.slice(0, 6).reduce((s, d) => s + d.total, 0) },
     { label: 'H2 · JUL–DEC', total: data.slice(6).reduce((s, d) => s + d.total, 0) },
   ]
+  const actualNet = data.filter(d => d.isActual).reduce((s, d) => s + d.total, 0)
+  const forecastNet = data.filter(d => !d.isActual).reduce((s, d) => s + d.total, 0)
 
-  return { data, max, hasData: data.some(d => d.total > 0), halves, todayIdx: currentMonthIdx }
+  return { data, max, hasData: data.some(d => d.total !== 0), halves, todayIdx: currentMonthIdx, actualNet, forecastNet }
 }
 
 export { MONTHS }

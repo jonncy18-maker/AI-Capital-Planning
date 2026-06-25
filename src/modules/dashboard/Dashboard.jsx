@@ -796,22 +796,26 @@ function PointsSummaryWidget({ userId }) {
 
 function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
   const [hover, setHover] = useState(null)
-  const chartH = mobile ? 110 : 150
+  const chartHalf = mobile ? 70 : 100
 
   if (!cf.hasData) {
     return (
-      <WideCard title="Cash Flow" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
-        <Empty text="Add commitments or a budget with Non-Monthly items to see upcoming cash demands." />
+      <WideCard title="Cash Flow" subtitle="Full year · net (income − expenses)" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+        <Empty text="Import transactions or set annual income in Settings to see net cash flow." />
       </WideCard>
     )
   }
 
+  const actualEndLabel = cf.todayIdx > 0 ? IVE_MONTHS[cf.todayIdx - 1] : null
+  const forecastStartLabel = cf.todayIdx < 12 ? IVE_MONTHS[cf.todayIdx] : null
+
   return (
-    <WideCard title="Cash Flow" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+    <WideCard title="Cash Flow" subtitle="Full year · net (income − expenses)" onCollapse={onCollapse} isCollapsed={isCollapsed}>
       <div style={{ position: 'relative', marginTop: 4 }}>
         {/* Tooltip */}
         {hover !== null && cf.data[hover] && (() => {
           const d = cf.data[hover]
+          const netColor = d.total >= 0 ? 'var(--accent)' : 'var(--warn)'
           return (
             <div style={{
               position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
@@ -820,74 +824,95 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
               boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none', whiteSpace: 'nowrap',
             }}>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 8 }}>
-                {d.label}{d.year !== new Date().getFullYear() ? ' ' + d.year : ''}
+                {d.label}{!d.isActual ? ' · forecast' : ''}
               </div>
               {d.isActual ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0' }}>
-                  <span style={{ color: 'var(--tx-3)' }}>Actual spending</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(d.total)}</span>
+                  <span style={{ color: 'var(--tx-3)' }}>Net cash flow</span>
+                  <span style={{ color: netColor, fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
+                    {(d.total >= 0 ? '+' : '') + fmtMoney(d.total)}
+                  </span>
                 </div>
-              ) : d.sources.length === 0 ? (
-                <div style={{ fontSize: 11, color: 'var(--tx-3)' }}>No planned demand this month</div>
               ) : (
-                d.sources.map((s, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0' }}>
-                    <span style={{ color: 'var(--tx-3)' }}>{s.name}</span>
-                    <span style={{ color: s.kind === 'commitment' ? 'var(--accent)' : 'var(--tx-2)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(s.amount)}</span>
-                  </div>
-                ))
-              )}
-              {!d.isActual && d.sources.length > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0', marginTop: 4, borderTop: '1px solid var(--bd)', fontWeight: 600, paddingTop: 4 }}>
-                  <span style={{ color: 'var(--tx-3)' }}>Total</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(d.total)}</span>
-                </div>
+                <>
+                  {d.forecastIncome > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0' }}>
+                      <span style={{ color: 'var(--tx-3)' }}>Income (fcst)</span>
+                      <span style={{ color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(d.forecastIncome)}</span>
+                    </div>
+                  )}
+                  {d.sources.length === 0 && !d.forecastIncome ? (
+                    <div style={{ fontSize: 11, color: 'var(--tx-3)' }}>No planned demand this month</div>
+                  ) : d.sources.map((s, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0' }}>
+                      <span style={{ color: 'var(--tx-3)' }}>{s.name}</span>
+                      <span style={{ color: 'var(--tx-2)', fontVariantNumeric: 'tabular-nums' }}>−{fmtMoney(s.amount)}</span>
+                    </div>
+                  ))}
+                  {(d.forecastIncome > 0 || d.sources.length > 0) && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0', marginTop: 4, borderTop: '1px solid var(--bd)', fontWeight: 600, paddingTop: 4 }}>
+                      <span style={{ color: 'var(--tx-3)' }}>Net</span>
+                      <span style={{ color: netColor, fontVariantNumeric: 'tabular-nums' }}>
+                        {(d.total >= 0 ? '+' : '') + fmtMoney(d.total)}
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )
         })()}
 
-        {/* Bars */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 6 : 14, height: chartH }}>
-          {cf.data.map((d, i) => {
-            const isSpike = !d.isActual && d.total > 0 && d.total === cf.max
-            const isHov = hover === i
-            const totalH = cf.max > 0 ? Math.max((d.total / cf.max) * chartH, d.total > 0 ? 3 : 0) : 0
-            const baseColor = isSpike ? 'var(--warn)' : 'var(--accent)'
-
-            return (
-              <div
-                key={i}
-                onMouseEnter={() => setHover(i)}
-                onMouseLeave={() => setHover(null)}
-                style={{
-                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  justifyContent: 'flex-end', height: '100%',
-                  background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5, cursor: 'default',
-                }}
-              >
-                {d.total > 0 ? (
-                  d.isActual ? (
-                    <div style={{ width: mobile ? '75%' : '65%', maxWidth: 44, height: totalH, borderRadius: '3px 3px 0 0', background: 'var(--accent)', opacity: isHov ? 0.65 : 0.4 }} />
-                  ) : (
-                    <div style={{ width: mobile ? '75%' : '65%', maxWidth: 44, borderRadius: '3px 3px 0 0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                      {(() => {
-                        const commitRatio = d.total > 0 ? d.commitmentDemand / d.total : 0
-                        const commitH = totalH * commitRatio
-                        const budgetH = totalH - commitH
-                        return <>
-                          {budgetH > 0 && <div style={{ height: budgetH, background: baseColor, opacity: isHov ? 0.65 : 0.45 }} />}
-                          {commitH > 0 && <div style={{ height: commitH, background: baseColor, opacity: isHov ? 1 : 0.85 }} />}
-                        </>
-                      })()}
-                    </div>
-                  )
-                ) : (
-                  <div style={{ width: '65%', height: 2, background: 'var(--bd)', borderRadius: 1 }} />
-                )}
-              </div>
-            )
-          })}
+        {/* Chart: zero line in the middle; positive bars grow up, negative bars grow down */}
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: chartHalf, height: 1, background: 'var(--bd)', zIndex: 1 }} />
+          <div style={{ display: 'flex', gap: mobile ? 6 : 14, height: chartHalf * 2, position: 'relative' }}>
+            {cf.data.map((d, i) => {
+              const posH = d.total > 0 ? Math.max((d.total / cf.max) * chartHalf, 3) : 0
+              const negH = d.total < 0 ? Math.max((Math.abs(d.total) / cf.max) * chartHalf, 3) : 0
+              const isHov = hover === i
+              const barW = mobile ? '75%' : '65%'
+              return (
+                <div
+                  key={i}
+                  onMouseEnter={() => setHover(i)}
+                  onMouseLeave={() => setHover(null)}
+                  style={{
+                    flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    cursor: 'default', position: 'relative', zIndex: 2,
+                    background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
+                  }}
+                >
+                  {/* Upper half: positive bars align to bottom */}
+                  <div style={{ height: chartHalf, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', width: '100%' }}>
+                    {posH > 0 && (
+                      <div style={{
+                        width: barW, maxWidth: 44, height: posH,
+                        background: 'var(--accent)',
+                        opacity: d.isActual ? (isHov ? 0.8 : 0.6) : (isHov ? 0.5 : 0.3),
+                        borderRadius: '3px 3px 0 0',
+                        border: !d.isActual ? '1px dashed var(--accent)' : 'none',
+                        boxSizing: 'border-box',
+                      }} />
+                    )}
+                  </div>
+                  {/* Lower half: negative bars align to top */}
+                  <div style={{ height: chartHalf, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', width: '100%' }}>
+                    {negH > 0 && (
+                      <div style={{
+                        width: barW, maxWidth: 44, height: negH,
+                        background: 'var(--warn)',
+                        opacity: d.isActual ? (isHov ? 0.9 : 0.75) : (isHov ? 0.6 : 0.4),
+                        borderRadius: '0 0 3px 3px',
+                        border: !d.isActual ? '1px dashed var(--warn)' : 'none',
+                        boxSizing: 'border-box',
+                      }} />
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         {/* Month labels + TODAY marker */}
@@ -906,51 +931,73 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
 
         {/* Amount labels */}
         <div style={{ display: 'flex', gap: mobile ? 6 : 14, marginTop: 3 }}>
-          {cf.data.map((d, i) => {
-            const isSpike = d.total > 0 && d.total === cf.max
-            return (
-              <div key={i} style={{
-                flex: 1, textAlign: 'center',
-                fontFamily: "'DM Mono', monospace", fontSize: mobile ? 8 : 9,
-                color: isSpike ? 'var(--warn)' : d.total > 0 ? 'var(--tx-2)' : 'var(--tx-4)',
-              }}>
-                {d.total > 0 ? fmtK(d.total) : '—'}
-              </div>
-            )
-          })}
+          {cf.data.map((d, i) => (
+            <div key={i} style={{
+              flex: 1, textAlign: 'center',
+              fontFamily: "'DM Mono', monospace", fontSize: mobile ? 8 : 9,
+              color: d.total > 0 ? 'var(--tx-2)' : d.total < 0 ? 'var(--warn)' : 'var(--tx-4)',
+            }}>
+              {d.total !== 0 ? (d.total > 0 ? '+' : '−') + fmtK(Math.abs(d.total)) : '—'}
+            </div>
+          ))}
         </div>
 
         {/* Legend */}
         <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
-          <CfLegend baseColor="var(--accent)" opacity={0.4} label="Actuals" />
-          <CfLegend baseColor="var(--accent)" opacity={0.85} label="Commitments" />
-          <CfLegend baseColor="var(--accent)" opacity={0.45} label="Non-monthly budget" />
-          <CfLegend baseColor="var(--warn)" opacity={0.85} label="Highest month" />
+          <CfLegend color="var(--accent)" solid label="Positive (actual)" />
+          <CfLegend color="var(--warn)" solid label="Negative (actual)" />
+          <CfLegend color="var(--accent)" dashed label="Forecast" />
         </div>
       </div>
 
-      {/* Period summary */}
+      {/* 4 KPI cards */}
       <IveDivider />
-      <div style={{ display: 'flex', gap: 28 }}>
-        {cf.halves.map((h, i) => (
-          <div key={i}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 3 }}>
-              {h.label}
-            </div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: h.total > 0 ? 'var(--tx-1)' : 'var(--tx-4)' }}>
-              {h.total > 0 ? fmtK(h.total) : '—'}
-            </div>
-          </div>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 10 }}>
+        <CfKpiCard label="H1 · JAN–JUN" value={cf.halves[0].total} sub="Jan – Jun" />
+        <CfKpiCard label="H2 · JUL–DEC" value={cf.halves[1].total} sub="Jul – Dec" isForecast={cf.todayIdx <= 6} />
+        <CfKpiCard
+          label="NET CF · ACTUAL"
+          value={cf.actualNet}
+          sub={actualEndLabel ? `Jan – ${actualEndLabel} (YTD)` : 'No actuals yet'}
+        />
+        <CfKpiCard
+          label="NET CF · FORECAST"
+          value={cf.forecastNet}
+          sub={forecastStartLabel ? `${forecastStartLabel} – Dec (projected)` : 'Full year complete'}
+          isForecast
+        />
       </div>
     </WideCard>
   )
 }
 
-function CfLegend({ baseColor, opacity, label }) {
+function CfKpiCard({ label, value, sub, isForecast }) {
+  const isPos = value >= 0
+  const color = isPos ? 'var(--accent)' : 'var(--warn)'
+  return (
+    <div style={{ background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 8, padding: '10px 12px' }}>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.07em', color: 'var(--tx-3)', marginBottom: 6, textTransform: 'uppercase' }}>
+        {label}
+      </div>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, color, opacity: isForecast ? 0.7 : 1, lineHeight: 1 }}>
+        {(isPos ? '+' : '−') + fmtK(Math.abs(value))}
+      </div>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-4)', marginTop: 4 }}>
+        {sub}
+      </div>
+    </div>
+  )
+}
+
+function CfLegend({ color, solid, dashed, label }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-4)', letterSpacing: '0.03em' }}>
-      <span style={{ width: 9, height: 9, borderRadius: 2, display: 'inline-block', flexShrink: 0, background: baseColor, opacity, boxSizing: 'border-box' }} />
+      <span style={{
+        width: 9, height: 9, borderRadius: 2, display: 'inline-block', flexShrink: 0, boxSizing: 'border-box',
+        background: solid ? color : 'transparent',
+        opacity: solid ? 0.7 : 1,
+        border: dashed ? `1.5px dashed ${color}` : 'none',
+      }} />
       {label}
     </span>
   )
