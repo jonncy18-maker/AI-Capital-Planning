@@ -603,18 +603,13 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
 // budget line items. Used by the dashboard Cash Flow widget. Cross-year aware —
 // if the window spans into next year the commitment and budget lookups use the
 // correct calendar year for each month.
-export function cashFlowForecast(ctx, windowMonths = 6) {
+export function cashFlowForecast(ctx, yearTxns = []) {
   const now = new Date()
   const year = ctx?.thisYear ?? now.getFullYear()
-  const currentMonthIdx = now.getFullYear() === year ? now.getMonth() : 0
+  const currentMonthIdx = now.getFullYear() === year ? now.getMonth() : 12
   const commitments = (ctx?.commitments ?? []).filter(c => c.status === 'active')
   const lineItems = ctx?.budgetLineItems ?? []
-
-  const range = []
-  for (let i = 0; i < windowMonths; i++) {
-    const d = new Date(year, currentMonthIdx + i, 1)
-    range.push({ year: d.getFullYear(), month: d.getMonth() + 1, label: MONTHS[d.getMonth()] })
-  }
+  const excluded = new Set((ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category))
 
   // Non-Monthly budget items (non-commitment-sourced) indexed by "budgetYear-month"
   const budgetByYM = {}
@@ -627,32 +622,47 @@ export function cashFlowForecast(ctx, windowMonths = 6) {
     budgetByYM[key].push({ name: li.label || cat.category || 'Budget item', amount: Number(li.amount) || 0 })
   }
 
-  const data = range.map(({ year: y, month: m, label }) => {
+  // Actual total spending per month from yearTxns (expenses only)
+  const actualByMonth = Array(12).fill(0)
+  for (const t of yearTxns) {
+    const amt = Number(t.amount) || 0
+    if (amt >= 0) continue
+    if (excluded.has(t.category)) continue
+    const d = new Date(t.date)
+    if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
+    actualByMonth[d.getMonth()] += Math.abs(amt)
+  }
+
+  // Full Jan–Dec range: past months use actuals, current + future use forecast
+  const data = MONTHS.map((label, i) => {
+    const m = i + 1
+    if (i < currentMonthIdx) {
+      return { year, month: m, label, isActual: true, commitmentDemand: 0, budgetDemand: 0, total: actualByMonth[i], sources: [] }
+    }
     const sources = []
     let commitmentDemand = 0
     for (const c of commitments) {
-      const demand = commitmentMonthlyDemand(c, y, m)
+      const demand = commitmentMonthlyDemand(c, year, m)
       if (demand > 0) {
         sources.push({ name: c.name || 'Commitment', kind: 'commitment', amount: demand })
         commitmentDemand += demand
       }
     }
     let budgetDemand = 0
-    for (const b of budgetByYM[`${y}-${m}`] || []) {
+    for (const b of budgetByYM[`${year}-${m}`] || []) {
       sources.push({ name: b.name, kind: 'budget', amount: b.amount })
       budgetDemand += b.amount
     }
-    return { year: y, month: m, label, commitmentDemand, budgetDemand, total: commitmentDemand + budgetDemand, sources }
+    return { year, month: m, label, isActual: false, commitmentDemand, budgetDemand, total: commitmentDemand + budgetDemand, sources }
   })
 
   const max = data.reduce((m, d) => Math.max(m, d.total), 0) || 1
-  const half = Math.ceil(data.length / 2)
-  const quarters = [
-    { label: data.slice(0, half).map(d => d.label).join('–'), total: data.slice(0, half).reduce((s, d) => s + d.total, 0) },
-    { label: data.slice(half).map(d => d.label).join('–'), total: data.slice(half).reduce((s, d) => s + d.total, 0) },
+  const halves = [
+    { label: 'H1 · JAN–JUN', total: data.slice(0, 6).reduce((s, d) => s + d.total, 0) },
+    { label: 'H2 · JUL–DEC', total: data.slice(6).reduce((s, d) => s + d.total, 0) },
   ]
 
-  return { data, max, hasData: data.some(d => d.total > 0), quarters }
+  return { data, max, hasData: data.some(d => d.total > 0), halves, todayIdx: currentMonthIdx }
 }
 
 export { MONTHS }

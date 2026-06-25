@@ -1,10 +1,92 @@
 import { useState, useRef, useEffect } from 'react'
 import Markdown from '../common/Markdown.jsx'
 
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function PendingScenarioCard({ preview, onConfirm, onCancel }) {
+  const { name, description, adjustments, adjustmentCount, netDelta } = preview
+  const shown = adjustments.slice(0, 5)
+  const overflow = adjustments.length - shown.length
+  return (
+    <div style={{
+      border: '1px solid var(--accent-bd)',
+      background: 'var(--accent-bg)',
+      borderRadius: '10px',
+      padding: '11px 13px',
+      marginTop: '6px',
+    }}>
+      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--tx-1)' }}>{name}</div>
+      {description && (
+        <div style={{ fontSize: '11.5px', color: 'var(--tx-3)', marginTop: '3px', lineHeight: 1.5 }}>{description}</div>
+      )}
+      <div style={{ borderTop: '1px solid var(--bd)', margin: '8px 0' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+        {shown.map((a, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px' }}>
+            <span style={{ color: 'var(--tx-2)' }}>
+              {a.category} · {MONTH_SHORT[(a.month - 1) % 12]} {a.year}
+            </span>
+            <span style={{
+              fontFamily: "'DM Mono', monospace",
+              fontWeight: 600,
+              color: a.delta_amount >= 0 ? '#f87171' : '#4ade80',
+            }}>
+              {a.delta_amount >= 0 ? '+' : '−'}${Math.abs(Math.round(a.delta_amount)).toLocaleString()}
+            </span>
+          </div>
+        ))}
+        {overflow > 0 && (
+          <div style={{ fontSize: '11px', color: 'var(--tx-3)' }}>…and {overflow} more</div>
+        )}
+      </div>
+      <div style={{ borderTop: '1px solid var(--bd)', margin: '8px 0' }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '10.5px', color: 'var(--tx-3)' }}>
+          {adjustmentCount} adjustment{adjustmentCount === 1 ? '' : 's'} · net {netDelta >= 0 ? '+' : '−'}${Math.abs(Math.round(netDelta)).toLocaleString()}
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--bd)',
+              borderRadius: '7px',
+              padding: '5px 11px',
+              fontSize: '11px',
+              color: 'var(--tx-2)',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              background: '#22c55e',
+              border: 'none',
+              borderRadius: '7px',
+              padding: '5px 11px',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            ✓ Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function CommandBar({
   mobile,
   loading,
+  hasPending,
   onSubmit,
+  onConfirmScenario,
+  onCancelScenario,
   placeholder,
   accessory,
   conversation = [],
@@ -228,7 +310,13 @@ export default function CommandBar({
                 </div>
               ) : (
                 conversation.map((m, i) => (
-                  <Turn key={i} message={m} onViewScenarios={handleViewScenarios} />
+                  <Turn
+                    key={i}
+                    message={m}
+                    onViewScenarios={handleViewScenarios}
+                    onConfirm={onConfirmScenario}
+                    onCancel={onCancelScenario}
+                  />
                 ))
               )}
               <div ref={messagesEndRef} />
@@ -255,7 +343,7 @@ export default function CommandBar({
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !loading) submit() }}
                   placeholder={ph}
-                  disabled={loading}
+                  disabled={loading || hasPending}
                   style={{
                     flex: 1,
                     minWidth: 0,
@@ -269,7 +357,7 @@ export default function CommandBar({
                 />
                 <button
                   onClick={submit}
-                  disabled={loading || !input.trim()}
+                  disabled={loading || hasPending || !input.trim()}
                   style={{
                     flexShrink: 0,
                     background: input.trim() && !loading ? 'var(--accent)' : 'transparent',
@@ -301,8 +389,8 @@ export default function CommandBar({
   )
 }
 
-function Turn({ message, onViewScenarios }) {
-  const { role, content, status, statusText, created } = message
+function Turn({ message, onViewScenarios, onConfirm, onCancel }) {
+  const { role, content, status, statusText, created, pending } = message
 
   if (role === 'user') {
     return (
@@ -320,6 +408,20 @@ function Turn({ message, onViewScenarios }) {
           wordBreak: 'break-word',
         }}>
           {content}
+        </div>
+      </div>
+    )
+  }
+
+  if (status === 'pending' && pending) {
+    return (
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+        <span style={{ color: 'var(--accent)', fontSize: '13px', marginTop: '3px', flexShrink: 0 }}>✦</span>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: '13px', color: 'var(--tx-2)', lineHeight: 1.55 }}>
+            Here's what I'd create — confirm to save it:
+          </div>
+          <PendingScenarioCard preview={pending.preview} onConfirm={onConfirm} onCancel={onCancel} />
         </div>
       </div>
     )

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../../lib/theme/useTheme.js'
 import { loadAIContext, summarizeContext } from '../../lib/ai/contextLoader.js'
-import { runScenarioAgent } from '../../lib/ai/scenarioAgent.js'
+import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario } from '../../lib/ai/scenarioAgent.js'
 import { getTransactionsByMonth } from '../../lib/db/transactions.js'
 import { getModule } from '../registry.js'
 import Sidebar from './Sidebar.jsx'
@@ -52,6 +52,7 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
   // Bumped whenever the AI writes data (e.g. creates a scenario) so dependent
   // modules reload without a manual refresh.
   const [dataNonce, setDataNonce] = useState(0)
+  const [pendingScenario, setPendingScenario] = useState(null)
   // When the user clicks "Open →" on an AI-created scenario card, we store the
   // ID here so the Scenarios module can auto-select it on mount/change.
   const [openScenarioId, setOpenScenarioId] = useState(null)
@@ -110,6 +111,14 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
         yearTxns,
         onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
       })
+
+      if (res.status === 'pending') {
+        setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'pending', pending: res.pending }))
+        setPendingScenario(res.pending)
+        setAiLoading(false)
+        return
+      }
+
       setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
       if (res.created && res.created.length) {
         setDataNonce(n => n + 1)
@@ -117,6 +126,48 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
       }
     } catch (e) {
       setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  async function handleConfirmScenario() {
+    const pending = pendingScenario
+    if (!pending) return
+    setPendingScenario(null)
+    setAiLoading(true)
+    setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText: `Building "${pending.preview.name}" …` }))
+    try {
+      const res = await confirmPendingScenario({
+        userId: user.id,
+        pending,
+        context: aiContext,
+        yearTxns,
+        onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
+      })
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
+      if (res.created?.length) {
+        setDataNonce(n => n + 1)
+        reloadAiContext()
+      }
+    } catch (e) {
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  async function handleCancelScenario() {
+    const pending = pendingScenario
+    if (!pending) return
+    setPendingScenario(null)
+    setAiLoading(true)
+    setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText: 'Cancelling…' }))
+    try {
+      const res = await cancelPendingScenario({ pending, context: aiContext, yearTxns })
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text || 'Scenario cancelled.', status: 'ok', created: [] }))
+    } catch {
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: 'Scenario cancelled.', status: 'ok', created: [] }))
     } finally {
       setAiLoading(false)
     }
@@ -272,7 +323,10 @@ export default function AppShell({ user, profile, onProfileSave, onSignOut, onSt
           <CommandBar
             mobile={mobile}
             loading={aiLoading}
+            hasPending={!!pendingScenario}
             onSubmit={handleAiSubmit}
+            onConfirmScenario={handleConfirmScenario}
+            onCancelScenario={handleCancelScenario}
             placeholder={`Ask about ${current.short.toLowerCase()}…`}
             conversation={conversation}
             onClear={() => setConversation([])}

@@ -800,14 +800,14 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
 
   if (!cf.hasData) {
     return (
-      <WideCard title="Cash Flow" subtitle="Next 6 months · commitments + non-monthly" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+      <WideCard title="Cash Flow" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
         <Empty text="Add commitments or a budget with Non-Monthly items to see upcoming cash demands." />
       </WideCard>
     )
   }
 
   return (
-    <WideCard title="Cash Flow" subtitle="Next 6 months · commitments + non-monthly" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+    <WideCard title="Cash Flow" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
       <div style={{ position: 'relative', marginTop: 4 }}>
         {/* Tooltip */}
         {hover !== null && cf.data[hover] && (() => {
@@ -822,7 +822,12 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 8 }}>
                 {d.label}{d.year !== new Date().getFullYear() ? ' ' + d.year : ''}
               </div>
-              {d.sources.length === 0 ? (
+              {d.isActual ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0' }}>
+                  <span style={{ color: 'var(--tx-3)' }}>Actual spending</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(d.total)}</span>
+                </div>
+              ) : d.sources.length === 0 ? (
                 <div style={{ fontSize: 11, color: 'var(--tx-3)' }}>No planned demand this month</div>
               ) : (
                 d.sources.map((s, i) => (
@@ -832,7 +837,7 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
                   </div>
                 ))
               )}
-              {d.sources.length > 1 && (
+              {!d.isActual && d.sources.length > 1 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0', marginTop: 4, borderTop: '1px solid var(--bd)', fontWeight: 600, paddingTop: 4 }}>
                   <span style={{ color: 'var(--tx-3)' }}>Total</span>
                   <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(d.total)}</span>
@@ -845,12 +850,9 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
         {/* Bars */}
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 6 : 14, height: chartH }}>
           {cf.data.map((d, i) => {
-            const isSpike = d.total > 0 && d.total === cf.max
+            const isSpike = !d.isActual && d.total > 0 && d.total === cf.max
             const isHov = hover === i
             const totalH = cf.max > 0 ? Math.max((d.total / cf.max) * chartH, d.total > 0 ? 3 : 0) : 0
-            const commitRatio = d.total > 0 ? d.commitmentDemand / d.total : 0
-            const commitH = totalH * commitRatio
-            const budgetH = totalH - commitH
             const baseColor = isSpike ? 'var(--warn)' : 'var(--accent)'
 
             return (
@@ -865,14 +867,21 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
                 }}
               >
                 {d.total > 0 ? (
-                  <div style={{ width: mobile ? '75%' : '65%', maxWidth: 44, borderRadius: '3px 3px 0 0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    {budgetH > 0 && (
-                      <div style={{ height: budgetH, background: baseColor, opacity: isHov ? 0.65 : 0.45 }} />
-                    )}
-                    {commitH > 0 && (
-                      <div style={{ height: commitH, background: baseColor, opacity: isHov ? 1 : 0.85 }} />
-                    )}
-                  </div>
+                  d.isActual ? (
+                    <div style={{ width: mobile ? '75%' : '65%', maxWidth: 44, height: totalH, borderRadius: '3px 3px 0 0', background: 'var(--accent)', opacity: isHov ? 0.65 : 0.4 }} />
+                  ) : (
+                    <div style={{ width: mobile ? '75%' : '65%', maxWidth: 44, borderRadius: '3px 3px 0 0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                      {(() => {
+                        const commitRatio = d.total > 0 ? d.commitmentDemand / d.total : 0
+                        const commitH = totalH * commitRatio
+                        const budgetH = totalH - commitH
+                        return <>
+                          {budgetH > 0 && <div style={{ height: budgetH, background: baseColor, opacity: isHov ? 0.65 : 0.45 }} />}
+                          {commitH > 0 && <div style={{ height: commitH, background: baseColor, opacity: isHov ? 1 : 0.85 }} />}
+                        </>
+                      })()}
+                    </div>
+                  )
                 ) : (
                   <div style={{ width: '65%', height: 2, background: 'var(--bd)', borderRadius: 1 }} />
                 )}
@@ -881,14 +890,15 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
           })}
         </div>
 
-        {/* Month labels */}
+        {/* Month labels + TODAY marker */}
         <div style={{ display: 'flex', gap: mobile ? 6 : 14, marginTop: 6 }}>
           {cf.data.map((d, i) => (
             <div key={i} style={{
               flex: 1, textAlign: 'center',
               fontFamily: "'DM Mono', monospace", fontSize: mobile ? 9 : 10,
-              color: 'var(--tx-3)', letterSpacing: '0.02em',
+              color: i === cf.todayIdx ? 'var(--accent)' : 'var(--tx-3)', letterSpacing: '0.02em',
             }}>
+              {i === cf.todayIdx && <div style={{ fontSize: 7, color: 'var(--accent)', marginBottom: 1 }}>▼</div>}
               {d.label}
             </div>
           ))}
@@ -912,6 +922,7 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
 
         {/* Legend */}
         <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
+          <CfLegend baseColor="var(--accent)" opacity={0.4} label="Actuals" />
           <CfLegend baseColor="var(--accent)" opacity={0.85} label="Commitments" />
           <CfLegend baseColor="var(--accent)" opacity={0.45} label="Non-monthly budget" />
           <CfLegend baseColor="var(--warn)" opacity={0.85} label="Highest month" />
@@ -921,13 +932,13 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
       {/* Period summary */}
       <IveDivider />
       <div style={{ display: 'flex', gap: 28 }}>
-        {cf.quarters.map((q, i) => (
+        {cf.halves.map((h, i) => (
           <div key={i}>
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 3 }}>
-              {q.label.toUpperCase()}
+              {h.label}
             </div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: q.total > 0 ? 'var(--tx-1)' : 'var(--tx-4)' }}>
-              {q.total > 0 ? fmtK(q.total) : '—'}
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: h.total > 0 ? 'var(--tx-1)' : 'var(--tx-4)' }}>
+              {h.total > 0 ? fmtK(h.total) : '—'}
             </div>
           </div>
         ))}
@@ -956,7 +967,7 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
   const ws = wealthSummary(ctx)
   const si = scenarioImpact(ctx)
   const ive = incomeVsExpenses(ctx, yearTxns, priorYearTxns)
-  const cf = cashFlowForecast(ctx)
+  const cf = cashFlowForecast(ctx, yearTxns)
 
   return [
     {
@@ -969,7 +980,7 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
     {
       id: 'cashFlow',
       title: 'Cash Flow',
-      subtitle: 'Next 6 months · commitments + non-monthly',
+      subtitle: 'Full year · actuals + forecast',
       fullWidth: true,
       render: ({ onCollapse, isCollapsed } = {}) => <CashFlowWidget cf={cf} mobile={mobile} onCollapse={onCollapse} isCollapsed={isCollapsed} />,
     },

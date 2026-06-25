@@ -136,7 +136,7 @@
 
 **Reliability**
 1. **Add React error boundary** — wrap `<AppShell>` (or `App.jsx`) so render crashes show a fallback UI instead of a blank page. One component to write and one place to add it.
-2. **Apply outstanding DB migrations** — `003_import_logs.sql` + the `user_profiles` income/settings columns. Verify by running the Settings save and checking no 400 errors.
+2. ~~**Apply outstanding DB migrations**~~ — `003_import_logs` applied (2026-06-24). All `user_profiles` income columns already present. ✓
 3. **Deploy + verify `ai-chat` Edge Function** — set `ANTHROPIC_API_KEY` in Supabase secrets; confirm command bar and AI briefing return real responses.
 
 **Data quality**
@@ -144,8 +144,8 @@
 5. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars are correct vs. hand-calculated take-home.
 
 **AI quality**
-6. **Preview-before-write for AI scenario mutations** — `create_scenario` currently commits to the DB immediately. AI-computed deltas and category mappings should land in a preview step the user approves before persisting; creation should also be idempotent so retried tool loops don't double-create.
-7. **AI command bar yearTxns** — the command bar still uses `ctx.transactions` (trailing 365 days) rather than `yearTxns`; if the year has >1000 transactions, AI chat responses will be based on truncated data. Thread `yearTxns` to the command bar path.
+6. ~~**Preview-before-write for AI scenario mutations**~~ — implemented (2026-06-24). `runScenarioAgent` pauses on the first `create_scenario` tool call and returns `status: 'pending'`. CommandBar renders a preview card (name, adjustment rows, net delta, Confirm/Cancel). Confirm executes the write and continues the loop; Cancel sends an error tool_result and gets an acknowledgement. ✓
+7. ~~**AI command bar yearTxns**~~ — already threaded: `AppShell` loads `yearTxns` and passes it through `runScenarioAgent` → `invokeAIChat` → `buildContextBrief`. ✓
 
 **Polish**
 8. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; pay special attention to the Scenario planner sidebar and the new Forecast/Budget collapsed-group defaults.
@@ -356,13 +356,13 @@
 ## Phase 11 — Polish and Pre-Launch
 *Goal: Production-ready for personal daily use.*
 
-- [ ] Add React error boundary (wrap AppShell; render crashes currently produce a blank page)
+- [x] Add React error boundary (`src/modules/common/ErrorBoundary.jsx` wraps `<App />` in `main.jsx`)
 - [ ] Full mobile QA pass (all modules, all breakpoints)
 - [ ] Performance audit (Supabase query optimization, AI context payload size)
 - [ ] Error handling audit (failed imports, API errors, empty states)
 - [ ] AI response quality review (context prompt tuning)
-- [x] API key proxy (shields Anthropic API key — required before any public access) — built in Phase 3 as a **Supabase Edge Function** (`supabase/functions/ai-chat`), not Netlify. Remaining: confirm deployed + secret set in production.
-- [ ] Security cleanup: delete superseded `src/lib/anthropic.js`, confirm `VITE_ANTHROPIC_API_KEY` is empty in GitHub secrets
+- [x] API key proxy — `ai-chat` Edge Function ACTIVE (version 5), confirmed live with real 200 responses. `ANTHROPIC_API_KEY` secret confirmed set.
+- [x] Security cleanup: `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from `.env`. Confirm it's also cleared in GitHub Actions secrets.
 - [ ] Make repo public (after proxy is confirmed working)
 - [ ] Final ROADMAP.md update (check off completed phases, note any scope changes)
 

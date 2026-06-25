@@ -4,6 +4,12 @@
 // Supabase with the user's session (RLS), return a tool_result, and continue
 // until the model produces its final summary. This mirrors how the rest of the
 // app does its DB writes client-side.
+//
+// Preview flow: on the FIRST create_scenario tool call, the agent pauses and
+// returns { status: 'pending', pending: { ... } } instead of writing to the DB.
+// The caller shows a preview card. confirmPendingScenario() executes the write
+// and continues the loop; cancelPendingScenario() sends an error tool_result so
+// the AI acknowledges the cancellation.
 
 import { invokeAIChat } from './sendMessage.js'
 import { createScenario, addAdjustment } from '../db/scenarios.js'
@@ -51,7 +57,6 @@ function resolveCategoryId(cats, name) {
   const lc = name.trim().toLowerCase()
   const exact = cats.find(c => (c.category || '').toLowerCase() === lc)
   if (exact) return exact.id
-  // Conservative fuzzy match: one fully contains the other, min length 4.
   const fuzzy = cats.find(c => {
     const cn = (c.category || '').toLowerCase()
     if (cn.length < 4 || lc.length < 4) return false
@@ -60,16 +65,12 @@ function resolveCategoryId(cats, name) {
   return fuzzy ? fuzzy.id : null
 }
 
-// Execute a create_scenario tool call against the DB. Resolves each adjustment's
-// category to an id (creating the category if it doesn't exist), then writes the
-// scenario + its adjustments. Returns a compact summary for the tool_result.
 async function executeCreateScenario(userId, input) {
   const adjustments = Array.isArray(input?.adjustments) ? input.adjustments : []
   if (!adjustments.length) throw new Error('No adjustments were provided.')
 
   let cats = await getBudgetCategories(userId)
 
-  // Create any categories we can't resolve, then refetch so they have ids.
   const missing = new Map()
   for (const a of adjustments) {
     if (!resolveCategoryId(cats, a.category)) {
@@ -112,10 +113,67 @@ async function executeCreateScenario(userId, input) {
   return { scenarioId: scenario.id, name: scenario.name, adjustmentCount: written, netDelta }
 }
 
-// Run a conversation turn with the create_scenario tool available. `history` is
-// the prior display turns ([{ role, content }]). Drives the tool loop and returns
-// { status, text, created } where `created` lists any scenarios built this turn.
-// `onStatus(text)` is called with progress strings (e.g. "Building …").
+// Build a human-readable preview of what create_scenario would do, without
+// touching the DB. Used to populate the confirmation card in the chat.
+function buildPreview(input) {
+  const thisYear = new Date().getFullYear()
+  const adjustments = (input?.adjustments ?? []).map(a => ({
+    category: a.category || '',
+    year: Math.round(Number(a.year) || thisYear),
+    month: Math.min(12, Math.max(1, Math.round(Number(a.month) || 1))),
+    delta_amount: Number(a.delta_amount) || 0,
+    label: a.label || '',
+  }))
+  const netDelta = adjustments.reduce((sum, a) => sum + a.delta_amount, 0)
+  return {
+    name: input?.name || 'New scenario',
+    description: input?.description || '',
+    adjustments,
+    adjustmentCount: adjustments.length,
+    netDelta,
+  }
+}
+
+// Continue the tool loop from an already-built messages array (post tool_results).
+// Executes any create_scenario calls directly — no second pause. Used by both
+// confirmPendingScenario (after the user approves) and for unknown-tool branches.
+async function continueFromMessages({ messages, context, yearTxns, systemExtra, userId, created, onStatus }) {
+  let msgs = messages
+  for (let step = 0; step < 4; step++) {
+    const res = await invokeAIChat({ messages: msgs, tools: [CREATE_SCENARIO_TOOL], context, yearTxns, systemExtra, maxTokens: 1500 })
+    if (res.status !== 'ok') return { status: res.status, text: res.text, created }
+
+    msgs = [...msgs, { role: 'assistant', content: res.content }]
+
+    if (res.stop_reason !== 'tool_use') {
+      return { status: 'ok', text: res.text, created }
+    }
+
+    const toolResults = []
+    for (const block of res.content) {
+      if (block.type !== 'tool_use') continue
+      if (block.name !== 'create_scenario') {
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: false, error: `Unknown tool: ${block.name}` }), is_error: true })
+        continue
+      }
+      onStatus?.(`Building "${block.input?.name || 'scenario'}" …`)
+      try {
+        const summary = await executeCreateScenario(userId, block.input)
+        created.push(summary)
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: true, ...summary }) })
+      } catch (e) {
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: false, error: e.message }), is_error: true })
+      }
+    }
+    msgs = [...msgs, { role: 'user', content: toolResults }]
+  }
+
+  return { status: 'ok', text: 'Stopped after several steps — the scenario may be partially built. Check the Scenario Planner.', created }
+}
+
+// Run one turn of the conversation. On the first create_scenario tool call,
+// returns { status: 'pending', pending } instead of writing to the DB so the
+// caller can show a confirmation UI before any data is persisted.
 export async function runScenarioAgent({ userId, history = [], prompt, context, yearTxns, onStatus }) {
   const categoryNames = (context?.categories ?? [])
     .map(c => c.category)
@@ -129,37 +187,81 @@ export async function runScenarioAgent({ userId, history = [], prompt, context, 
     { role: 'user', content: prompt },
   ]
 
-  const created = []
+  const res = await invokeAIChat({ messages, tools: [CREATE_SCENARIO_TOOL], context, yearTxns, systemExtra, maxTokens: 1500 })
+  if (res.status !== 'ok') return { status: res.status, text: res.text, created: [] }
 
-  for (let step = 0; step < 5; step++) {
-    const res = await invokeAIChat({ messages, tools: [CREATE_SCENARIO_TOOL], context, yearTxns, systemExtra, maxTokens: 1500 })
-    if (res.status !== 'ok') return { status: res.status, text: res.text, created }
+  const messagesWithAI = [...messages, { role: 'assistant', content: res.content }]
 
-    messages.push({ role: 'assistant', content: res.content })
-
-    if (res.stop_reason !== 'tool_use') {
-      return { status: 'ok', text: res.text, created }
-    }
-
-    // Every tool_use block in the turn must get a matching tool_result.
-    const toolResults = []
-    for (const block of res.content) {
-      if (block.type !== 'tool_use') continue
-      if (block.name !== 'create_scenario') {
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: false, error: `Unknown tool: ${block.name}` }), is_error: true })
-        continue
-      }
-      onStatus?.(`Building “${block.input?.name || 'scenario'}” …`)
-      try {
-        const summary = await executeCreateScenario(userId, block.input)
-        created.push(summary)
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: true, ...summary }) })
-      } catch (e) {
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: false, error: e.message }), is_error: true })
-      }
-    }
-    messages.push({ role: 'user', content: toolResults })
+  if (res.stop_reason !== 'tool_use') {
+    return { status: 'ok', text: res.text, created: [] }
   }
 
-  return { status: 'ok', text: 'Stopped after several steps — the scenario may be partially built. Check the Scenario Planner.', created }
+  const createBlock = res.content.find(b => b.type === 'tool_use' && b.name === 'create_scenario')
+
+  if (createBlock) {
+    // Pause before writing — return pending state for the caller to confirm.
+    return {
+      status: 'pending',
+      text: '',
+      created: [],
+      pending: {
+        messagesWithAI,
+        allToolBlocks: res.content.filter(b => b.type === 'tool_use'),
+        preview: buildPreview(createBlock.input),
+        systemExtra,
+      },
+    }
+  }
+
+  // tool_use but no create_scenario — handle unknown tools and continue
+  const toolResults = res.content
+    .filter(b => b.type === 'tool_use')
+    .map(b => ({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify({ ok: false, error: `Unknown tool: ${b.name}` }), is_error: true }))
+
+  const messagesWithResults = [...messagesWithAI, { role: 'user', content: toolResults }]
+  return continueFromMessages({ messages: messagesWithResults, context, yearTxns, systemExtra, userId, created: [], onStatus })
+}
+
+// Execute the pending scenario after user confirmation, then continue the loop
+// to get the AI's final summary text.
+export async function confirmPendingScenario({ userId, pending, context, yearTxns, onStatus }) {
+  const { messagesWithAI, allToolBlocks, systemExtra } = pending
+  const created = []
+
+  const toolResults = []
+  for (const block of allToolBlocks) {
+    if (block.name !== 'create_scenario') {
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: false, error: `Unknown tool: ${block.name}` }), is_error: true })
+      continue
+    }
+    onStatus?.(`Building "${block.input?.name || 'scenario'}" …`)
+    try {
+      const summary = await executeCreateScenario(userId, block.input)
+      created.push(summary)
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: true, ...summary }) })
+    } catch (e) {
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: false, error: e.message }), is_error: true })
+    }
+  }
+
+  const messagesWithResults = [...messagesWithAI, { role: 'user', content: toolResults }]
+  return continueFromMessages({ messages: messagesWithResults, context, yearTxns, systemExtra, userId, created, onStatus })
+}
+
+// Send an error tool_result for each block so the AI acknowledges cancellation,
+// then do a single follow-up call (no tools) to get the acknowledgement text.
+export async function cancelPendingScenario({ pending, context, yearTxns }) {
+  const { messagesWithAI, allToolBlocks, systemExtra } = pending
+
+  const toolResults = allToolBlocks.map(block => ({
+    type: 'tool_result',
+    tool_use_id: block.id,
+    content: JSON.stringify({ ok: false, error: 'User cancelled before saving.' }),
+    is_error: true,
+  }))
+
+  const messagesWithResults = [...messagesWithAI, { role: 'user', content: toolResults }]
+  // No tools on the follow-up so the AI is forced to respond with text only.
+  const res = await invokeAIChat({ messages: messagesWithResults, context, yearTxns, systemExtra, maxTokens: 512 })
+  return { status: 'ok', text: res.text || 'Scenario cancelled.', created: [] }
 }
