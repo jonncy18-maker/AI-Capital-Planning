@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
+import GrillSession from './GrillSession.jsx'
 import { getTransactionsForAnalysis } from '../../lib/db/transactions.js'
 import { getBudgetCategories, importCategoryMappings } from '../../lib/db/budgetCategories.js'
 import { getCommitments } from '../../lib/db/commitments.js'
@@ -792,6 +793,7 @@ export default function Budget({ userId, mobile }) {
   const [editing, setEditing] = useState(false)
   const [showReopen, setShowReopen] = useState(false)
   const [statusBusy, setStatusBusy] = useState(false)
+  const [grilling, setGrilling] = useState(false)
   const fileRef = useRef(null)
 
   const finalized = status.status === 'finalized'
@@ -1005,15 +1007,17 @@ export default function Budget({ userId, mobile }) {
       <ModuleHeader
         mobile={mobile}
         icon="▦"
-        title={reviewing ? 'Match Detail Tabs' : editing ? 'Edit Budget' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
-        subtitle={reviewing
-          ? 'Confirm which detail tab feeds each non-monthly category.'
-          : editing
-            ? 'Adjust month-by-month amounts directly, then save.'
-            : generating
-              ? 'Review and adjust the proposed targets, then save the year.'
-              : 'Build and review a month-by-month budget for the year.'}
-        actions={!generating && !reviewing && !editing && (
+        title={grilling ? 'Budget Interview' : reviewing ? 'Match Detail Tabs' : editing ? 'Edit Budget' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
+        subtitle={grilling
+          ? `Building ${year} budget — AI-guided interview`
+          : reviewing
+            ? 'Confirm which detail tab feeds each non-monthly category.'
+            : editing
+              ? 'Adjust month-by-month amounts directly, then save.'
+              : generating
+                ? 'Review and adjust the proposed targets, then save the year.'
+                : 'Build and review a month-by-month budget for the year.'}
+        actions={!generating && !reviewing && !editing && !grilling && (
           <>
             <select value={year} onChange={e => { setEditing(false); setYear(Number(e.target.value)) }} style={{
               padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--bd)',
@@ -1030,6 +1034,7 @@ export default function Budget({ userId, mobile }) {
               </button>
             ) : lineItems.length > 0 ? (
               <>
+                <button onClick={() => setGrilling(true)} style={ghostBtn}>✦ Grill Session</button>
                 <button onClick={() => setEditing(true)} style={ghostBtn}>✎ Edit</button>
                 <button onClick={handleFinalize} disabled={statusBusy} style={{ ...ghostBtn, opacity: statusBusy ? 0.6 : 1 }}>
                   {statusBusy ? 'Finalizing…' : '🔒 Finalize'}
@@ -1058,6 +1063,16 @@ export default function Budget({ userId, mobile }) {
 
       {loading ? (
         <div style={{ color: 'var(--tx-3)', fontSize: 14, padding: 32 }}>Loading budget…</div>
+      ) : grilling ? (
+        <GrillSession
+          userId={userId}
+          targetYear={year}
+          commitments={commitments}
+          lineItems={lineItems}
+          onGenerateDraft={() => { setGrilling(false); handleAnalyze() }}
+          onCancel={() => setGrilling(false)}
+          mobile={mobile}
+        />
       ) : reviewing && pendingUpload ? (
         <TabMatchReview
           pending={pendingUpload}
@@ -1088,13 +1103,31 @@ export default function Budget({ userId, mobile }) {
           <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18, color: 'var(--tx-1)', marginBottom: 10 }}>
             No budget for {year} yet
           </div>
-          <div style={{ fontSize: 13.5, color: 'var(--tx-2)', lineHeight: 1.6, maxWidth: 460, margin: '0 auto 20px' }}>
-            Generate a month-by-month budget from your transaction history — the analyzer
-            classifies each category as Fixed, Flexible, or Non-Monthly and proposes targets you
-            can adjust. Or upload a budget you already maintain (CSV or Excel).
+          <div style={{ fontSize: 13.5, color: 'var(--tx-2)', lineHeight: 1.6, maxWidth: 460, margin: '0 auto 24px' }}>
+            Use the AI-guided interview to build a thorough {year} budget step by step,
+            or generate one automatically from your transaction history.
           </div>
+          {/* Primary option: Grill Session */}
+          <div style={{ maxWidth: 400, margin: '0 auto 16px', cursor: 'pointer' }} onClick={() => setGrilling(true)}>
+            <div style={{
+              border: '1px solid var(--accent-bd, var(--accent))',
+              borderRadius: 10,
+              padding: '18px 22px',
+              background: 'var(--accent-bg)',
+              textAlign: 'left',
+              transition: 'opacity .15s',
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', marginBottom: 5 }}>
+                ✦ Start Grill Session
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--tx-2)', lineHeight: 1.5 }}>
+                AI-guided interview to build your {year} budget
+              </div>
+            </div>
+          </div>
+          {/* Secondary options */}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...primaryBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
+            <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...ghostBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
               {analyzing ? 'Analyzing…' : '✦ Generate from History'}
             </button>
             <button onClick={() => fileRef.current?.click()} disabled={importing || analyzing} style={{ ...ghostBtn, opacity: importing || analyzing ? 0.6 : 1 }}>
@@ -1104,6 +1137,42 @@ export default function Budget({ userId, mobile }) {
         </div>
       ) : (
         <>
+          {!finalized && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.2)',
+              borderRadius: 8,
+              padding: '10px 16px',
+              marginBottom: 16,
+              gap: 12,
+            }}>
+              <span style={{ fontSize: 13, color: 'var(--tx-1)' }}>
+                <span style={{ color: '#f59e0b', marginRight: 8 }}>⚠</span>
+                <strong>{year}</strong> budget is not yet finalized.
+                {' '}Aim to finalize by <strong>January 15, {year + 1}</strong>.
+              </span>
+              <button
+                onClick={handleFinalize}
+                disabled={statusBusy}
+                style={{
+                  background: 'rgba(245,158,11,0.15)',
+                  border: '1px solid rgba(245,158,11,0.3)',
+                  borderRadius: 5,
+                  color: '#f59e0b',
+                  fontWeight: 700,
+                  fontSize: 12,
+                  padding: '5px 14px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Finalize
+              </button>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 20, marginBottom: 18, flexWrap: 'wrap' }}>
             <SummaryStat label={`${year} planned`} value={fmtFull(annualTotal)} accent />
             <SummaryStat label="Avg / month" value={fmtFull(annualTotal / 12)} />

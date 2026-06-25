@@ -14,6 +14,7 @@
 import { invokeAIChat } from './sendMessage.js'
 import { createScenario, addAdjustment } from '../db/scenarios.js'
 import { getBudgetCategories, upsertCategory } from '../db/budgetCategories.js'
+import { buildScenarioSystemExtra, buildAdjustmentSystemExtra } from './scenarioAgent.prompts.js'
 
 export const CREATE_SCENARIO_TOOL = {
   name: 'create_scenario',
@@ -178,9 +179,7 @@ export async function runScenarioAgent({ userId, history = [], prompt, context, 
   const categoryNames = (context?.categories ?? [])
     .map(c => c.category)
     .filter(Boolean)
-  const systemExtra = categoryNames.length
-    ? `When calling create_scenario, prefer these existing category names when they fit: ${categoryNames.slice(0, 80).join(', ')}.`
-    : ''
+  const systemExtra = buildScenarioSystemExtra(categoryNames)
 
   const messages = [
     ...history.filter(m => m.content).map(m => ({ role: m.role, content: m.content })),
@@ -264,4 +263,183 @@ export async function cancelPendingScenario({ pending, context, yearTxns }) {
   // No tools on the follow-up so the AI is forced to respond with text only.
   const res = await invokeAIChat({ messages: messagesWithResults, context, yearTxns, systemExtra, maxTokens: 512 })
   return { status: 'ok', text: res.text || 'Scenario cancelled.', created: [] }
+}
+
+// ── Adjustment agent (add_adjustment) ────────────────────────────────────────
+// Adds adjustments to an EXISTING scenario without creating a new one.
+// Follows the same preview-before-write pattern as create_scenario.
+
+export const ADD_ADJUSTMENT_TOOL = {
+  name: 'add_adjustment',
+  description:
+    'Add one or more month-by-month adjustments to the current scenario. ' +
+    'Each adjustment is a SIGNED DELTA versus the budgeted amount for that ' +
+    'category-month (positive = spending increase, negative = saving or reduction). ' +
+    'Before calling this tool, check the existing adjustments provided in context to ' +
+    'avoid duplicating or contradicting what is already there. ' +
+    'If timing, amount, or recurrence is ambiguous, ask the user before calling.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      adjustments: {
+        type: 'array',
+        description: 'One row per affected category-month to add.',
+        items: {
+          type: 'object',
+          properties: {
+            category: { type: 'string', description: 'Budget category name (existing name preferred).' },
+            group: { type: 'string', description: 'Group to use if a new category must be created.' },
+            type: { type: 'string', enum: ['Fixed', 'Flexible', 'Non-Monthly'], description: 'Type if a new category must be created.' },
+            year: { type: 'integer', description: 'Four-digit year, e.g. 2026.' },
+            month: { type: 'integer', minimum: 1, maximum: 12, description: '1=Jan … 12=Dec.' },
+            delta_amount: { type: 'number', description: 'Signed change vs the budgeted amount for that month.' },
+            label: { type: 'string', description: 'Optional short note for this row.' },
+          },
+          required: ['category', 'year', 'month', 'delta_amount'],
+        },
+      },
+    },
+    required: ['adjustments'],
+  },
+}
+
+async function executeAddAdjustments(userId, scenarioId, input) {
+  const adjustments = Array.isArray(input?.adjustments) ? input.adjustments : []
+  if (!adjustments.length) throw new Error('No adjustments provided.')
+
+  let cats = await getBudgetCategories(userId)
+
+  const missing = new Map()
+  for (const a of adjustments) {
+    if (!resolveCategoryId(cats, a.category)) {
+      const key = (a.category || '').trim().toLowerCase()
+      if (key && !missing.has(key)) missing.set(key, a)
+    }
+  }
+  if (missing.size) {
+    for (const a of missing.values()) {
+      await upsertCategory(userId, {
+        category: a.category.trim(),
+        group: a.group || 'Uncategorized',
+        type: a.type || 'Flexible',
+      })
+    }
+    cats = await getBudgetCategories(userId)
+  }
+
+  const thisYear = new Date().getFullYear()
+  let written = 0
+  let netDelta = 0
+  for (const a of adjustments) {
+    const categoryId = resolveCategoryId(cats, a.category)
+    if (!categoryId) continue
+    const month = Math.min(12, Math.max(1, Math.round(Number(a.month) || 1)))
+    const year = Math.round(Number(a.year) || thisYear)
+    const delta = Number(a.delta_amount) || 0
+    await addAdjustment(userId, scenarioId, {
+      category_id: categoryId, month, year, delta_amount: delta, label: a.label || '',
+    })
+    written += 1
+    netDelta += delta
+  }
+  return { adjustmentCount: written, netDelta }
+}
+
+function buildAdjPreview(input) {
+  const thisYear = new Date().getFullYear()
+  const adjustments = (input?.adjustments ?? []).map(a => ({
+    category: a.category || '',
+    year: Math.round(Number(a.year) || thisYear),
+    month: Math.min(12, Math.max(1, Math.round(Number(a.month) || 1))),
+    delta_amount: Number(a.delta_amount) || 0,
+    label: a.label || '',
+  }))
+  const netDelta = adjustments.reduce((sum, a) => sum + a.delta_amount, 0)
+  return { adjustments, adjustmentCount: adjustments.length, netDelta }
+}
+
+export async function runAdjustmentAgent({
+  userId, scenarioId, scenarioName = '', history = [], prompt,
+  context, existingAdjustments = [],
+}) {
+  const categoryNames = (context?.categories ?? []).map(c => c.category).filter(Boolean)
+
+  const systemExtra = buildAdjustmentSystemExtra({ scenarioName, existingAdjustments, categoryNames })
+
+  const messages = [
+    ...history.filter(m => m.content).map(m => ({ role: m.role, content: m.content })),
+    { role: 'user', content: prompt },
+  ]
+
+  const res = await invokeAIChat({ messages, tools: [ADD_ADJUSTMENT_TOOL], context, systemExtra, maxTokens: 1024 })
+  if (res.status !== 'ok') return { status: res.status, text: res.text, added: [] }
+
+  const messagesWithAI = [...messages, { role: 'assistant', content: res.content }]
+
+  if (res.stop_reason !== 'tool_use') {
+    return { status: 'ok', text: res.text, added: [] }
+  }
+
+  const addBlock = res.content.find(b => b.type === 'tool_use' && b.name === 'add_adjustment')
+  if (addBlock) {
+    return {
+      status: 'pending',
+      text: '',
+      added: [],
+      pending: {
+        messagesWithAI,
+        allToolBlocks: res.content.filter(b => b.type === 'tool_use'),
+        preview: buildAdjPreview(addBlock.input),
+        systemExtra,
+        scenarioId,
+      },
+    }
+  }
+
+  // Unknown tool — send error result and get text response
+  const toolResults = res.content
+    .filter(b => b.type === 'tool_use')
+    .map(b => ({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify({ ok: false, error: `Unknown tool: ${b.name}` }), is_error: true }))
+  const msgs2 = [...messagesWithAI, { role: 'user', content: toolResults }]
+  const res2 = await invokeAIChat({ messages: msgs2, context, systemExtra, maxTokens: 512 })
+  return { status: 'ok', text: res2.text, added: [] }
+}
+
+export async function confirmPendingAdjustments({ userId, pending, context }) {
+  const { messagesWithAI, allToolBlocks, systemExtra, scenarioId } = pending
+  const added = []
+  const toolResults = []
+
+  for (const block of allToolBlocks) {
+    if (block.name !== 'add_adjustment') {
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: false, error: `Unknown tool: ${block.name}` }), is_error: true })
+      continue
+    }
+    try {
+      const summary = await executeAddAdjustments(userId, scenarioId, block.input)
+      added.push(summary)
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: true, ...summary }) })
+    } catch (e) {
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify({ ok: false, error: e.message }), is_error: true })
+    }
+  }
+
+  const msgs = [...messagesWithAI, { role: 'user', content: toolResults }]
+  const res = await invokeAIChat({ messages: msgs, context, systemExtra, maxTokens: 512 })
+  return { status: 'ok', text: res.text || 'Adjustments added.', added }
+}
+
+export async function cancelPendingAdjustments({ pending, context }) {
+  const { messagesWithAI, allToolBlocks, systemExtra } = pending
+
+  const toolResults = allToolBlocks.map(block => ({
+    type: 'tool_result',
+    tool_use_id: block.id,
+    content: JSON.stringify({ ok: false, error: 'User cancelled.' }),
+    is_error: true,
+  }))
+
+  const msgs = [...messagesWithAI, { role: 'user', content: toolResults }]
+  const res = await invokeAIChat({ messages: msgs, context, systemExtra, maxTokens: 256 })
+  return { status: 'ok', text: res.text || 'Cancelled.', added: [] }
 }

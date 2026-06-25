@@ -1,9 +1,8 @@
 import { supabase } from '../supabase.js'
 import { AI_MODEL_FAMILIES } from './models.js'
+import { CATEGORY_MAPPER_SYSTEM } from './categoryMapper.prompts.js'
 
 const CC_CATEGORY_SLUGS = ['dining', 'travel', 'groceries', 'gas', 'streaming', 'transit', 'online_shopping', 'drugstore', 'other']
-
-const SYSTEM = `You are a financial data classifier. Your only job is to map personal finance budget categories to credit card reward categories and return valid JSON. No explanation, no markdown fences, no extra text — just the raw JSON array.`
 
 export async function suggestCategoryMappings(budgetCategories) {
   if (!budgetCategories || budgetCategories.length === 0) return {}
@@ -33,7 +32,7 @@ Return ONLY a JSON array. Each object must have exactly two keys: "idx" (the int
 
   const { data, error } = await supabase.functions.invoke('ai-chat', {
     body: {
-      system: SYSTEM,
+      system: CATEGORY_MAPPER_SYSTEM,
       messages: [{ role: 'user', content: userPrompt }],
       maxTokens: 4096,
       modelFamily: AI_MODEL_FAMILIES.assistant,

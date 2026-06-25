@@ -341,6 +341,27 @@ This gives the AI enough context to answer any decision question without requiri
 
 **Supabase query pagination** *(added 2026-06-23):* All DB helper functions that could realistically return >1000 rows now use a `.range()`-based pagination loop. The 1000-row default limit is silent (no error, no warning) — it simply returns a truncated result set. Affected functions: `getRecentTransactions`, `getTransactionsByMonth`, `getTransactionsForYear`, `getDistinctTransactionAccounts`, `getIncomeTransactions`, `getBudgetLineItems`, `getBudgetYears`, `getBillAmountsForBill`, `getBillAmountsRange`. Low-volume tables (categories, commitments, scenarios, snapshots, etc.) are left with default limits.
 
+#### 5.2.1 AI Prompt Stack
+
+All AI calls are assembled from four layers in this order:
+
+1. **Main persona** (`sendMessage.js` → `SYSTEM_PROMPT`) — the assistant's core identity, reasoning style, clarification rules, and financial domain instructions. Appended to every single AI call.
+
+2. **Context brief** (`contextLoader.js` → `buildContextBrief()`) — the user's live financial picture: transactions, budget targets, commitments, scenarios, salary profile. Regenerated per call from Supabase data.
+
+3. **systemExtra** (`*.prompts.js` files) — call-specific instructions appended for a given agent or capability. Examples: category name hints for `create_scenario`, existing-adjustment context for `add_adjustment`, phase instructions for the Grill Session interview.
+
+4. **Tool schemas** (`scenarioAgent.js`) — Anthropic tool definitions (`CREATE_SCENARIO_TOOL`, `ADD_ADJUSTMENT_TOOL`). Tool descriptions are part of the prompt in Anthropic's API.
+
+**Source file convention:**
+- `src/lib/ai/sendMessage.js` — main persona (layer 1)
+- `src/lib/ai/contextLoader.js` — context brief (layer 2)
+- `src/lib/ai/*.prompts.js` — systemExtra builders (layer 3) — one file per agent/capability
+- `src/lib/ai/parserBase.js` — shared system prompt builder and utilities for the parser family
+- Parser-specific SYSTEM strings are built with `parserSystem(task)` from `parserBase.js`
+
+When debugging unexpected AI behavior, check the layers in order: is the persona correct? Is the context data fresh? Is systemExtra providing the right framing? Are tool descriptions accurate?
+
 ### 5.3 Deduplication Logic
 
 On every CSV import, a `dedup_key` is generated per row:

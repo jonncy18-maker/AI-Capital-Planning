@@ -11,10 +11,10 @@ export async function getScenarios(userId) {
   return data ?? []
 }
 
-export async function createScenario(userId, { name, description = '' }) {
+export async function createScenario(userId, { name, description = '', state = 'modeled' }) {
   const { data, error } = await supabase
     .from('scenarios')
-    .insert({ user_id: userId, name, description, state: 'modeled' })
+    .insert({ user_id: userId, name, description, state })
     .select()
     .single()
 
@@ -54,6 +54,18 @@ export async function promoteToCommitted(userId, scenarioId) {
     .select()
     .single()
 
+  if (error) throw error
+  return data
+}
+
+export async function promoteToModeled(userId, scenarioId) {
+  const { data, error } = await supabase
+    .from('scenarios')
+    .update({ state: 'modeled', committed_at: null })
+    .eq('id', scenarioId)
+    .eq('user_id', userId)
+    .select()
+    .single()
   if (error) throw error
   return data
 }

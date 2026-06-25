@@ -1,16 +1,9 @@
 import { supabase } from '../supabase.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 import { readXlsx } from '../xlsx/xlsxReader.js'
+import { parserSystem, JSON_ARRAY_RULE, sheetsToText } from './parserBase.js'
 
-function sheetsToText(sheets) {
-  return sheets.map(sheet => {
-    const nonEmpty = sheet.rows.filter(r => r.some(c => c !== '' && c != null))
-    const lines = nonEmpty.map(r => r.join('\t'))
-    return `=== Sheet: ${sheet.name} ===\n${lines.join('\n')}`
-  }).join('\n\n')
-}
-
-const SYSTEM = `You are a financial data parser. Your only job is to extract bank and financial accounts from spreadsheet content and return valid JSON. No explanation, no markdown fences, no extra text — just the raw JSON array.`
+const SYSTEM = parserSystem('extract bank and financial accounts from spreadsheet content')
 
 const ACCOUNT_TYPES = ['checking', 'savings', 'investment', 'other']
 
@@ -43,7 +36,7 @@ Rules:
 - If the spreadsheet mentions a "main", "primary", or "operating" checking account, set is_primary_checking to true for that one only.
 - Set type to "checking" for checking/transactional accounts, "savings" for savings/HYSA/money market, "investment" for brokerage/IRA/401k, "other" for anything else.
 
-Return ONLY a JSON array. No explanation. No markdown. No wrapper object. Start with [ and end with ].
+${JSON_ARRAY_RULE}
 
 Spreadsheet content:
 ${text}`

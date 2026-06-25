@@ -114,12 +114,51 @@
   - **Bill → Expense Actuals linking:** new `actuals_category` (text) column on `bills` (migration 013, applied). When set, `loadOutflowSeries()` sums actual transactions in that category per past month and injects into `billAmountsMap` — so historical Cash Flow outflow for that bill automatically reflects real spending instead of showing $0 (no manual entries needed). Future months still use forecast/fixed. `resolveBillAmount()` updated to honor the injected value over `fixed_amount`. BillForm gains "LINK TO EXPENSE ACTUALS" dropdown; bill rows show `↙ ACTUALS` badge.
   - **Root cause of historical asymmetry** (Philippine transfers): bill had a forecast budget amount but no `bill_amounts` entries → past months $0, future months showed budget. Fix: link the bill's `actuals_category` to the expense category in transactions.
 
+- **Budget Builder Grill Session + Year Lock (2026-06-24):**
+  - `src/lib/ai/grillSession.js` — new `sendGrillMessage()` function: builds a 6-phase-aware system prompt (income, life events, commitments, non-monthly, category targets, envelope check) from user profile + commitments + prior budget + trailing 12-month spending groups; calls `supabase.functions.invoke('ai-chat')` — no API key in browser.
+  - `src/modules/budget/GrillSession.jsx` — new conversational wizard component: 6-phase stepper, chat interface (user right / AI left with ✦ icon), auto-sends Phase 1 opening on mount, "Next Phase →" advances indicator without re-prompting, "Generate Draft →" exits to GeneratePanel, "× Exit" cancels. Loads user profile + spending-by-group + prior budget-by-group on mount for AI context.
+  - `src/modules/budget/Budget.jsx` — "✦ Start Grill Session" as primary CTA in empty state; "✦ Grill Session" button in view-state header; `grilling` state routes to GrillSession before existing flow states; ModuleHeader always visible when grill session is active.
+  - **Year lock notification banner** — amber banner in view state when `status === 'draft'`: "YYYY budget is not yet finalized. Aim to finalize by January 15, YYYY+1." with inline Finalize button. Hidden when finalized.
+  - 2 build iterations (iteration 1 fixed: spending-by-group sign convention inverted, `item.group` → `item.budget_categories?.group`). Audit passed clean.
+  - **Visually unverified** — confirm in browser: grill session opens, AI responds on mount, phase stepper advances, Generate Draft triggers pattern analysis, year lock banner shows/hides correctly.
+
+- **Scenario Planner restructure + Ideas tier (2026-06-24):**
+  - Sidebar-first navigation replaced with 4-tab layout: Baseline · Committed · Modeled · Ideas. Sidebar removed entirely.
+  - `activeTab` state (default: `'committed'`) replaces `viewMode`. Tab bar colored by tier (blue/purple/amber/slate) with live count badges on Committed, Modeled, Ideas tabs.
+  - **Ideas** is a new lightweight scenario tier (`state: 'idea'`). Idea cards show name, description, source tag, and `→ Model` / `✕` actions. No adjustment inputs — ideas are name + note only.
+  - `→ Model` promotes an idea to `state: 'modeled'` and switches to the Modeled tab. Ideas accumulate durably in the `scenarios` table.
+  - `migration 014_scenarios_idea_state.sql` — adds CHECK constraint on `scenarios.state` for `('modeled', 'committed', 'idea')`. **Must be applied in Supabase SQL Editor.**
+  - `src/lib/db/scenarios.js` — `createScenario` now accepts `state` param (default `'modeled'`); added `promoteToModeled()`.
+  - AiScenarioComposer remains in Modeled tab; `✦ AI` toggle button in ScenarioDetail header switches between detail and composer.
+  - 1 build iteration, audit passed clean. Visual verification pending (browser).
+
 - **AI context brief fixes (2026-06-24, merged into PR #134):**
   - Income label corrected: now explicitly states "401k and benefits are payroll deductions that never appear in bank transactions — this figure IS take-home pay"
   - Removed incorrect 401k reconciliation block that suggested 401k as a cash flow gap explanation (401k is pre-payroll, never in bank transactions)
   - Added trailing 12-month net with explanation of why it may differ from the current-year projection
   - Added excluded-categories list with double-counting explanation
   - Added expense methodology note: forward months use budget targets, actual net may exceed projection
+
+- **AI Scenario Composer fixes (2026-06-24):**
+  - **Blank bubble fix:** `AiScenarioComposer` did not handle `status: 'pending'` — rendered an empty chat bubble when the agent paused for confirmation. Fixed: pending state now stored and rendered as a preview card (adjustment rows + net delta + Confirm/Cancel buttons) instead of an empty text node.
+  - **Replacement scenario clarification:** `SYSTEM_PROMPT` in `sendMessage.js` updated with explicit rules — before calling `create_scenario`, AI must ask for the old cost in replacement/upgrade scenarios, confirm timing when "probably/around" used, and confirm one-time vs. recurring when unclear.
+
+- **Natural language adjustments in ScenarioDetail (2026-06-24):**
+  - `src/lib/ai/scenarioAgent.js` — added `ADD_ADJUSTMENT_TOOL`, `runAdjustmentAgent`, `confirmPendingAdjustments`, `cancelPendingAdjustments`. Uses same preview-before-write pattern as `create_scenario` but adds to an EXISTING scenario (takes `scenarioId`). Existing adjustments passed as context to prevent duplication.
+  - `src/modules/scenarios/Scenarios.jsx` — new `AiAdjustmentComposer` component: compact chat interface inside the adjustments modal. Manual / ✦ AI tab toggle (only when scenario is not committed). AI tab shows chat history, sends to `runAdjustmentAgent`, previews proposed adjustments with Confirm/Cancel before writing. On confirm, parent's `handleAdjsRefresh` reloads adjustments from Supabase.
+  - **Visually unverified** — confirm in browser: open a modeled scenario → click Adjustments → switch to ✦ AI tab → type a natural language request → preview card appears → confirm writes rows → table refreshes.
+
+- **AI prompt storage restructure (2026-06-24):**
+  - **5 new files** in `src/lib/ai/`:
+    - `parserBase.js` — `parserSystem(task, role)`, `JSON_ARRAY_RULE`, `sheetsToText()` — eliminates 4 duplicate copies of the same `sheetsToText` function and near-identical SYSTEM strings across the parser family.
+    - `scenarioAgent.prompts.js` — `buildScenarioSystemExtra()`, `buildAdjustmentSystemExtra()` extracted from inline construction in agent functions.
+    - `grillSession.prompts.js` — `GRILL_PHASE_NAMES`, `buildGrillSystemPrompt()` extracted from `grillSession.js`.
+    - `suggestBuckets.prompts.js` — `buildBucketSystemPrompt(groupList)` extracted from inline template in `suggestBuckets.js`.
+    - `categoryMapper.prompts.js` — `CATEGORY_MAPPER_SYSTEM` constant.
+  - **8 files modified** to import from the new prompt files instead of constructing AI text inline.
+  - **Convention established:** AI-facing text lives in `*.prompts.js` siblings; execution files are orchestration-only.
+  - `ARCHITECTURE.md` — new section 5.2.1 "AI Prompt Stack" documents the 4-layer assembly order (persona → context brief → systemExtra → tool schemas) and the file convention.
+  - Build clean (151 modules, 0 errors). 1 audit iteration (worktree scenarioAgent.js was missing adjustment-agent block — fixed before merge).
 
 ### Known follow-ups / gotchas
 - **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
@@ -134,22 +173,26 @@
 
 ### Recommended next session
 
+**Browser verification (do first — these are visually unverified)**
+1. **Verify Grill Session** — open Budget → "✦ Start Grill Session" → confirm AI responds on mount, phase stepper advances, Generate Draft exits to pattern analysis.
+2. **Verify Scenario 4-tab layout** — confirm Baseline / Committed / Modeled / Ideas tabs render correctly, Ideas tab accumulates, → Model promotes.
+3. **Verify AI Adjustment Composer** — open a modeled scenario → Adjustments → ✦ AI tab → type a request → confirm preview card, Confirm writes rows, table refreshes.
+
 **Reliability**
-1. **Add React error boundary** — wrap `<AppShell>` (or `App.jsx`) so render crashes show a fallback UI instead of a blank page. One component to write and one place to add it.
-2. ~~**Apply outstanding DB migrations**~~ — `003_import_logs` applied (2026-06-24). All `user_profiles` income columns already present. ✓
-3. **Deploy + verify `ai-chat` Edge Function** — set `ANTHROPIC_API_KEY` in Supabase secrets; confirm command bar and AI briefing return real responses.
+4. **Add React error boundary** — wrap `<AppShell>` (or `App.jsx`) so render crashes show a fallback UI instead of a blank page. One component to write and one place to add it.
+5. **Deploy + verify `ai-chat` Edge Function** — set `ANTHROPIC_API_KEY` in Supabase secrets; confirm command bar and AI briefing return real responses.
 
 **Data quality**
-4. **Real Monarch CSV end-to-end test** — run an actual 12–24 month export through parse → dedup → unmapped-category screen → insert. Validates the whole import pipeline.
-5. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars are correct vs. hand-calculated take-home.
-
-**AI quality**
-6. ~~**Preview-before-write for AI scenario mutations**~~ — implemented (2026-06-24). `runScenarioAgent` pauses on the first `create_scenario` tool call and returns `status: 'pending'`. CommandBar renders a preview card (name, adjustment rows, net delta, Confirm/Cancel). Confirm executes the write and continues the loop; Cancel sends an error tool_result and gets an acknowledgement. ✓
-7. ~~**AI command bar yearTxns**~~ — already threaded: `AppShell` loads `yearTxns` and passes it through `runScenarioAgent` → `invokeAIChat` → `buildContextBrief`. ✓
+6. **Real Monarch CSV end-to-end test** — run an actual 12–24 month export through parse → dedup → unmapped-category screen → insert. Validates the whole import pipeline.
+7. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars match hand-calculated take-home.
 
 **Polish**
-8. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; pay special attention to the Scenario planner sidebar and the new Forecast/Budget collapsed-group defaults.
+8. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile.
 9. **Security cleanup** — delete `src/lib/anthropic.js`, confirm `VITE_ANTHROPIC_API_KEY` is empty in GitHub secrets.
+
+~~**Apply outstanding DB migrations**~~ — all applied ✓  
+~~**Preview-before-write for AI scenario mutations**~~ — implemented ✓  
+~~**AI command bar yearTxns threading**~~ — implemented ✓
 
 ---
 

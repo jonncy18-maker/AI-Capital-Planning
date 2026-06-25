@@ -1,16 +1,9 @@
 import { supabase } from '../supabase.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 import { readXlsx } from '../xlsx/xlsxReader.js'
+import { parserSystem, JSON_ARRAY_RULE, sheetsToText } from './parserBase.js'
 
-function sheetsToText(sheets) {
-  return sheets.map(sheet => {
-    const nonEmpty = sheet.rows.filter(r => r.some(c => c !== '' && c != null))
-    const lines = nonEmpty.map(r => r.join('\t'))
-    return `=== Sheet: ${sheet.name} ===\n${lines.join('\n')}`
-  }).join('\n\n')
-}
-
-const SYSTEM = `You are a financial data parser. Your only job is to extract historical bill amounts from spreadsheet content and return valid JSON. No explanation, no markdown fences, no extra text — just the raw JSON array.`
+const SYSTEM = parserSystem('extract historical bill amounts from spreadsheet content')
 
 export async function parseBillAmountsFromFile(file) {
   let text = ''
@@ -41,7 +34,7 @@ Rules:
 - If the same bill appears multiple times in the same month, keep the most recent or largest amount.
 - Convert all amounts to positive numbers (no negative values).
 
-Return ONLY a JSON array. No explanation. No markdown. No wrapper object. Start your response with [ and end with ].
+${JSON_ARRAY_RULE}
 
 Spreadsheet content:
 ${text}`

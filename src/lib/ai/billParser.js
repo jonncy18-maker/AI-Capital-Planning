@@ -1,17 +1,9 @@
 import { supabase } from '../supabase.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 import { readXlsx } from '../xlsx/xlsxReader.js'
+import { parserSystem, JSON_ARRAY_RULE, sheetsToText } from './parserBase.js'
 
-// Convert xlsx sheets to a compact, readable text representation for Claude.
-function sheetsToText(sheets) {
-  return sheets.map(sheet => {
-    const nonEmpty = sheet.rows.filter(r => r.some(c => c !== '' && c != null))
-    const lines = nonEmpty.map(r => r.join('\t'))
-    return `=== Sheet: ${sheet.name} ===\n${lines.join('\n')}`
-  }).join('\n\n')
-}
-
-const SYSTEM = `You are a financial data parser. Your only job is to extract recurring bills from spreadsheet content and return valid JSON. No explanation, no markdown fences, no extra text — just the raw JSON array.`
+const SYSTEM = parserSystem('extract recurring bills from spreadsheet content')
 
 const BILL_TYPES = ['credit_card', 'loan', 'rent', 'investment', 'subscription', 'other']
 
@@ -50,7 +42,7 @@ Rules:
 - Investment contributions and loan payments are usually fixed.
 - If a bill is marked "Auto" or "Automatic", set payment_method to "auto".
 
-Return ONLY a JSON array. No explanation. No markdown. No wrapper object. Start your response with [ and end with ].
+${JSON_ARRAY_RULE}
 
 Spreadsheet content:
 ${text}`

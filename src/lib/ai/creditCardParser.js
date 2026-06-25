@@ -1,16 +1,9 @@
 import { supabase } from '../supabase.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 import { readXlsx } from '../xlsx/xlsxReader.js'
+import { parserSystem, sheetsToText } from './parserBase.js'
 
-function sheetsToText(sheets) {
-  return sheets.map(sheet => {
-    const nonEmpty = sheet.rows.filter(r => r.some(c => c !== '' && c != null))
-    const lines = nonEmpty.map(r => r.join('\t'))
-    return `=== Sheet: ${sheet.name} ===\n${lines.join('\n')}`
-  }).join('\n\n')
-}
-
-const SYSTEM = `You are a financial data parser. Your only job is to extract credit card information and return valid JSON. No explanation, no markdown fences, no extra text — just the raw JSON array.`
+const SYSTEM = parserSystem('extract credit card information')
 
 const NETWORKS = ['visa', 'mastercard', 'amex', 'discover', 'other']
 
