@@ -635,6 +635,8 @@ function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, commi
   const tooltipLeft = hoverM != null && hoverM < 7
   const tooltipPct = hoverM != null ? (PL + (hoverM / 11) * CW) / W * 100 : 0
   const scenarioStartM = lastActM >= 0 ? lastActM : 0
+  // Forecast line starts at today for current year; full year for past/future
+  const forecastStartM = curMonth >= 0 ? curMonth : 0
 
   return (
     <div
@@ -673,8 +675,8 @@ function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, commi
           />
         )}
 
-        {/* Forecast baseline — full year */}
-        <path d={makePath(forecastTotals, 0, 11)}
+        {/* Forecast baseline — current month to Dec (past handled by actuals) */}
+        <path d={makePath(forecastTotals, forecastStartM, 11)}
           fill="none" stroke="var(--accent)" strokeWidth={2} opacity={0.75}
         />
 
@@ -722,8 +724,8 @@ function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, commi
             <line x1={xOf(hoverM)} x2={xOf(hoverM)} y1={PT} y2={H - PB}
               stroke="var(--tx-3)" strokeWidth={1} strokeDasharray="2,2" opacity={0.8}
             />
-            {/* Forecast dot */}
-            {forecastTotals[hoverM] > 0 && (
+            {/* Forecast dot — only where the line is drawn */}
+            {hoverM >= forecastStartM && forecastTotals[hoverM] > 0 && (
               <circle cx={xOf(hoverM)} cy={yOf(forecastTotals[hoverM])} r={4.5}
                 fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={1.5}
               />
@@ -1200,10 +1202,10 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   const chartActualTotals = useMemo(() =>
     Array.from({ length: 12 }, (_, m) => {
       let total = 0
-      for (const vals of Object.values(actualMap)) total += vals[m] ?? 0
+      for (const r of catRows) total += actualMap[r.name]?.[m] ?? 0
       return total
     })
-  , [actualMap])
+  , [actualMap, catRows])
 
   const chartForecastTotals = useMemo(() =>
     Array.from({ length: 12 }, (_, m) => {
