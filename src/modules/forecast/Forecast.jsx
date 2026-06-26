@@ -19,6 +19,8 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const CUR_YEAR = new Date().getFullYear()
 const CUR_MONTH = new Date().getMonth() // 0-indexed
 
+const SCENARIO_COLORS = ['#a864ff', '#ff6b4a', '#00d4aa', '#ff3d71', '#f5a623', '#4fc3f7', '#7ed321']
+
 function fmt(n) {
   const abs = Math.abs(Math.round(n))
   if (abs >= 1000) return '$' + (abs / 1000).toFixed(abs >= 10000 ? 0 : 1) + 'k'
@@ -574,6 +576,261 @@ function ScenarioDropdown({ scenarios, selected, tier, onToggle, onAll, onNone, 
   )
 }
 
+// ── Forecast line chart ──────────────────────────────────────────────────────
+// actualTotals[12]   — real spend per month (past months only)
+// forecastTotals[12] — forecast baseline, all 12 months
+// modeledLines       — [{name, color, values[12]}] one per selected modeled scenario
+// committedLine      — {values[12]} combined committed, or null
+//
+// Scenario lines are anchored to the last actual data point and extend to Dec.
+// They run on top of the forecast baseline until the first month with a delta,
+// then diverge visibly.
+
+function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, committedLine }) {
+  const [hoverM, setHoverM] = useState(null)
+  const curMonth = year === CUR_YEAR ? CUR_MONTH : -1
+
+  const W = 900, H = 220
+  const PL = 62, PR = 124, PT = 18, PB = 32
+  const CW = W - PL - PR
+  const CH = H - PT - PB
+
+  // Last month that has actual spend data
+  const lastActM = (() => {
+    const cap = curMonth >= 0 ? curMonth : 11
+    for (let m = cap; m >= 0; m--) {
+      if (actualTotals[m] > 0) return m
+    }
+    return -1
+  })()
+
+  // Y scale from 0 to maxV
+  const allVals = [
+    ...forecastTotals,
+    ...actualTotals.slice(0, lastActM + 1),
+    ...modeledLines.flatMap(l => l.values),
+    ...(committedLine ? committedLine.values : []),
+  ].filter(v => v > 0)
+  const rawMax = allVals.length > 0 ? Math.max(...allVals) : 10000
+  const maxV = rawMax * 1.15
+
+  const xOf = m => PL + (m / 11) * CW
+  const yOf = v => PT + (1 - Math.min(v, maxV) / maxV) * CH
+
+  function makePath(values, s, e) {
+    return Array.from({ length: e - s + 1 }, (_, i) => i + s)
+      .map((m, i) => `${i === 0 ? 'M' : 'L'}${xOf(m).toFixed(1)},${yOf(values[m] ?? 0).toFixed(1)}`)
+      .join(' ')
+  }
+
+  const gridVals = [0, 0.25, 0.5, 0.75, 1].map(t => maxV * t)
+
+  function onMouseMove(e) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const xPct = (e.clientX - rect.left) / rect.width
+    const rawM = Math.round((xPct * W - PL) / CW * 11)
+    setHoverM(Math.max(0, Math.min(11, rawM)))
+  }
+
+  const tooltipLeft = hoverM != null && hoverM < 7
+  const tooltipPct = hoverM != null ? (PL + (hoverM / 11) * CW) / W * 100 : 0
+  const scenarioStartM = lastActM >= 0 ? lastActM : 0
+
+  return (
+    <div
+      style={{ position: 'relative', border: '1px solid var(--bd)', borderRadius: 12, background: 'var(--bg-card)', marginBottom: 20, overflow: 'hidden' }}
+      onMouseMove={onMouseMove}
+      onMouseLeave={() => setHoverM(null)}
+    >
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', cursor: 'crosshair' }}>
+        {/* Grid lines + Y-axis labels */}
+        {gridVals.map((v, i) => (
+          <g key={i}>
+            <line x1={PL} x2={W - PR} y1={yOf(v)} y2={yOf(v)}
+              stroke="var(--bd)" strokeWidth={i === 0 ? 1 : 0.5} opacity={0.7}
+            />
+            <text x={PL - 6} y={yOf(v) + 4} textAnchor="end" fontSize={10}
+              fill="var(--tx-4)" fontFamily="'DM Mono',monospace"
+            >
+              {i === 0 ? '$0' : fmt(v)}
+            </text>
+          </g>
+        ))}
+
+        {/* X-axis month labels */}
+        {MONTHS.map((label, m) => (
+          <text key={m} x={xOf(m)} y={H - PB + 14} textAnchor="middle" fontSize={10}
+            fill={m === curMonth ? 'var(--accent)' : 'var(--tx-4)'}
+            fontWeight={m === curMonth ? 700 : 400}
+            fontFamily="'DM Mono',monospace"
+          >{label}</text>
+        ))}
+
+        {/* TODAY vertical marker */}
+        {curMonth >= 0 && (
+          <line x1={xOf(curMonth)} x2={xOf(curMonth)} y1={PT} y2={H - PB}
+            stroke="var(--accent)" strokeWidth={1} strokeDasharray="3,3" opacity={0.45}
+          />
+        )}
+
+        {/* Forecast baseline — full year */}
+        <path d={makePath(forecastTotals, 0, 11)}
+          fill="none" stroke="var(--accent)" strokeWidth={2} opacity={0.75}
+        />
+
+        {/* Committed combined line — anchored from last actual forward */}
+        {committedLine && (
+          <path d={makePath(committedLine.values, scenarioStartM, 11)}
+            fill="none" stroke="var(--accent)" strokeWidth={2.5} strokeDasharray="7,3"
+          />
+        )}
+
+        {/* Modeled scenario lines — anchored at lastActM, extend to Dec */}
+        {modeledLines.map(({ name, color, values }, i) => (
+          <g key={i}>
+            <path d={makePath(values, scenarioStartM, 11)}
+              fill="none" stroke={color} strokeWidth={2} strokeDasharray="5,3"
+            />
+            {/* Name label at end of line */}
+            <text x={W - PR + 7} y={yOf(values[11]) + 4} fontSize={9.5}
+              fill={color} fontWeight={600} fontFamily="system-ui,sans-serif"
+            >
+              {name.length > 17 ? name.slice(0, 15) + '…' : name}
+            </text>
+          </g>
+        ))}
+
+        {/* Actuals line — solid with dots, rendered last so it's always on top */}
+        {lastActM >= 0 && (
+          <>
+            <path d={makePath(actualTotals, 0, lastActM)}
+              fill="none" stroke="var(--tx-1)" strokeWidth={2.5}
+            />
+            {Array.from({ length: lastActM + 1 }, (_, m) => (
+              actualTotals[m] > 0
+                ? <circle key={m} cx={xOf(m)} cy={yOf(actualTotals[m])} r={3.5}
+                    fill="var(--tx-1)" stroke="var(--bg-card)" strokeWidth={1.5}
+                  />
+                : null
+            ))}
+          </>
+        )}
+
+        {/* Hover crosshair + hover dots */}
+        {hoverM != null && (
+          <>
+            <line x1={xOf(hoverM)} x2={xOf(hoverM)} y1={PT} y2={H - PB}
+              stroke="var(--tx-3)" strokeWidth={1} strokeDasharray="2,2" opacity={0.8}
+            />
+            {/* Forecast dot */}
+            {forecastTotals[hoverM] > 0 && (
+              <circle cx={xOf(hoverM)} cy={yOf(forecastTotals[hoverM])} r={4.5}
+                fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={1.5}
+              />
+            )}
+            {/* Actuals dot */}
+            {hoverM <= lastActM && actualTotals[hoverM] > 0 && (
+              <circle cx={xOf(hoverM)} cy={yOf(actualTotals[hoverM])} r={4.5}
+                fill="var(--tx-1)" stroke="var(--bg-card)" strokeWidth={1.5}
+              />
+            )}
+            {/* Modeled scenario dots (only in their drawn range) */}
+            {hoverM >= scenarioStartM && modeledLines.map(({ color, values }, i) => (
+              <circle key={i} cx={xOf(hoverM)} cy={yOf(values[hoverM])} r={4.5}
+                fill={color} stroke="var(--bg-card)" strokeWidth={1.5}
+              />
+            ))}
+            {/* Committed dot */}
+            {committedLine && hoverM >= scenarioStartM && (
+              <circle cx={xOf(hoverM)} cy={yOf(committedLine.values[hoverM])} r={4.5}
+                fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={2}
+              />
+            )}
+          </>
+        )}
+      </svg>
+
+      {/* Hover tooltip */}
+      {hoverM != null && (
+        <div style={{
+          position: 'absolute', top: 12, pointerEvents: 'none', zIndex: 10,
+          ...(tooltipLeft
+            ? { left: `calc(${tooltipPct}% + 10px)` }
+            : { right: `calc(${100 - tooltipPct}% + 10px)` }),
+          background: 'var(--bg-card)', border: '1px solid var(--bd)',
+          borderRadius: 8, padding: '8px 12px',
+          boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
+          minWidth: 155, fontSize: 11.5,
+        }}>
+          <div style={{ fontWeight: 700, color: 'var(--tx-1)', marginBottom: 7, fontSize: 12 }}>
+            {MONTHS[hoverM]} {year}
+          </div>
+          {hoverM <= lastActM && actualTotals[hoverM] > 0 && (
+            <ChartTooltipRow dot="var(--tx-1)" label="Actuals" value={fmtFull(actualTotals[hoverM])} />
+          )}
+          <ChartTooltipRow dot="var(--accent)" label="Forecast" value={fmtFull(forecastTotals[hoverM])} />
+          {hoverM >= scenarioStartM && modeledLines.map(({ name, color, values }, i) => {
+            const delta = values[hoverM] - forecastTotals[hoverM]
+            return (
+              <ChartTooltipRow key={i} dot={color} label={name}
+                value={fmtFull(values[hoverM])}
+                delta={delta !== 0 ? `${delta > 0 ? '+' : ''}${fmt(delta)}` : null}
+                deltaColor={delta > 0 ? 'var(--warn)' : 'var(--accent)'}
+              />
+            )
+          })}
+          {committedLine && hoverM >= scenarioStartM && (
+            <ChartTooltipRow dot="var(--accent)" label="Committed"
+              value={fmtFull(committedLine.values[hoverM])}
+              delta={(() => { const d = committedLine.values[hoverM] - forecastTotals[hoverM]; return d !== 0 ? `${d > 0 ? '+' : ''}${fmt(d)}` : null })()}
+              deltaColor={committedLine.values[hoverM] > forecastTotals[hoverM] ? 'var(--warn)' : 'var(--accent)'}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Bottom legend */}
+      <div style={{ display: 'flex', gap: 14, padding: '2px 16px 10px', flexWrap: 'wrap', fontSize: 11, color: 'var(--tx-3)', alignItems: 'center' }}>
+        <ChartLegend stroke="var(--tx-1)" solid label="Actuals" />
+        <ChartLegend stroke="var(--accent)" label="Forecast" />
+        {modeledLines.map(({ name, color }) => (
+          <ChartLegend key={name} stroke={color} dashed label={name} />
+        ))}
+        {committedLine && <ChartLegend stroke="var(--accent)" dashed thick label="Committed" />}
+      </div>
+    </div>
+  )
+}
+
+function ChartTooltipRow({ dot, label, value, delta, deltaColor }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 3, color: 'var(--tx-2)' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', flexShrink: 1 }}>
+        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0 }} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      </span>
+      <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }}>
+        {value}
+        {delta && <span style={{ color: deltaColor, fontWeight: 400, fontSize: 10, marginLeft: 3 }}>{delta}</span>}
+      </span>
+    </div>
+  )
+}
+
+function ChartLegend({ stroke, solid, dashed, thick, label }) {
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <svg width={18} height={8} style={{ flexShrink: 0 }}>
+        <line x1={0} y1={4} x2={18} y2={4} stroke={stroke} strokeWidth={thick ? 2.5 : 2}
+          strokeDasharray={dashed ? '4,2' : undefined}
+        />
+        {solid && <circle cx={9} cy={4} r={2.5} fill={stroke} />}
+      </svg>
+      {label}
+    </span>
+  )
+}
+
 // ── Main module ──────────────────────────────────────────────────────────────
 
 export default function Forecast({ userId, mobile, onDataChange, reloadSignal }) {
@@ -939,6 +1196,70 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   const needsInit = !forecastReady && budgetItems.length > 0
   const scenarioLayer = layer === 'committed' || layer === 'modeled'
 
+  // ── Chart data series ────────────────────────────────────────────────────────
+  const chartActualTotals = useMemo(() =>
+    Array.from({ length: 12 }, (_, m) => {
+      let total = 0
+      for (const vals of Object.values(actualMap)) total += vals[m] ?? 0
+      return total
+    })
+  , [actualMap])
+
+  const chartForecastTotals = useMemo(() =>
+    Array.from({ length: 12 }, (_, m) => {
+      let total = 0
+      for (const r of catRows) {
+        total += forecastReady ? (r.forecast[m] ?? 0) : (r.budget[m] ?? 0)
+      }
+      return total
+    })
+  , [catRows, forecastReady])
+
+  const chartLastActM = useMemo(() => {
+    const cap = year === CUR_YEAR ? CUR_MONTH : 11
+    for (let m = cap; m >= 0; m--) {
+      if (chartActualTotals[m] > 0) return m
+    }
+    return -1
+  }, [chartActualTotals, year])
+
+  const chartModeledLines = useMemo(() => {
+    const anchorM = chartLastActM >= 0 ? chartLastActM : 0
+    return modeledScenarios
+      .filter(s => selectedModeled.has(s.id))
+      .map((s, i) => {
+        const color = SCENARIO_COLORS[i % SCENARIO_COLORS.length]
+        const deltaByMonth = Array(12).fill(0)
+        for (const adj of (s.adjustments ?? [])) {
+          if (Number(adj.year) !== year) continue
+          const m = Number(adj.month) - 1
+          if (m >= 0 && m < 12) deltaByMonth[m] += Number(adj.delta_amount)
+        }
+        const values = Array.from({ length: 12 }, (_, m) =>
+          m < anchorM ? chartActualTotals[m] : chartForecastTotals[m] + deltaByMonth[m]
+        )
+        return { name: s.name, color, values }
+      })
+  }, [modeledScenarios, selectedModeled, chartActualTotals, chartForecastTotals, chartLastActM, year])
+
+  const chartCommittedLine = useMemo(() => {
+    const sel = committedScenarios.filter(s => selectedCommitted.has(s.id))
+    if (sel.length === 0) return null
+    const anchorM = chartLastActM >= 0 ? chartLastActM : 0
+    const netDelta = Array(12).fill(0)
+    for (const s of sel) {
+      for (const adj of (s.adjustments ?? [])) {
+        if (Number(adj.year) !== year) continue
+        const m = Number(adj.month) - 1
+        if (m >= 0 && m < 12) netDelta[m] += Number(adj.delta_amount)
+      }
+    }
+    const values = Array.from({ length: 12 }, (_, m) =>
+      m < anchorM ? chartActualTotals[m] : chartForecastTotals[m] + netDelta[m]
+    )
+    return { values }
+  }, [committedScenarios, selectedCommitted, chartActualTotals, chartForecastTotals, chartLastActM, year])
+
   return (
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       <ModuleHeader
@@ -1049,6 +1370,17 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               </button>
             )}
           </div>
+
+          {/* Full-year line chart — always visible above the table */}
+          {!mobile && catRows.length > 0 && (
+            <ForecastChart
+              year={year}
+              actualTotals={chartActualTotals}
+              forecastTotals={chartForecastTotals}
+              modeledLines={chartModeledLines}
+              committedLine={chartCommittedLine}
+            />
+          )}
 
           {/* Initialize banner — forecast not yet set up for this year */}
           {needsInit && (
