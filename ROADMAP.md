@@ -160,6 +160,11 @@
   - `ARCHITECTURE.md` — new section 5.2.1 "AI Prompt Stack" documents the 4-layer assembly order (persona → context brief → systemExtra → tool schemas) and the file convention.
   - Build clean (151 modules, 0 errors). 1 audit iteration (worktree scenarioAgent.js was missing adjustment-agent block — fixed before merge).
 
+- **Forecast: committed + modeled scenario layers with multi-select (2026-06-26):**
+  - `src/modules/forecast/Forecast.jsx` — the layer toggle's single `+ Scenarios` button is replaced by two tier buttons: **Committed Scenarios** and **Modeled**, each with a `▾` multi-select dropdown (checkbox list with All/None, live `selected/total` count badge).
+  - Only the scenarios the user checks in the active tier's dropdown are folded into the forecast (previously *all* committed scenarios were applied unconditionally). Committed and Modeled each keep an independent selection.
+  - Modeled scenarios (with adjustments) are now loaded alongside committed ones; selections reconcile across reloads/year changes (new scenarios default to selected, removed ones drop, prior picks preserved). The "with scenarios" summary stat, legend, and delta highlighting all follow the active tier.
+
 ### Known follow-ups / gotchas
 - **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
 - **Retire the browser-side path:** `src/lib/anthropic.js` (direct browser call via `VITE_ANTHROPIC_API_KEY`) is now superseded by the Edge Function and should not be used. Keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty; rotate the key if it was ever exposed.

@@ -333,6 +333,7 @@ function CategoryLineItems({ row, cellStyle, colBg, curMonth, editable, onAddLin
 function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, layer, forecastReady, onEdit, saving, editKey, expandedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onUpdateLine, onDeleteLabel, onSetRate }) {
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1 // highlight current month
   const canEditForecast = layer === 'forecast' && forecastReady
+  const scenarioLayer = layer === 'committed' || layer === 'modeled'
 
   // Group rows
   const grouped = {}
@@ -469,7 +470,7 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
                         const key = `${r.catId}::${m + 1}`
                         const isEditing = editKey === key && saving !== true
                         const canEdit = canEditForecast && !isPast
-                        const hasDelta = layer === 'scenarios' && (scenarioDeltaMap?.[key] ?? 0) !== 0
+                        const hasDelta = scenarioLayer && (scenarioDeltaMap?.[key] ?? 0) !== 0
                         const bg = hasDelta ? 'rgba(168,100,255,0.08)' : colBg(m)
                         const col = hasDelta ? 'var(--tx-1)' : displayV > 0 ? 'var(--tx-1)' : 'var(--tx-4)'
                         return (
@@ -515,7 +516,7 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
         <tfoot>
           <tr style={{ background: 'var(--bg-card)' }}>
             <td style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--tx-1)', padding: '11px 14px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', borderTop: '2px solid var(--bd)' }}>
-              {layer === 'budget' ? 'Budget Total' : layer === 'scenarios' ? 'With Scenarios' : 'Forecast Total'}
+              {layer === 'budget' ? 'Budget Total' : scenarioLayer ? 'With Scenarios' : 'Forecast Total'}
             </td>
             {forecastTotals.map((v, m) => <td key={m} style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', background: colBg(m), borderTop: '2px solid var(--bd)' }}>{fmt(v)}</td>)}
             <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', borderTop: '2px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(forecastTotals.reduce((a, b) => a + b, 0))}</td>
@@ -523,6 +524,53 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
         </tfoot>
       </table>
     </div>
+  )
+}
+
+// ── Scenario multi-select dropdown ───────────────────────────────────────────
+// Anchored popover under a layer button. Lets the user pick which scenarios in
+// the active tier (committed / modeled) are folded into the forecast.
+
+const miniBtn = {
+  padding: '3px 10px', background: 'transparent', color: 'var(--tx-2)',
+  border: '1px solid var(--bd)', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+}
+
+function ScenarioDropdown({ scenarios, selected, tier, onToggle, onAll, onNone, onClose }) {
+  const accentColor = tier === 'modeled' ? 'rgba(168,100,255,1)' : 'var(--accent)'
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+      <div style={{
+        position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 61,
+        background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 10,
+        boxShadow: '0 10px 30px rgba(0,0,0,0.18)', minWidth: 250, maxHeight: 340,
+        overflow: 'auto', padding: 8,
+      }}>
+        {scenarios.length === 0 ? (
+          <div style={{ padding: '12px', fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.5 }}>
+            No {tier} scenarios yet. Create one in the Scenario Planner.
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 6, padding: '2px 4px 8px', borderBottom: '1px solid var(--bd-light)', marginBottom: 6 }}>
+              <button onClick={onAll} style={miniBtn}>All</button>
+              <button onClick={onNone} style={miniBtn}>None</button>
+            </div>
+            {scenarios.map(s => {
+              const on = selected.has(s.id)
+              return (
+                <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12.5, color: 'var(--tx-1)' }}>
+                  <input type="checkbox" checked={on} onChange={() => onToggle(s.id)} style={{ accentColor, cursor: 'pointer' }} />
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name || 'Untitled scenario'}</span>
+                  <span style={{ fontSize: 10.5, color: 'var(--tx-4)', whiteSpace: 'nowrap' }}>{s.adjustments?.length ?? 0} adj</span>
+                </label>
+              )
+            })}
+          </>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -536,11 +584,20 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   const [forecastReady, setForecastReady] = useState(false) // forecast initialized for this year
   const [yearTxns, setYearTxns] = useState([])
   const [committedScenarios, setCommittedScenarios] = useState([])
+  const [modeledScenarios, setModeledScenarios] = useState([])
+  const [selectedCommitted, setSelectedCommitted] = useState(() => new Set())
+  const [selectedModeled, setSelectedModeled] = useState(() => new Set())
+  const [openDropdown, setOpenDropdown] = useState(null) // 'committed' | 'modeled' | null
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false) // initialize / reset in flight
-  const [layer, setLayer] = useState('forecast') // 'budget' | 'forecast' | 'scenarios'
+  const [layer, setLayer] = useState('forecast') // 'budget' | 'forecast' | 'committed' | 'modeled'
+
+  // Track which scenario ids we've seen so new scenarios default to selected
+  // while preserving the user's existing picks across reloads/year changes.
+  const knownCommittedRef = useRef(new Set())
+  const knownModeledRef = useRef(new Set())
 
   // Editing state: { catId, month, budgetValue, currentValue, lineId, key }
   const [editCell, setEditCell] = useState(null)
@@ -564,14 +621,29 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
       setForecastReady(fItems.length > 0)
       setYearTxns(txns)
       setYears(budgetYears)
-      const committed = allScenarios.filter(s => s.state === 'committed')
-      const commWithAdjs = await Promise.all(
-        committed.map(async s => {
+      const withAdjs = async list => Promise.all(
+        list.map(async s => {
           const adjs = await getAdjustments(userId, s.id).catch(() => [])
           return { ...s, adjustments: adjs }
         })
       )
+      const [commWithAdjs, modWithAdjs] = await Promise.all([
+        withAdjs(allScenarios.filter(s => s.state === 'committed')),
+        withAdjs(allScenarios.filter(s => s.state === 'modeled')),
+      ])
       setCommittedScenarios(commWithAdjs)
+      setModeledScenarios(modWithAdjs)
+
+      // Default brand-new scenarios to selected; keep prior picks, drop removed.
+      const reconcile = (prev, list, knownRef) => {
+        const ids = list.map(s => s.id)
+        const next = new Set([...prev].filter(id => ids.includes(id)))
+        for (const id of ids) if (!knownRef.current.has(id)) next.add(id)
+        knownRef.current = new Set(ids)
+        return next
+      }
+      setSelectedCommitted(prev => reconcile(prev, commWithAdjs, knownCommittedRef))
+      setSelectedModeled(prev => reconcile(prev, modWithAdjs, knownModeledRef))
     } catch (e) {
       setError(e.message)
     } finally {
@@ -631,10 +703,18 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     return m
   }, [yearTxns])
 
-  // Scenario delta map: "catId::month" → net delta from committed scenarios
+  // Scenarios folded into the forecast for the active tier — only those the
+  // user has selected in that tier's dropdown.
+  const activeScenarios = useMemo(() => {
+    if (layer === 'committed') return committedScenarios.filter(s => selectedCommitted.has(s.id))
+    if (layer === 'modeled') return modeledScenarios.filter(s => selectedModeled.has(s.id))
+    return []
+  }, [layer, committedScenarios, modeledScenarios, selectedCommitted, selectedModeled])
+
+  // Scenario delta map: "catId::month" → net delta from the selected scenarios
   const scenarioDeltaMap = useMemo(() => {
     const m = {}
-    for (const s of committedScenarios) {
+    for (const s of activeScenarios) {
       for (const adj of (s.adjustments ?? [])) {
         if (Number(adj.year) !== year) continue
         const key = `${adj.category_id}::${adj.month}`
@@ -642,7 +722,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
       }
     }
     return m
-  }, [committedScenarios, year])
+  }, [activeScenarios, year])
 
   // Summary stats
   const { annualBudget, annualForecast, annualWithScenarios } = useMemo(() => {
@@ -687,6 +767,22 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
       next.has(catId) ? next.delete(catId) : next.add(catId)
       return next
     })
+  }
+
+  const setterFor = tier => tier === 'committed' ? setSelectedCommitted : setSelectedModeled
+  const listFor = tier => tier === 'committed' ? committedScenarios : modeledScenarios
+  function toggleScenario(tier, id) {
+    setterFor(tier)(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  function selectAllScenarios(tier) {
+    setterFor(tier)(new Set(listFor(tier).map(s => s.id)))
+  }
+  function selectNoScenarios(tier) {
+    setterFor(tier)(new Set())
   }
 
   // Replace or insert a forecast line in local state by id.
@@ -841,6 +937,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   const variance = annualForecast - annualBudget
   const pctVariance = annualBudget > 0 ? (variance / annualBudget) * 100 : null
   const needsInit = !forecastReady && budgetItems.length > 0
+  const scenarioLayer = layer === 'committed' || layer === 'modeled'
 
   return (
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
@@ -888,28 +985,63 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
         <>
           {/* Layer toggle + bucket expand/collapse */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-            <div style={{ display: 'flex', gap: 0, border: '1px solid var(--bd)', borderRadius: 8, overflow: 'hidden', width: 'fit-content' }}>
+            <div style={{ display: 'flex', gap: 0, border: '1px solid var(--bd)', borderRadius: 8, width: 'fit-content' }}>
               {[
                 { id: 'budget', label: 'Budget' },
                 { id: 'forecast', label: 'Forecast' },
-                { id: 'scenarios', label: '+ Scenarios' },
-              ].map(({ id, label }, i, arr) => (
-                <button
-                  key={id}
-                  onClick={() => setLayer(id)}
-                  style={{
-                    padding: '7px 16px',
-                    background: layer === id ? 'var(--accent)' : 'transparent',
-                    color: layer === id ? '#fff' : 'var(--tx-2)',
-                    border: 'none',
-                    borderRight: i < arr.length - 1 ? '1px solid var(--bd)' : 'none',
-                    fontSize: 12.5, cursor: 'pointer',
-                    fontWeight: layer === id ? 600 : 400,
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+                { id: 'committed', label: 'Committed Scenarios', tier: 'committed' },
+                { id: 'modeled', label: 'Modeled', tier: 'modeled' },
+              ].map(({ id, label, tier }, i, arr) => {
+                const active = layer === id
+                const scns = tier ? listFor(tier) : []
+                const sel = tier === 'committed' ? selectedCommitted : tier === 'modeled' ? selectedModeled : null
+                return (
+                  <div key={id} style={{ position: 'relative', display: 'flex' }}>
+                    <button
+                      onClick={() => {
+                        if (tier) {
+                          if (active) setOpenDropdown(o => o === id ? null : id)
+                          else { setLayer(id); setOpenDropdown(id) }
+                        } else {
+                          setLayer(id); setOpenDropdown(null)
+                        }
+                      }}
+                      style={{
+                        padding: '7px 14px',
+                        background: active ? 'var(--accent)' : 'transparent',
+                        color: active ? '#fff' : 'var(--tx-2)',
+                        border: 'none',
+                        borderRight: i < arr.length - 1 ? '1px solid var(--bd)' : 'none',
+                        borderTopLeftRadius: i === 0 ? 7 : 0, borderBottomLeftRadius: i === 0 ? 7 : 0,
+                        borderTopRightRadius: i === arr.length - 1 ? 7 : 0, borderBottomRightRadius: i === arr.length - 1 ? 7 : 0,
+                        fontSize: 12.5, cursor: 'pointer', fontWeight: active ? 600 : 400,
+                        display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {label}
+                      {tier && (
+                        <>
+                          <span style={{ fontSize: 10, opacity: 0.75, fontVariantNumeric: 'tabular-nums' }}>
+                            {sel.size}/{scns.length}
+                          </span>
+                          <span style={{ fontSize: 9 }}>▾</span>
+                        </>
+                      )}
+                    </button>
+                    {tier && openDropdown === id && (
+                      <ScenarioDropdown
+                        scenarios={scns}
+                        selected={sel}
+                        tier={tier}
+                        onToggle={sid => toggleScenario(tier, sid)}
+                        onAll={() => selectAllScenarios(tier)}
+                        onNone={() => selectNoScenarios(tier)}
+                        onClose={() => setOpenDropdown(null)}
+                      />
+                    )}
+                  </div>
+                )
+              })}
             </div>
             {!mobile && groupNames.length > 0 && (
               <button onClick={toggleAllGroups} style={ghostBtn}>
@@ -942,9 +1074,9 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               note={forecastReady && pctVariance != null && Math.abs(pctVariance) >= 0.5 ? `${variance >= 0 ? '+' : ''}${Math.round(pctVariance)}% vs budget` : null}
               noteColor={variance > 0 ? 'var(--warn)' : 'var(--accent)'}
             />
-            {layer === 'scenarios' && committedScenarios.length > 0 && (
+            {scenarioLayer && activeScenarios.length > 0 && (
               <SummaryStat
-                label="with scenarios"
+                label={`with ${activeScenarios.length} ${layer} scenario${activeScenarios.length > 1 ? 's' : ''}`}
                 value={fmtFull(annualWithScenarios)}
                 accent
                 note={annualWithScenarios !== annualForecast
@@ -953,9 +1085,11 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
                 noteColor={annualWithScenarios > annualForecast ? 'var(--warn)' : 'var(--accent)'}
               />
             )}
-            {layer === 'scenarios' && committedScenarios.length === 0 && (
-              <div style={{ fontSize: 12, color: 'var(--tx-3)', alignSelf: 'center' }}>
-                No committed scenarios — promote one in the Scenario Planner to layer it here.
+            {scenarioLayer && activeScenarios.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--tx-3)', alignSelf: 'center', maxWidth: 320, lineHeight: 1.5 }}>
+                {listFor(layer).length === 0
+                  ? `No ${layer} scenarios yet — create one in the Scenario Planner to layer it here.`
+                  : `No ${layer} scenarios selected — pick one from the ${layer === 'committed' ? 'Committed Scenarios' : 'Modeled'} ▾ dropdown.`}
               </div>
             )}
           </div>
@@ -964,9 +1098,9 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
           <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 11, color: 'var(--tx-3)', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, border: '1px solid var(--bd)', background: 'var(--bg-card)' }} />
-              {layer === 'budget' ? 'Budget (read-only — edit in Budget module)' : layer === 'forecast' ? 'Forecast — click a cell to edit, a category to manage lines' : 'Forecast + committed scenarios'}
+              {layer === 'budget' ? 'Budget (read-only — edit in Budget module)' : layer === 'forecast' ? 'Forecast — click a cell to edit, a category to manage lines' : layer === 'committed' ? 'Forecast + selected committed scenarios' : 'Forecast + selected modeled scenarios'}
             </span>
-            {layer === 'scenarios' && (
+            {scenarioLayer && (
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: 'rgba(168,100,255,0.12)', border: '1px solid rgba(168,100,255,0.4)' }} />
                 Scenario delta (◆)
