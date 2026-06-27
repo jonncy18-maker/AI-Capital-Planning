@@ -586,7 +586,7 @@ function ScenarioDropdown({ scenarios, selected, tier, onToggle, onAll, onNone, 
 // They run on top of the forecast baseline until the first month with a delta,
 // then diverge visibly.
 
-function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, committedLine }) {
+function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, committedLine, combinedModeledLine }) {
   const [hoverM, setHoverM] = useState(null)
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1
 
@@ -604,12 +604,15 @@ function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, commi
     return -1
   })()
 
+  const hasAdjustment = committedLine != null || combinedModeledLine != null
+
   // Y scale from 0 to maxV
   const allVals = [
     ...forecastTotals,
+    ...budgetTotals,
     ...actualTotals.slice(0, lastActM + 1),
-    ...modeledLines.flatMap(l => l.values),
     ...(committedLine ? committedLine.values : []),
+    ...(combinedModeledLine ? combinedModeledLine.values : []),
   ].filter(v => v > 0)
   const rawMax = allVals.length > 0 ? Math.max(...allVals) : 10000
   const maxV = rawMax * 1.15
@@ -675,32 +678,32 @@ function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, commi
           />
         )}
 
-        {/* Forecast baseline — current month to Dec (past handled by actuals) */}
-        <path d={makePath(forecastTotals, forecastStartM, 11)}
-          fill="none" stroke="var(--accent)" strokeWidth={2} opacity={0.75}
+        {/* Budget line — full year, solid blue reference */}
+        <path d={makePath(budgetTotals, 0, 11)}
+          fill="none" stroke="var(--bar-budget-tx)" strokeWidth={1.5} opacity={0.9}
         />
 
-        {/* Committed combined line — anchored from last actual forward */}
+        {/* Forecast baseline — fades when a scenario adjustment is active */}
+        <path d={makePath(forecastTotals, 0, 11)}
+          fill="none" stroke="var(--accent)"
+          strokeWidth={hasAdjustment ? 1 : 2}
+          opacity={hasAdjustment ? 0.18 : 0.75}
+        />
+
+        {/* Committed — full-year forecast-with-scenario; overlays the faint baseline,
+            diverges only where deltas exist */}
         {committedLine && (
-          <path d={makePath(committedLine.values, scenarioStartM, 11)}
-            fill="none" stroke="var(--accent)" strokeWidth={2.5} strokeDasharray="7,3"
+          <path d={makePath(committedLine.values, 0, 11)}
+            fill="none" stroke="var(--accent)" strokeWidth={2} opacity={0.85}
           />
         )}
 
-        {/* Modeled scenario lines — anchored at lastActM, extend to Dec */}
-        {modeledLines.map(({ name, color, values }, i) => (
-          <g key={i}>
-            <path d={makePath(values, scenarioStartM, 11)}
-              fill="none" stroke={color} strokeWidth={2} strokeDasharray="5,3"
-            />
-            {/* Name label at end of line */}
-            <text x={W - PR + 7} y={yOf(values[11]) + 4} fontSize={9.5}
-              fill={color} fontWeight={600} fontFamily="system-ui,sans-serif"
-            >
-              {name.length > 17 ? name.slice(0, 15) + '…' : name}
-            </text>
-          </g>
-        ))}
+        {/* Modeled — full-year combined scenario line */}
+        {combinedModeledLine && (
+          <path d={makePath(combinedModeledLine.values, 0, 11)}
+            fill="none" stroke="#a864ff" strokeWidth={2} strokeDasharray="5,3"
+          />
+        )}
 
         {/* Actuals line — solid with dots, rendered last so it's always on top */}
         {lastActM >= 0 && (
@@ -724,28 +727,35 @@ function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, commi
             <line x1={xOf(hoverM)} x2={xOf(hoverM)} y1={PT} y2={H - PB}
               stroke="var(--tx-3)" strokeWidth={1} strokeDasharray="2,2" opacity={0.8}
             />
-            {/* Forecast dot — only where the line is drawn */}
-            {hoverM >= forecastStartM && forecastTotals[hoverM] > 0 && (
-              <circle cx={xOf(hoverM)} cy={yOf(forecastTotals[hoverM])} r={4.5}
+            {/* Budget dot */}
+            {budgetTotals[hoverM] > 0 && (
+              <circle cx={xOf(hoverM)} cy={yOf(budgetTotals[hoverM])} r={4}
+                fill="var(--bar-budget-tx)" stroke="var(--bg-card)" strokeWidth={1.5}
+              />
+            )}
+            {/* Forecast baseline dot — smaller when adjustment active */}
+            {forecastTotals[hoverM] > 0 && (
+              <circle cx={xOf(hoverM)} cy={yOf(forecastTotals[hoverM])} r={hasAdjustment ? 3 : 4.5}
                 fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={1.5}
+                opacity={hasAdjustment ? 0.35 : 1}
+              />
+            )}
+            {/* Committed dot */}
+            {committedLine && (
+              <circle cx={xOf(hoverM)} cy={yOf(committedLine.values[hoverM])} r={4.5}
+                fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={1.5}
+              />
+            )}
+            {/* Combined modeled dot */}
+            {combinedModeledLine && (
+              <circle cx={xOf(hoverM)} cy={yOf(combinedModeledLine.values[hoverM])} r={4.5}
+                fill="#a864ff" stroke="var(--bg-card)" strokeWidth={1.5}
               />
             )}
             {/* Actuals dot */}
             {hoverM <= lastActM && actualTotals[hoverM] > 0 && (
               <circle cx={xOf(hoverM)} cy={yOf(actualTotals[hoverM])} r={4.5}
                 fill="var(--tx-1)" stroke="var(--bg-card)" strokeWidth={1.5}
-              />
-            )}
-            {/* Modeled scenario dots (only in their drawn range) */}
-            {hoverM >= scenarioStartM && modeledLines.map(({ color, values }, i) => (
-              <circle key={i} cx={xOf(hoverM)} cy={yOf(values[hoverM])} r={4.5}
-                fill={color} stroke="var(--bg-card)" strokeWidth={1.5}
-              />
-            ))}
-            {/* Committed dot */}
-            {committedLine && hoverM >= scenarioStartM && (
-              <circle cx={xOf(hoverM)} cy={yOf(committedLine.values[hoverM])} r={4.5}
-                fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={2}
               />
             )}
           </>
@@ -770,23 +780,33 @@ function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, commi
           {hoverM <= lastActM && actualTotals[hoverM] > 0 && (
             <ChartTooltipRow dot="var(--tx-1)" label="Actuals" value={fmtFull(actualTotals[hoverM])} />
           )}
-          <ChartTooltipRow dot="var(--accent)" label="Forecast" value={fmtFull(forecastTotals[hoverM])} />
-          {hoverM >= scenarioStartM && modeledLines.map(({ name, color, values }, i) => {
-            const delta = values[hoverM] - forecastTotals[hoverM]
+          <ChartTooltipRow
+            dot="var(--accent)" label={hasAdjustment ? 'Forecast (baseline)' : 'Forecast'}
+            value={fmtFull(forecastTotals[hoverM])}
+            faint={hasAdjustment}
+          />
+          {committedLine && (() => {
+            const d = committedLine.values[hoverM] - forecastTotals[hoverM]
             return (
-              <ChartTooltipRow key={i} dot={color} label={name}
-                value={fmtFull(values[hoverM])}
-                delta={delta !== 0 ? `${delta > 0 ? '+' : ''}${fmt(delta)}` : null}
-                deltaColor={delta > 0 ? 'var(--warn)' : 'var(--accent)'}
+              <ChartTooltipRow dot="var(--accent)" label="Forecast (committed)"
+                value={fmtFull(committedLine.values[hoverM])}
+                delta={d !== 0 ? `${d > 0 ? '+' : ''}${fmt(d)}` : null}
+                deltaColor={d > 0 ? 'var(--warn)' : 'var(--accent)'}
               />
             )
-          })}
-          {committedLine && hoverM >= scenarioStartM && (
-            <ChartTooltipRow dot="var(--accent)" label="Committed"
-              value={fmtFull(committedLine.values[hoverM])}
-              delta={(() => { const d = committedLine.values[hoverM] - forecastTotals[hoverM]; return d !== 0 ? `${d > 0 ? '+' : ''}${fmt(d)}` : null })()}
-              deltaColor={committedLine.values[hoverM] > forecastTotals[hoverM] ? 'var(--warn)' : 'var(--accent)'}
-            />
+          })()}
+          {combinedModeledLine && (() => {
+            const d = combinedModeledLine.values[hoverM] - forecastTotals[hoverM]
+            return (
+              <ChartTooltipRow dot="#a864ff" label="Modeled"
+                value={fmtFull(combinedModeledLine.values[hoverM])}
+                delta={d !== 0 ? `${d > 0 ? '+' : ''}${fmt(d)}` : null}
+                deltaColor={d > 0 ? 'var(--warn)' : '#a864ff'}
+              />
+            )
+          })()}
+          {budgetTotals[hoverM] > 0 && (
+            <ChartTooltipRow dot="var(--bar-budget-tx)" label="Budget" value={fmtFull(budgetTotals[hoverM])} />
           )}
         </div>
       )}
@@ -794,19 +814,18 @@ function ForecastChart({ year, actualTotals, forecastTotals, modeledLines, commi
       {/* Bottom legend */}
       <div style={{ display: 'flex', gap: 14, padding: '2px 16px 10px', flexWrap: 'wrap', fontSize: 11, color: 'var(--tx-3)', alignItems: 'center' }}>
         <ChartLegend stroke="var(--tx-1)" solid label="Actuals" />
-        <ChartLegend stroke="var(--accent)" label="Forecast" />
-        {modeledLines.map(({ name, color }) => (
-          <ChartLegend key={name} stroke={color} dashed label={name} />
-        ))}
-        {committedLine && <ChartLegend stroke="var(--accent)" dashed thick label="Committed" />}
+        <ChartLegend stroke="var(--accent)" label={hasAdjustment ? 'Forecast (baseline)' : 'Forecast'} faint={hasAdjustment} />
+        <ChartLegend stroke="var(--bar-budget-tx)" label="Budget" />
+        {committedLine && <ChartLegend stroke="var(--accent)" label="Forecast (committed)" />}
+        {combinedModeledLine && <ChartLegend stroke="#a864ff" dashed label="Modeled" />}
       </div>
     </div>
   )
 }
 
-function ChartTooltipRow({ dot, label, value, delta, deltaColor }) {
+function ChartTooltipRow({ dot, label, value, delta, deltaColor, faint }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 3, color: 'var(--tx-2)' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 3, color: 'var(--tx-2)', opacity: faint ? 0.4 : 1 }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', flexShrink: 1 }}>
         <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0 }} />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
@@ -819,9 +838,9 @@ function ChartTooltipRow({ dot, label, value, delta, deltaColor }) {
   )
 }
 
-function ChartLegend({ stroke, solid, dashed, thick, label }) {
+function ChartLegend({ stroke, solid, dashed, thick, label, faint }) {
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+    <span style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: faint ? 0.4 : 1 }}>
       <svg width={18} height={8} style={{ flexShrink: 0 }}>
         <line x1={0} y1={4} x2={18} y2={4} stroke={stroke} strokeWidth={thick ? 2.5 : 2}
           strokeDasharray={dashed ? '4,2' : undefined}
@@ -830,6 +849,78 @@ function ChartLegend({ stroke, solid, dashed, thick, label }) {
       </svg>
       {label}
     </span>
+  )
+}
+
+// ── Forecast KPI strip ──────────────────────────────────────────────────────
+
+function KPICard({ label, heroValue, heroPct, heroColor, detail }) {
+  return (
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 12, padding: '14px 16px' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--tx-4)', marginBottom: 8, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: heroColor ?? 'var(--tx-1)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+        {heroValue}
+        {heroPct != null && <span style={{ marginLeft: 10 }}>{heroPct}</span>}
+      </div>
+      {detail && <div style={{ fontSize: 10.5, color: 'var(--tx-4)', marginTop: 7 }}>{detail}</div>}
+    </div>
+  )
+}
+
+function ForecastKPIStrip({ chartActualTotals, chartForecastTotals, chartBudgetTotals, chartLastActM, annualForecast }) {
+  const fmtD = n => `${n >= 0 ? '+' : '−'}${fmtFull(Math.abs(n))}`
+  const fmtP = p => `${p >= 0 ? '+' : '−'}${Math.abs(Math.round(p))}%`
+  const deltaColor = n => n > 0 ? 'var(--warn)' : n < 0 ? 'var(--accent)' : 'var(--tx-1)'
+
+  const ytdActual = chartActualTotals.slice(0, chartLastActM + 1).reduce((a, b) => a + b, 0)
+  const ytdPlan   = chartForecastTotals.slice(0, chartLastActM + 1).reduce((a, b) => a + b, 0)
+  const ytdDelta  = ytdActual - ytdPlan
+  const ytdPct    = ytdPlan > 0 ? (ytdDelta / ytdPlan) * 100 : null
+
+  const remainingForecast = chartForecastTotals.slice(chartLastActM + 1).reduce((a, b) => a + b, 0)
+  const remainingBudget   = chartBudgetTotals.slice(chartLastActM + 1).reduce((a, b) => a + b, 0)
+  const projectedYE       = ytdActual + remainingForecast
+  const projDelta         = projectedYE - annualForecast
+  const projPct           = annualForecast > 0 ? (projDelta / annualForecast) * 100 : null
+
+  const remainDelta = remainingForecast - remainingBudget
+  const remainPct   = remainingBudget > 0 ? (remainDelta / remainingBudget) * 100 : null
+
+  const monthsLeft     = 11 - chartLastActM
+  const nextMonthLabel = chartLastActM < 11 ? MONTHS[chartLastActM + 1] : null
+  const periodLabel    = nextMonthLabel ? `${nextMonthLabel}–Dec` : 'Dec'
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+      <KPICard
+        label="YTD actual vs plan"
+        heroValue={fmtD(ytdDelta)}
+        heroPct={ytdPct != null ? fmtP(ytdPct) : null}
+        heroColor={deltaColor(ytdDelta)}
+        detail={`${fmtFull(ytdActual)} actual · ${fmtFull(ytdPlan)} plan · ${MONTHS[0]}–${MONTHS[chartLastActM]}`}
+      />
+      <KPICard
+        label="Projected year-end"
+        heroValue={fmtD(projDelta)}
+        heroPct={projPct != null ? fmtP(projPct) : null}
+        heroColor={deltaColor(projDelta)}
+        detail={`${fmtFull(projectedYE)} projected · ${fmtFull(annualForecast)} full-year plan`}
+      />
+      <KPICard
+        label="Remaining forecast"
+        heroValue={fmtFull(remainingForecast)}
+        heroPct={null}
+        heroColor="var(--tx-1)"
+        detail={monthsLeft > 0 && nextMonthLabel ? `${periodLabel} · ${monthsLeft} month${monthsLeft !== 1 ? 's' : ''}` : 'Year complete'}
+      />
+      <KPICard
+        label={`Forecast vs budget · ${periodLabel}`}
+        heroValue={fmtD(remainDelta)}
+        heroPct={remainPct != null ? fmtP(remainPct) : null}
+        heroColor={deltaColor(remainDelta)}
+        detail={`${fmtFull(remainingForecast)} forecast · ${fmtFull(remainingBudget)} budget`}
+      />
+    </div>
   )
 }
 
@@ -1217,6 +1308,14 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     })
   , [catRows, forecastReady])
 
+  const chartBudgetTotals = useMemo(() =>
+    Array.from({ length: 12 }, (_, m) => {
+      let total = 0
+      for (const r of catRows) total += r.budget[m] ?? 0
+      return total
+    })
+  , [catRows])
+
   const chartLastActM = useMemo(() => {
     const cap = year === CUR_YEAR ? CUR_MONTH : 11
     for (let m = cap; m >= 0; m--) {
@@ -1225,29 +1324,13 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     return -1
   }, [chartActualTotals, year])
 
-  const chartModeledLines = useMemo(() => {
-    const anchorM = chartLastActM >= 0 ? chartLastActM : 0
-    return modeledScenarios
-      .filter(s => selectedModeled.has(s.id))
-      .map((s, i) => {
-        const color = SCENARIO_COLORS[i % SCENARIO_COLORS.length]
-        const deltaByMonth = Array(12).fill(0)
-        for (const adj of (s.adjustments ?? [])) {
-          if (Number(adj.year) !== year) continue
-          const m = Number(adj.month) - 1
-          if (m >= 0 && m < 12) deltaByMonth[m] += Number(adj.delta_amount)
-        }
-        const values = Array.from({ length: 12 }, (_, m) =>
-          m < anchorM ? chartActualTotals[m] : chartForecastTotals[m] + deltaByMonth[m]
-        )
-        return { name: s.name, color, values }
-      })
-  }, [modeledScenarios, selectedModeled, chartActualTotals, chartForecastTotals, chartLastActM, year])
-
-  const chartCommittedLine = useMemo(() => {
-    const sel = committedScenarios.filter(s => selectedCommitted.has(s.id))
+  // A scenario line = the forecast with this scenario's deltas applied. It mirrors
+  // the forecast baseline exactly (so it overlays the faint baseline) and only
+  // diverges in months that have a delta. It is NOT anchored to actuals — anchoring
+  // to the current partial month would dip the line to an incomplete actual value.
+  const chartCombinedModeledLine = useMemo(() => {
+    const sel = modeledScenarios.filter(s => selectedModeled.has(s.id))
     if (sel.length === 0) return null
-    const anchorM = chartLastActM >= 0 ? chartLastActM : 0
     const netDelta = Array(12).fill(0)
     for (const s of sel) {
       for (const adj of (s.adjustments ?? [])) {
@@ -1256,11 +1339,24 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
         if (m >= 0 && m < 12) netDelta[m] += Number(adj.delta_amount)
       }
     }
-    const values = Array.from({ length: 12 }, (_, m) =>
-      m < anchorM ? chartActualTotals[m] : chartForecastTotals[m] + netDelta[m]
-    )
+    const values = Array.from({ length: 12 }, (_, m) => chartForecastTotals[m] + netDelta[m])
     return { values }
-  }, [committedScenarios, selectedCommitted, chartActualTotals, chartForecastTotals, chartLastActM, year])
+  }, [modeledScenarios, selectedModeled, chartForecastTotals, year])
+
+  const chartCommittedLine = useMemo(() => {
+    const sel = committedScenarios.filter(s => selectedCommitted.has(s.id))
+    if (sel.length === 0) return null
+    const netDelta = Array(12).fill(0)
+    for (const s of sel) {
+      for (const adj of (s.adjustments ?? [])) {
+        if (Number(adj.year) !== year) continue
+        const m = Number(adj.month) - 1
+        if (m >= 0 && m < 12) netDelta[m] += Number(adj.delta_amount)
+      }
+    }
+    const values = Array.from({ length: 12 }, (_, m) => chartForecastTotals[m] + netDelta[m])
+    return { values }
+  }, [committedScenarios, selectedCommitted, chartForecastTotals, year])
 
   return (
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
@@ -1373,14 +1469,26 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
             )}
           </div>
 
+          {/* KPI strip — sits above the chart, only when actuals exist */}
+          {!mobile && catRows.length > 0 && chartLastActM >= 0 && (
+            <ForecastKPIStrip
+              chartActualTotals={chartActualTotals}
+              chartForecastTotals={chartForecastTotals}
+              chartBudgetTotals={chartBudgetTotals}
+              chartLastActM={chartLastActM}
+              annualForecast={annualForecast}
+            />
+          )}
+
           {/* Full-year line chart — always visible above the table */}
           {!mobile && catRows.length > 0 && (
             <ForecastChart
               year={year}
               actualTotals={chartActualTotals}
               forecastTotals={chartForecastTotals}
-              modeledLines={chartModeledLines}
+              budgetTotals={chartBudgetTotals}
               committedLine={chartCommittedLine}
+              combinedModeledLine={chartCombinedModeledLine}
             />
           )}
 
