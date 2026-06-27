@@ -21,9 +21,28 @@ import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { computePointsForecast, estimateTotalValue, estimateMonthlyEarnRate } from '../../lib/creditcards/pointsEngine.js'
 import { supabase } from '../../lib/supabase.js'
 
-// v4: adds Cash Flow widget; hides legacy Spike card by default
-const LS_LAYOUT = 'acp.dashboard.layout.v4'
-const DEFAULT_LAYOUT = { order: [], hidden: ['activity', 'spikes'], collapsed: [] }
+// v5: decision-first default — surfaces the four decision-driver widgets up top,
+// groups secondary cards in the middle, and collapses the redundant plan-vs-actual
+// charts at the bottom. Bumping the key re-defaults existing users to this layout.
+const LS_LAYOUT = 'acp.dashboard.layout.v5'
+const DEFAULT_LAYOUT = {
+  order: [
+    'incomeExpenses',  // 1 — savings rate + net: core health
+    'cashFlow',        // 2 — when money actually moves
+    'scenarioPlan',    // 3 — committed decisions
+    'wealth',          // 4 — long-term trajectory
+    'commitments',     // 5
+    'creditPoints',    // 6
+    'spendGroup',      // 7 — drill-down (collapsed)
+    'monthlyChart',    // 8 — plan-vs-actual time series (collapsed)
+    'budget',          // 9
+    'runrate',         // 10
+    'spikes',
+    'activity',
+  ],
+  hidden: ['activity', 'spikes'],
+  collapsed: ['spendGroup', 'monthlyChart'],
+}
 
 function fmtMoney(n) { return '$' + Math.round(n || 0).toLocaleString() }
 function fmtK(n) {
