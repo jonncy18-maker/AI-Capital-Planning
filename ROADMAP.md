@@ -193,7 +193,7 @@
 
 **Polish**
 8. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile.
-9. **Security cleanup** — delete `src/lib/anthropic.js`, confirm `VITE_ANTHROPIC_API_KEY` is empty in GitHub secrets.
+9. ~~**Security cleanup**~~ — `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from build workflow and `.env`; GitHub secret confirmed empty. ✓
 
 ~~**Apply outstanding DB migrations**~~ — all applied ✓  
 ~~**Preview-before-write for AI scenario mutations**~~ — implemented ✓  
@@ -410,7 +410,7 @@
 - [ ] Error handling audit (failed imports, API errors, empty states)
 - [ ] AI response quality review (context prompt tuning)
 - [x] API key proxy — `ai-chat` Edge Function ACTIVE (version 5), confirmed live with real 200 responses. `ANTHROPIC_API_KEY` secret confirmed set.
-- [x] Security cleanup: `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from `.env`. Confirm it's also cleared in GitHub Actions secrets.
+- [x] Security cleanup: `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from `.env`, from `.github/workflows/deploy.yml` build env, and from README setup. GitHub Actions secret confirmed empty. Vite never inlined the key (no `import.meta.env.VITE_ANTHROPIC_API_KEY` reference in `src/`).
 - [ ] Make repo public (after proxy is confirmed working)
 - [ ] Final ROADMAP.md update (check off completed phases, note any scope changes)
 

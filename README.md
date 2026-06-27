@@ -16,7 +16,8 @@ See [`ROADMAP.md`](./ROADMAP.md) for the phase-by-phase build plan.
 
 ```bash
 cp .env.example .env
-# Fill in VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_ANTHROPIC_API_KEY
+# Fill in VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+# (the Anthropic key is server-side only — set it as a Supabase secret, never in .env)
 
 npm install
 npm run dev
