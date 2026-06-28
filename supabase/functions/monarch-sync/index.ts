@@ -43,6 +43,8 @@ function baseHeaders(token?: string) {
     'client-platform': 'web',
     'device-uuid': DEVICE_UUID,
     'origin': 'https://app.monarchmoney.com',
+    'referer': 'https://app.monarchmoney.com/',
+    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   }
   if (token) h['authorization'] = `Token ${token}`
   return h
@@ -62,6 +64,9 @@ async function login(email: string, password: string, mfaCode?: string | null): 
     }),
   })
 
+  if (res.status === 429) {
+    throw new Error('Monarch is rate-limiting login attempts. Wait a few minutes, then try again.')
+  }
   if (res.status === 403 || res.status === 401) {
     const body = await res.json().catch(() => ({}))
     if (JSON.stringify(body).toLowerCase().includes('mfa') || JSON.stringify(body).toLowerCase().includes('totp')) {
