@@ -39,10 +39,19 @@ function json(body: unknown, status = 200) {
 function baseHeaders(token?: string) {
   const h: Record<string, string> = {
     'content-type': 'application/json',
-    'accept': 'application/json',
+    'accept': 'application/json, text/plain, */*',
+    'accept-language': 'en-US,en;q=0.9',
     'client-platform': 'web',
     'device-uuid': DEVICE_UUID,
     'origin': 'https://app.monarchmoney.com',
+    'referer': 'https://app.monarchmoney.com/',
+    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+    'sec-ch-ua': '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"macOS"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-site',
   }
   if (token) h['authorization'] = `Token ${token}`
   return h
@@ -62,6 +71,9 @@ async function login(email: string, password: string, mfaCode?: string | null): 
     }),
   })
 
+  if (res.status === 429) {
+    throw new Error('Monarch is rate-limiting login attempts. Wait at least 30 minutes before trying again — each attempt resets the window.')
+  }
   if (res.status === 403 || res.status === 401) {
     const body = await res.json().catch(() => ({}))
     if (JSON.stringify(body).toLowerCase().includes('mfa') || JSON.stringify(body).toLowerCase().includes('totp')) {
