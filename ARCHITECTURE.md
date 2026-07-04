@@ -320,6 +320,22 @@ created_at          timestamptz
 updated_at          timestamptz
 ```
 
+### 5.1.1 Recovered Tables (existed live only, never committed)
+
+Discovered during Supabase → Neon migration assessment (2026-07-04): 5 tables were created directly in the Supabase SQL editor and queried by the app, but never had a `CREATE TABLE` in any committed migration — only later `ALTER TABLE` statements referenced them. Recovered from live introspection and committed as `supabase/migrations/015_recover_undocumented_tables.sql`. Live row counts as of the audit noted in parens.
+
+**accounts** (6 rows) — bank/investment accounts (`checking` | `savings` | `investment` | `other`), one flagged `is_primary_checking`.
+
+**bills** (20 rows) — recurring bills (`credit_card` | `loan` | `rent` | `investment` | `subscription` | `other`), due/pay day, optional fixed amount, links to `accounts` (debit/auto-fund), `budget_categories` (forecast), `credit_cards`, and an `actuals_category` linking historical actuals to a spend category.
+
+**bill_amounts** (77 rows) — per-bill, per-month actual/planned amount overrides.
+
+**account_balances** (10 rows) — per-account balance snapshots, twice-monthly (`period_half` 1 or 2).
+
+**forecast_overrides** (0 rows) — per-category, per-month manual overrides of the forecast.
+
+All five carry `user_id → auth.users(id)` and the same `for all using (user_id = auth.uid())` RLS policy as every other table — no exception to the ownership pattern documented in §5.1.
+
 ### 5.2 AI Context Strategy
 
 At session start, the app automatically loads the following from Supabase into the AI's context window:
