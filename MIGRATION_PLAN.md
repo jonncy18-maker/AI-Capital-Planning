@@ -141,10 +141,38 @@ test against.
 
 ## Phase B1 — Read path
 
-- [ ] Build shared Postgres client + JWT-verification helper (JWKS, cached)
-      for Vercel serverless functions
-- [ ] Port every read call site — ~95 call sites across 17 files in
-      `src/lib/db/*.js`
+### Pilot slice (done, 2026-07-04) — proves the pattern on one module
+
+Before rolling the read/write + auth pattern out across all ~95 call
+sites, built and proved it narrow on one small, self-contained module
+first (`commitments` — single table, simple CRUD, 0 production rows at
+risk):
+
+- [x] Shared Postgres client for Neon — `src/lib/neon/client.js`
+- [x] JWT-verification helper (JWKS, cached at module scope) —
+      `src/lib/neon/auth.js`. Verifies a Neon Auth bearer token, returns
+      `{ userId }` from the JWT's `sub` claim.
+- [x] Commitments CRUD API routes — `app/api/commitments/route.js` (GET/POST),
+      `app/api/commitments/[id]/route.js` (PATCH/DELETE). Every query's
+      `WHERE` clause includes `user_id = <verified userId>` as the
+      authorization boundary — reviewed directly, not just self-reported by
+      the build agent.
+- [x] Standalone test harness — `app/neon-auth-test/page.jsx` (unlinked from
+      any nav), signs in via Neon Auth's REST API directly and exercises the
+      Commitments routes. Token field name (`session.access_token`)
+      confirmed against Neon's own docs, not guessed.
+- [ ] **Live browser verification — pending you.** Needs `DATABASE_URL` set
+      in Vercel (Preview scope) from the Neon console's `dev` branch pooled
+      connection string, then visit `/neon-auth-test` on the preview, sign
+      up, and try create/list/delete. My sandbox cannot reach Neon Auth's
+      domain to test this myself (same network-policy limitation as B0).
+- Main app's `Login.jsx`, `Commitments.jsx`, and everything Supabase-related
+  are **untouched** — purely additive, reversible by deleting 4 files.
+
+### Full rollout (not started — resume after pilot verification)
+
+- [ ] Port every remaining read call site — ~95 call sites across 17 files
+      in `src/lib/db/*.js` (commitments is the first of these, now done)
 - [ ] Fold in the two files that bypass the `db/` layer today and query
       Supabase directly: `src/modules/dashboard/Dashboard.jsx`,
       `src/modules/creditcards/CreditCards.jsx`
@@ -152,6 +180,8 @@ test against.
       paths exist anywhere in this app
 
 **Gate B1:**
+- [~] Pilot module (commitments): auth check + query pattern built and
+      code-reviewed; live end-to-end browser test still pending (see above)
 - [ ] Every module renders from Neon, visually identical to Supabase version
 - [ ] A request with no/forged token 403s (not a silent broad read)
 
