@@ -32,16 +32,28 @@ repo's real tables, files, and decisions, as a checklist to track against
 
 ## Phase A′ — Next.js migration (Supabase untouched)
 
-- [ ] Scaffold Next.js App Router routes as thin wrappers around existing
-      screen components in `src/modules/*` — no UI rewrite.
-- [ ] Convert `registry.js`'s static module list into file-based routes:
-      `app/dashboard`, `app/cashflow`, `app/scenarios`, `app/budget`,
-      `app/commitments`, `app/wealth`, `app/settings`, `app/mapping`.
-- [ ] Convert env vars: `import.meta.env.VITE_SUPABASE_URL` /
+> ⚠️ **DO NOT MERGE THIS PHASE'S BRANCH TO `main` YET.** `next build` now
+> evaluates the whole app at build time (unlike Vite) and requires
+> `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`, but
+> `.github/workflows/deploy.yml` still injects the old `VITE_*`-named
+> secrets into a `vite build`-shaped pipeline (`dist/` output, no
+> `output: 'export'`). Merging before the hosting cutover is decided would
+> silently break the production GitHub Pages auto-deploy for the live,
+> daily-use app. `deploy.yml` is deliberately left untouched for now — this
+> phase is Vercel-preview-only until a hosting decision is made.
+
+- [x] Scaffold Next.js App Router routes as thin wrappers around existing
+      screen components in `src/modules/*` — no UI rewrite. (`app/layout.jsx`,
+      `app/AppRoot.jsx`, `app/shellContext.js`)
+- [x] Convert `registry.js`'s module list into file-based routes: one
+      `app/<id>/page.jsx` per module (dashboard, payperiods, creditcards,
+      scenarios, budget, forecast, commitments, wealth, settings, mapping).
+- [x] Convert env vars: `import.meta.env.VITE_SUPABASE_URL` /
       `VITE_SUPABASE_ANON_KEY` → `process.env.NEXT_PUBLIC_SUPABASE_URL` /
-      `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+      `NEXT_PUBLIC_SUPABASE_ANON_KEY` (`src/lib/supabase.js`, `.env.example`).
 - [ ] Confirm both edge functions (`ai-chat`, `monarch-sync`) still callable
-      from the new Next.js shell (still hitting Supabase in this phase).
+      from the new Next.js shell (still hitting Supabase in this phase) —
+      pending live verification on the Vercel preview.
 - [x] ~~Redirect stub for old URLs~~ — not needed; current nav is
       state-based, no bookmarkable deep links exist.
 
