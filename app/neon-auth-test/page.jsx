@@ -58,23 +58,32 @@ export default function NeonAuthTestPage() {
 
       setAuthResult(body)
 
-      // Per Neon's docs (docs/auth/authentication-flow.md), sign-in/sign-up
-      // returns the JWT at `session.access_token` (SDK-wrapped responses put
-      // this under `data.session.access_token`; a raw fetch to the REST
-      // endpoint directly may return it unwrapped at the top level instead —
-      // check both since this page calls the REST endpoint directly, not
-      // through the SDK).
-      const candidate =
-        (body &&
-          (body.session?.access_token ||
-            body.data?.session?.access_token ||
-            body.access_token ||
-            body.token ||
-            body.sessionToken)) ||
-        ''
-      if (candidate) setToken(candidate)
+      // Confirmed empirically + against Neon's docs: sign-up/sign-in's own
+      // response `token` field is an opaque session token, NOT a JWT (fails
+      // JWKS verification with "Invalid Compact JWS"). The actual JWT must be
+      // fetched separately from GET {base_url}/token, authenticated via the
+      // session cookie sign-up/sign-in just set (credentials: 'include').
+      await fetchJwt()
     } catch (err) {
       setAuthError(String(err))
+    }
+  }
+
+  async function fetchJwt() {
+    try {
+      const res = await fetch(`${AUTH_BASE_URL}/token`, {
+        credentials: 'include', // uses the session cookie set by sign-up/sign-in
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) {
+        setAuthError(`Token fetch failed: ${res.status} ${JSON.stringify(body)}`)
+        return
+      }
+      const jwt = body?.token || body?.data?.token || ''
+      if (jwt) setToken(jwt)
+      else setAuthError(`Token fetch succeeded but no token in response: ${JSON.stringify(body)}`)
+    } catch (err) {
+      setAuthError(`Token fetch error: ${String(err)}`)
     }
   }
 
@@ -177,6 +186,7 @@ export default function NeonAuthTestPage() {
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => callAuth('/sign-up/email')}>Sign Up</button>
             <button onClick={() => callAuth('/sign-in/email')}>Sign In</button>
+            <button onClick={fetchJwt}>Fetch JWT (retry)</button>
           </div>
         </div>
 
