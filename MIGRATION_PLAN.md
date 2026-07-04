@@ -161,13 +161,30 @@ risk):
       any nav), signs in via Neon Auth's REST API directly and exercises the
       Commitments routes. Token field name (`session.access_token`)
       confirmed against Neon's own docs, not guessed.
-- [ ] **Live browser verification — pending you.** Needs `DATABASE_URL` set
-      in Vercel (Preview scope) from the Neon console's `dev` branch pooled
-      connection string, then visit `/neon-auth-test` on the preview, sign
-      up, and try create/list/delete. My sandbox cannot reach Neon Auth's
-      domain to test this myself (same network-policy limitation as B0).
+- [x] **Live browser verification — confirmed 2026-07-04.** Sign-up →
+      real JWT fetched from Neon Auth's `/token` endpoint → create
+      commitment → list commitment, full round trip working in the
+      browser against the Vercel preview + Neon dev branch.
 - Main app's `Login.jsx`, `Commitments.jsx`, and everything Supabase-related
   are **untouched** — purely additive, reversible by deleting 4 files.
+
+**Two real bugs found and fixed during live testing (both will recur for
+every future table/route, now documented so they don't get rediscovered):**
+1. **Sign-up/sign-in's own response `token` field is an opaque session
+   token, not a JWT** — fails JWKS verification (`Invalid Compact JWS`).
+   The real JWT must be fetched separately via `GET {base_url}/token`,
+   authenticated by the session cookie sign-up/sign-in already set. Fixed
+   in the test page; any future direct-REST auth integration needs the
+   same two-step flow (or use Neon's official `@neondatabase/auth` SDK,
+   which handles this automatically — worth considering for the full
+   rollout instead of hand-rolling REST calls, see Phase B1 full rollout
+   notes below).
+2. **`sql.json(...)` doesn't exist on `@neondatabase/serverless`** — that's
+   `postgres.js`'s API, not Neon's driver. Every jsonb column write across
+   the app needs `JSON.stringify(value)::jsonb` instead. Fixed in both
+   Commitments routes; grep for this pattern before porting any other
+   table with jsonb columns (`budget_categories`, `commitments`,
+   `ai_preferences`, `user_profiles.tax_profile`, `tax_brackets`, etc.).
 
 ### Full rollout (not started — resume after pilot verification)
 
@@ -180,8 +197,9 @@ risk):
       paths exist anywhere in this app
 
 **Gate B1:**
-- [~] Pilot module (commitments): auth check + query pattern built and
-      code-reviewed; live end-to-end browser test still pending (see above)
+- [x] Pilot module (commitments): auth check + query pattern built,
+      code-reviewed, and confirmed working live end-to-end in browser
+      (2026-07-04) — create + list round trip against Neon.
 - [ ] Every module renders from Neon, visually identical to Supabase version
 - [ ] A request with no/forged token 403s (not a silent broad read)
 
