@@ -58,10 +58,19 @@ repo's real tables, files, and decisions, as a checklist to track against
       state-based, no bookmarkable deep links exist.
 
 **Gate A′** (all must pass before Phase B0):
-- [ ] Production build clean on a Vercel preview deploy
+- [x] Production build clean on a Vercel preview deploy — confirmed via
+      Vercel's own build log (`vercel build`, zero errors) and a direct
+      fetch of `/dashboard` returning 200 with correct markup/title, zero
+      runtime errors logged. Vercel project: `ai-capital-planning`
+      (`prj_9L8lnUCUFICicYe2iHlPY7n5tXyB`).
 - [ ] Every route renders on a hard refresh mid-route, not just client nav
-- [ ] Login/session still works against Supabase
-- [ ] Both edge functions still respond correctly from the new shell
+      — **needs manual browser verification**; Vercel's Deployment
+      Protection (SSO gate) blocks further automated route checks
+      (`05-known-gotchas.md` #6 — expected, not a code issue).
+- [ ] Login/session still works against Supabase — needs manual browser
+      verification, same reason.
+- [ ] Both edge functions still respond correctly from the new shell —
+      needs manual browser verification, same reason.
 
 ## Phase B0 — Neon + Neon Auth provisioning
 
