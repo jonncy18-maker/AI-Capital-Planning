@@ -79,8 +79,8 @@ export async function PATCH(request, context) {
         start_date = ${merged.start_date},
         end_date = ${merged.end_date},
         status = ${merged.status},
-        cost_structure = ${sql.json(merged.cost_structure ?? {})},
-        split_rules = ${sql.json(merged.split_rules ?? {})},
+        cost_structure = ${JSON.stringify(merged.cost_structure ?? {})}::jsonb,
+        split_rules = ${JSON.stringify(merged.split_rules ?? {})}::jsonb,
         notes = ${merged.notes}
       WHERE id = ${id} AND user_id = ${userId}
       RETURNING *

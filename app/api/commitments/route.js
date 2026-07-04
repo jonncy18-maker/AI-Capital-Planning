@@ -81,7 +81,7 @@ export async function POST(request) {
         (user_id, name, type, start_date, end_date, status, cost_structure, split_rules, notes)
       VALUES
         (${userId}, ${name}, ${type}, ${start_date}, ${end_date}, ${status},
-         ${sql.json(cost_structure)}, ${sql.json(split_rules)}, ${notes})
+         ${JSON.stringify(cost_structure ?? {})}::jsonb, ${JSON.stringify(split_rules ?? {})}::jsonb, ${notes})
       RETURNING *
     `
     return Response.json(row, { status: 201 })
