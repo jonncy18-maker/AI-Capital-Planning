@@ -8,14 +8,17 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-04 (Supabase → Neon migration assessment)
+**Last updated:** 2026-07-04 (Phase A′ of Supabase→Neon migration built + verified on Vercel preview)
 
-- **Supabase → Neon + Neon Auth + Vercel migration — planning started (2026-07-04):**
-  - Ran a full assessment against an external Supabase→Neon migration playbook: schema inventory, RLS, auth model, data-access pattern, realtime, edge functions, env vars, build/hosting. No code was changed as part of the assessment itself.
+- **Supabase → Neon + Neon Auth + Vercel migration — Phase A′ complete (2026-07-04):**
+  - Ran a full assessment against an external Supabase→Neon migration playbook: schema inventory, RLS, auth model, data-access pattern, realtime, edge functions, env vars, build/hosting.
   - **Live-schema gap found and fixed:** 5 tables (`bills`, `accounts`, `bill_amounts`, `account_balances`, `forecast_overrides`) existed only in the live Supabase database — never in a committed migration (only later `ALTER TABLE`s referenced them). Recovered via direct introspection (Supabase MCP) and committed as `supabase/migrations/015_recover_undocumented_tables.sql`. All 24 live tables now match committed migrations. Documented in `ARCHITECTURE.md` §5.1.1.
-  - **Decisions recorded:** full custom API layer (not Neon Data API); switch Vite SPA → Next.js App Router (current app has no router at all — `registry.js` state-based nav); staged cutover with an informal freeze (single-user app).
+  - **Decisions recorded:** full custom API layer (not Neon Data API); switch Vite SPA → Next.js App Router (current app had no router at all — `registry.js` was state-based nav); staged cutover with an informal freeze (single-user app).
   - Instantiated the phased plan as `MIGRATION_PLAN.md` (Phase A′ Next.js → B0 provisioning → B1 read path → B2 write path → B3 skipped, no realtime in use → B4 auth → B5 edge functions → C cutover → D decommission).
-  - **Nothing has moved off Supabase yet** — this session was planning + schema-history recovery only. Next real work starts at Phase A′.
+  - **Phase A′ built and audited** (separate build/audit subagent pass, per this file's Agentic Loop protocol): converted the Vite SPA to Next.js App Router. `App.jsx` + `AppShell.jsx` logic merged into `app/AppRoot.jsx` verbatim; `activeModule` now derives from the URL (`usePathname()`/`router.push`) instead of internal state + `sessionStorage`, so every module gets a real, bookmarkable route and browser back/forward now works between them. One `app/<id>/page.jsx` per module, all sourcing shared state via a new `useShell()` context. Env vars moved `import.meta.env.VITE_*` → `process.env.NEXT_PUBLIC_*`. Zero changes to any module's visual design or to the data layer.
+  - **Deployed to a Vercel preview** (project `ai-capital-planning`, `prj_9L8lnUCUFICicYe2iHlPY7n5tXyB`) and **verified working end-to-end in browser**: login, navigation between all modules, hard refresh mid-module, and both edge functions (`ai-chat`, `monarch-sync`) all confirmed working against Supabase from the new Next.js shell.
+  - **Known landmine, tracked in `MIGRATION_PLAN.md`:** `next build` now requires `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` at build time and outputs to `.next/`, which the (deliberately untouched) GitHub Pages `deploy.yml` isn't set up for. **Do not merge this branch to `main`** until the hosting cutover is decided — production GitHub Pages deploy is untouched and still live.
+  - PR #142 tracks this work, still open/draft.
 
 **Previously last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 

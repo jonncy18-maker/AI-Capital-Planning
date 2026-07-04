@@ -51,9 +51,9 @@ repo's real tables, files, and decisions, as a checklist to track against
 - [x] Convert env vars: `import.meta.env.VITE_SUPABASE_URL` /
       `VITE_SUPABASE_ANON_KEY` → `process.env.NEXT_PUBLIC_SUPABASE_URL` /
       `NEXT_PUBLIC_SUPABASE_ANON_KEY` (`src/lib/supabase.js`, `.env.example`).
-- [ ] Confirm both edge functions (`ai-chat`, `monarch-sync`) still callable
+- [x] Confirm both edge functions (`ai-chat`, `monarch-sync`) still callable
       from the new Next.js shell (still hitting Supabase in this phase) —
-      pending live verification on the Vercel preview.
+      confirmed 2026-07-04 via manual browser test on the Vercel preview.
 - [x] ~~Redirect stub for old URLs~~ — not needed; current nav is
       state-based, no bookmarkable deep links exist.
 
@@ -63,14 +63,17 @@ repo's real tables, files, and decisions, as a checklist to track against
       fetch of `/dashboard` returning 200 with correct markup/title, zero
       runtime errors logged. Vercel project: `ai-capital-planning`
       (`prj_9L8lnUCUFICicYe2iHlPY7n5tXyB`).
-- [ ] Every route renders on a hard refresh mid-route, not just client nav
-      — **needs manual browser verification**; Vercel's Deployment
-      Protection (SSO gate) blocks further automated route checks
-      (`05-known-gotchas.md` #6 — expected, not a code issue).
-- [ ] Login/session still works against Supabase — needs manual browser
-      verification, same reason.
-- [ ] Both edge functions still respond correctly from the new shell —
-      needs manual browser verification, same reason.
+- [x] Every route renders on a hard refresh mid-route, not just client nav
+      — confirmed 2026-07-04, manual browser test.
+- [x] Login/session still works against Supabase — confirmed 2026-07-04,
+      manual browser test.
+- [x] Both edge functions still respond correctly from the new shell —
+      confirmed 2026-07-04, manual browser test.
+
+**Phase A′ — complete.** Vercel preview:
+`ai-capital-planning-git-claude-supabase-neon-mi-27ec41-jonncy18.vercel.app`.
+Still not merged to `main` (see warning above) — production GitHub Pages
+app is untouched.
 
 ## Phase B0 — Neon + Neon Auth provisioning
 
