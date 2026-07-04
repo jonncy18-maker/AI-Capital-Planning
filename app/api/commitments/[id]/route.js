@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { verifyNeonAuthRequest } from '../../../../src/lib/neon/auth.js'
+import { auth } from '../../../../src/lib/neon/authServer.js'
 
 const ALLOWED_TYPES = ['scholarship', 'family_support', 'lease', 'eldercare', 'other']
 const ALLOWED_STATUSES = ['active', 'paused', 'completed']
@@ -15,12 +15,11 @@ const UPDATABLE_FIELDS = [
 ]
 
 export async function PATCH(request, context) {
-  let userId
-  try {
-    ;({ userId } = await verifyNeonAuthRequest(request))
-  } catch (err) {
-    return Response.json({ error: err.message }, { status: err.status || 401 })
+  const { data: session } = await auth.getSession()
+  if (!session?.user?.id) {
+    return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
+  const userId = session.user.id
 
   const { id } = await context.params
 
@@ -96,12 +95,11 @@ export async function PATCH(request, context) {
 }
 
 export async function DELETE(request, context) {
-  let userId
-  try {
-    ;({ userId } = await verifyNeonAuthRequest(request))
-  } catch (err) {
-    return Response.json({ error: err.message }, { status: err.status || 401 })
+  const { data: session } = await auth.getSession()
+  if (!session?.user?.id) {
+    return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
+  const userId = session.user.id
 
   const { id } = await context.params
 

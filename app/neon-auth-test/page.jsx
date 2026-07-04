@@ -1,17 +1,26 @@
 'use client'
 
 import { useState } from 'react'
+import { authClient } from '../../src/lib/neon/authClient.js'
 
 // Throwaway diagnostic page for the Neon + Neon Auth pilot. Intentionally
 // NOT linked from src/modules/registry.js, the Sidebar, or anywhere else —
-// reachable only by typing the URL directly. Exercises Better Auth's
-// email/password endpoints and the pilot /api/commitments routes end to end.
+// reachable only by typing the URL directly. Exercises the official
+// @neondatabase/auth SDK (cookie-based sessions, no manual token handling)
+// and the pilot /api/commitments routes end to end.
 // Delete this directory once the pilot is validated or abandoned.
 
-const AUTH_BASE_URL =
-  'https://ep-royal-smoke-ajjxuq8k.neonauth.c-3.us-east-2.aws.neon.tech/neondb/auth'
-
 const COMMITMENT_TYPES = ['scholarship', 'family_support', 'lease', 'eldercare', 'other']
+
+function resultOrError(result, setResult, setError) {
+  if (result?.error) {
+    setError(result.error.message || JSON.stringify(result.error))
+    setResult(null)
+    return
+  }
+  setError(null)
+  setResult(result?.data ?? result)
+}
 
 export default function NeonAuthTestPage() {
   const [email, setEmail] = useState('')
@@ -19,7 +28,9 @@ export default function NeonAuthTestPage() {
   const [name, setName] = useState('')
   const [authResult, setAuthResult] = useState(null)
   const [authError, setAuthError] = useState(null)
-  const [token, setToken] = useState('')
+
+  const [sessionResult, setSessionResult] = useState(null)
+  const [sessionError, setSessionError] = useState(null)
 
   const [commitmentForm, setCommitmentForm] = useState({
     name: '',
@@ -32,58 +43,33 @@ export default function NeonAuthTestPage() {
   const [apiError, setApiError] = useState(null)
   const [apiBusy, setApiBusy] = useState(false)
 
-  async function callAuth(path) {
-    setAuthError(null)
-    setAuthResult(null)
+  async function handleSignUp() {
     try {
-      const res = await fetch(`${AUTH_BASE_URL}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // retain any session cookie Better Auth sets
-        body: JSON.stringify(path.includes('sign-up') ? { email, password, name } : { email, password }),
-      })
-
-      const text = await res.text()
-      let body
-      try {
-        body = JSON.parse(text)
-      } catch {
-        body = text
-      }
-
-      if (!res.ok) {
-        setAuthError(`${res.status} ${res.statusText}: ${JSON.stringify(body)}`)
-        return
-      }
-
-      setAuthResult(body)
-
-      // Confirmed empirically + against Neon's docs: sign-up/sign-in's own
-      // response `token` field is an opaque session token, NOT a JWT (fails
-      // JWKS verification with "Invalid Compact JWS"). The actual JWT must be
-      // fetched separately from GET {base_url}/token, authenticated via the
-      // session cookie sign-up/sign-in just set (credentials: 'include').
-      await fetchJwt()
+      const result = await authClient.signUp.email({ email, password, name })
+      resultOrError(result, setAuthResult, setAuthError)
     } catch (err) {
       setAuthError(String(err))
+      setAuthResult(null)
     }
   }
 
-  async function fetchJwt() {
+  async function handleSignIn() {
     try {
-      const res = await fetch(`${AUTH_BASE_URL}/token`, {
-        credentials: 'include', // uses the session cookie set by sign-up/sign-in
-      })
-      const body = await res.json().catch(() => null)
-      if (!res.ok) {
-        setAuthError(`Token fetch failed: ${res.status} ${JSON.stringify(body)}`)
-        return
-      }
-      const jwt = body?.token || body?.data?.token || ''
-      if (jwt) setToken(jwt)
-      else setAuthError(`Token fetch succeeded but no token in response: ${JSON.stringify(body)}`)
+      const result = await authClient.signIn.email({ email, password })
+      resultOrError(result, setAuthResult, setAuthError)
     } catch (err) {
-      setAuthError(`Token fetch error: ${String(err)}`)
+      setAuthError(String(err))
+      setAuthResult(null)
+    }
+  }
+
+  async function handleGetSession() {
+    try {
+      const result = await authClient.getSession()
+      resultOrError(result, setSessionResult, setSessionError)
+    } catch (err) {
+      setSessionError(String(err))
+      setSessionResult(null)
     }
   }
 
@@ -91,9 +77,10 @@ export default function NeonAuthTestPage() {
     setApiError(null)
     setApiBusy(true)
     try {
+      // No Authorization header needed — the session cookie set by
+      // sign-up/sign-in auto-attaches via credentials: 'include'.
       const res = await fetch('/api/commitments?status=', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        credentials: 'include', // in case Better Auth uses a session cookie instead of a bearer token
+        credentials: 'include',
       })
       const body = await res.json()
       if (!res.ok) {
@@ -117,10 +104,7 @@ export default function NeonAuthTestPage() {
       const res = await fetch('/api/commitments', {
         method: 'POST',
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: commitmentForm.name,
           type: commitmentForm.type,
@@ -150,7 +134,6 @@ export default function NeonAuthTestPage() {
       const res = await fetch(`/api/commitments/${id}`, {
         method: 'DELETE',
         credentials: 'include',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       if (res.status !== 204) {
         const body = await res.json().catch(() => null)
@@ -169,7 +152,8 @@ export default function NeonAuthTestPage() {
     <div style={{ fontFamily: 'monospace', padding: 24, maxWidth: 720, margin: '0 auto' }}>
       <h1 style={{ fontSize: 18 }}>Neon Auth + Commitments pilot test harness</h1>
       <p style={{ fontSize: 12, color: '#666' }}>
-        Throwaway diagnostic page. Not linked from app navigation.
+        Throwaway diagnostic page. Not linked from app navigation. Uses @neondatabase/auth
+        (cookie-based sessions) — no manual token capture required.
       </p>
 
       <section style={{ border: '1px solid #ccc', padding: 16, marginTop: 16 }}>
@@ -184,9 +168,8 @@ export default function NeonAuthTestPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => callAuth('/sign-up/email')}>Sign Up</button>
-            <button onClick={() => callAuth('/sign-in/email')}>Sign In</button>
-            <button onClick={fetchJwt}>Fetch JWT (retry)</button>
+            <button onClick={handleSignUp}>Sign Up</button>
+            <button onClick={handleSignIn}>Sign In</button>
           </div>
         </div>
 
@@ -197,21 +180,23 @@ export default function NeonAuthTestPage() {
             <pre style={{ whiteSpace: 'pre-wrap', background: '#f5f5f5', padding: 8 }}>
               {JSON.stringify(authResult, null, 2)}
             </pre>
-            <div>
-              Captured token (from JSON body, if any): <br />
-              <input
-                style={{ width: '100%' }}
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="paste/edit bearer token manually if needed"
-              />
-            </div>
           </div>
         )}
       </section>
 
       <section style={{ border: '1px solid #ccc', padding: 16, marginTop: 16 }}>
-        <h2 style={{ fontSize: 14 }}>2. Create a commitment</h2>
+        <h2 style={{ fontSize: 14 }}>2. Get Session (cookie-based, no token needed)</h2>
+        <button onClick={handleGetSession}>Get Session</button>
+        {sessionError && <pre style={{ color: 'crimson', whiteSpace: 'pre-wrap' }}>{sessionError}</pre>}
+        {sessionResult && (
+          <pre style={{ whiteSpace: 'pre-wrap', background: '#f5f5f5', padding: 8, marginTop: 8 }}>
+            {JSON.stringify(sessionResult, null, 2)}
+          </pre>
+        )}
+      </section>
+
+      <section style={{ border: '1px solid #ccc', padding: 16, marginTop: 16 }}>
+        <h2 style={{ fontSize: 14 }}>3. Create a commitment</h2>
         <form onSubmit={createCommitment} style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 320 }}>
           <input
             placeholder="name"
@@ -258,7 +243,7 @@ export default function NeonAuthTestPage() {
       </section>
 
       <section style={{ border: '1px solid #ccc', padding: 16, marginTop: 16 }}>
-        <h2 style={{ fontSize: 14 }}>3. List commitments</h2>
+        <h2 style={{ fontSize: 14 }}>4. List commitments</h2>
         <button onClick={listCommitments} disabled={apiBusy}>
           List Commitments
         </button>

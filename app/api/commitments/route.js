@@ -1,15 +1,14 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { verifyNeonAuthRequest } from '../../../src/lib/neon/auth.js'
+import { auth } from '../../../src/lib/neon/authServer.js'
 
 const ALLOWED_TYPES = ['scholarship', 'family_support', 'lease', 'eldercare', 'other']
 
 export async function GET(request) {
-  let userId
-  try {
-    ;({ userId } = await verifyNeonAuthRequest(request))
-  } catch (err) {
-    return Response.json({ error: err.message }, { status: err.status || 401 })
+  const { data: session } = await auth.getSession()
+  if (!session?.user?.id) {
+    return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
+  const userId = session.user.id
 
   const { searchParams } = new URL(request.url)
   // Mirrors src/lib/db/commitments.js#getCommitments: defaults to 'active',
@@ -36,12 +35,11 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  let userId
-  try {
-    ;({ userId } = await verifyNeonAuthRequest(request))
-  } catch (err) {
-    return Response.json({ error: err.message }, { status: err.status || 401 })
+  const { data: session } = await auth.getSession()
+  if (!session?.user?.id) {
+    return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
+  const userId = session.user.id
 
   let body
   try {
