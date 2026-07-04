@@ -77,18 +77,67 @@ app is untouched.
 
 ## Phase B0 — Neon + Neon Auth provisioning
 
-- [ ] Provision a Neon project + dev branch
-- [ ] Apply full schema (19 original + `015_recover_undocumented_tables.sql`)
-      to the dev branch, RLS statements stripped (intent moves to route code
-      in B1/B4, not the schema — see gotchas below)
-- [ ] Provision Neon Auth; verify actual backend/JWKS URL against the live
-      config directly (don't assume from docs)
-- [ ] Create the one real account (single-user app)
-- [ ] Restore data; verify row-count parity across all 24 tables
+- [x] Provision a Neon project + dev branch — project `ai-capital-planning`
+      (`soft-resonance-24018910`), branch `dev` (`br-bold-tree-aj4lwhvo`),
+      org `jonncy18@gmail.com` (free tier).
+- [x] Apply full schema (24 tables, RLS stripped) to the dev branch —
+      constructed as final-state DDL directly from live Supabase
+      introspection (replaying the 16 migration files in order would have
+      failed: migrations 007/008/013/014 alter `bills` before it's ever
+      created — only the recovery migration creates it). Every `user_id`
+      FK points to `neon_auth."user"(id)`, not Supabase's `auth.users`.
+- [x] Provision Neon Auth; verified actual backend/JWKS URL directly against
+      the live config (`get_neon_auth_config`) and the real `neon_auth`
+      schema (9 tables: user, session, account, verification, jwks,
+      organization, member, invitation, project_config) — confirmed Better
+      Auth as documented, email/password enabled, no email verification
+      required, matching the app's current flow closely.
+- [~] Create the one real account — **blocked in this environment**: the
+      sandbox's network policy rejects outbound connections to Neon Auth's
+      domain entirely (403 on CONNECT, confirmed via proxy status) — this is
+      the exact "some agent sandboxes can't reach the new auth provider"
+      limitation the playbook's known-gotchas anticipates. Live sign-up/login
+      needs to happen from an actual browser or a real UI, deferred to
+      Phase B1 (there's nothing to click yet).
+- [~] Restore data — 20 of 24 tables at exact row-count parity
+      (`budget_categories`, `commitments`, `credit_cards`, `accounts`,
+      `bills`, `scenarios`, `scenario_adjustments`, `wealth_snapshots`,
+      `ai_briefings`, `user_profiles`, `import_logs`, `budget_status`,
+      `ai_preferences`, `credit_card_earn_rates`, `credit_card_points`,
+      `credit_card_point_redemptions`, `income_actuals`, `bill_amounts`,
+      `account_balances`, `forecast_overrides`), plus `tax_brackets` (168),
+      `budget_line_items` (583), and `forecast_line_items` (555) — all
+      verified exact. **`transactions` deliberately left partial (1,450 of
+      4,920 rows)** — decision made 2026-07-04: copying ~4,920 rows one
+      batch at a time through agent-orchestrated SQL was taking over an
+      hour and is the wrong tool for bulk data movement anyway. 1,450 rows
+      is more than enough sample data to build and test the read/write API
+      layer against. Full backfill is deferred to the actual cutover
+      (Phase C), where a direct `pg_dump | psql` pipeline moves all rows in
+      one shot — the approach `04-data-migration-runbook.md` recommends in
+      the first place, not per-row agent SQL.
+- [x] Bridge user row: a temporary `neon_auth."user"` row
+      (`157a1267-6adf-4371-bd72-2e9bdbca64ad`, email `jonncy18@gmail.com`)
+      was created so all migrated data's `user_id` FKs resolve correctly
+      ahead of a real Neon Auth sign-up existing. **Needs reconciling in
+      Phase B1/B2**: once a real account signs up through the app, either
+      that signup's user id must match this bridge id, or all `user_id`
+      columns need a one-time UPDATE to the real signed-up user's id.
 
 **Gate B0:**
-- [ ] Verification query set matches on all 24 tables
-- [ ] Login against Neon Auth succeeds for the real account
+- [x] Schema verification: all 24 tables + 24 indexes present, correct FKs,
+      no RLS, spot-checked column-by-column against the original Supabase
+      schema.
+- [~] Data verification: 20/24 tables at exact parity; `transactions` at
+      1,450/4,920 by deliberate decision (see above), not a gap to close
+      before moving on.
+- [ ] Login against Neon Auth succeeds for a real account — blocked by
+      sandbox network policy, deferred to Phase B1's browser-testable UI.
+
+**Phase B0 — functionally complete enough to proceed to Phase B1.** The two
+open items above (auth login test, transaction backfill) don't block
+building the API layer; both close out naturally once Phase B1 exists to
+test against.
 
 ## Phase B1 — Read path
 

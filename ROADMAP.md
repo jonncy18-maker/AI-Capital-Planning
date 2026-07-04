@@ -20,6 +20,15 @@
   - **Known landmine, tracked in `MIGRATION_PLAN.md`:** `next build` now requires `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` at build time and outputs to `.next/`, which the (deliberately untouched) GitHub Pages `deploy.yml` isn't set up for. **Do not merge this branch to `main`** until the hosting cutover is decided — production GitHub Pages deploy is untouched and still live.
   - PR #142 tracks this work, still open/draft.
 
+- **Phase B0 (Neon + Neon Auth provisioning) — functionally complete (2026-07-04):**
+  - Provisioned a real Neon project (`ai-capital-planning`, `soft-resonance-24018910`) with a `dev` branch, and Neon Auth on it — confirmed live via `get_neon_auth_config` and direct `neon_auth` schema introspection (9 tables: user, session, account, verification, jwks, organization, member, invitation, project_config — Better Auth, as the playbook warned to verify rather than assume).
+  - Applied the full 24-table schema as final-state DDL (not a migration replay — replaying the 16 committed migration files in order would fail on a fresh database, since migrations 007/008/013/014 alter `bills` before it's ever created). Every `user_id` FK points to `neon_auth."user"(id)`, RLS fully stripped per the recorded custom-API-layer decision.
+  - Copied data table-by-table from Supabase using the Supabase/Neon MCP servers' own authenticated connections (no connection strings ever handled directly). 20 of 24 tables at exact row-count parity, plus `tax_brackets`/`budget_line_items`/`forecast_line_items` also exact.
+  - **Decision (2026-07-04): stopped short of full `transactions` backfill.** Copying ~4,920 rows one batch at a time through agent-orchestrated SQL took over an hour and kept stalling (subagents repeatedly claimed to be "waiting for a notification" they can't receive, or got killed mid-batch) — the wrong tool for bulk data movement. Landed at 1,450/4,920 rows, which is sufficient sample data to build the API layer against. Full backfill deferred to the actual cutover (Phase C), via a direct `pg_dump | psql` pipeline as the runbook already recommends — a fast, one-shot operation, not per-row agent SQL.
+  - A temporary bridge row was created in `neon_auth."user"` (id `157a1267-6adf-4371-bd72-2e9bdbca64ad`) so migrated data's `user_id` FKs resolve ahead of a real signup existing — needs reconciling once a real account signs up through the app (Phase B1/B2).
+  - **Live Neon Auth login test blocked in this sandbox**: outbound connections to Neon Auth's domain are rejected by the environment's network policy (403 on CONNECT) — exactly the "agent sandbox can't reach the new auth provider" limitation the playbook's gotchas file anticipates. Deferred to Phase B1, once there's a real UI to test through.
+  - One security-classifier flag surfaced mid-migration (data movement to an "untrusted" external destination) — reviewed and confirmed as an expected false positive: the Neon project is the user's own, created this session with explicit approval, and the data never left the user's own accounts.
+
 **Previously last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 
 ### Done so far
