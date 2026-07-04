@@ -28,6 +28,7 @@
   - A temporary bridge row was created in `neon_auth."user"` (id `157a1267-6adf-4371-bd72-2e9bdbca64ad`) so migrated data's `user_id` FKs resolve ahead of a real signup existing — needs reconciling once a real account signs up through the app (Phase B1/B2).
   - **Live Neon Auth login test blocked in this sandbox**: outbound connections to Neon Auth's domain are rejected by the environment's network policy (403 on CONNECT) — exactly the "agent sandbox can't reach the new auth provider" limitation the playbook's gotchas file anticipates. Deferred to Phase B1, once there's a real UI to test through.
   - One security-classifier flag surfaced mid-migration (data movement to an "untrusted" external destination) — reviewed and confirmed as an expected false positive: the Neon project is the user's own, created this session with explicit approval, and the data never left the user's own accounts.
+  - **Immediate next step (added to "Recommended next session" below, item 6):** upload a real Monarch CSV export through the Vercel preview to verify the import pipeline end-to-end on the Next.js build — the app there still talks to Supabase, so this is independent of Phase B1's Neon write-layer work.
 
 **Previously last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 
@@ -209,7 +210,19 @@
 5. **Deploy + verify `ai-chat` Edge Function** — set `ANTHROPIC_API_KEY` in Supabase secrets; confirm command bar and AI briefing return real responses.
 
 **Data quality**
-6. **Real Monarch CSV end-to-end test** — run an actual 12–24 month export through parse → dedup → unmapped-category screen → insert. Validates the whole import pipeline.
+6. **Real Monarch CSV end-to-end test — do this on the Vercel preview**
+   (`ai-capital-planning-git-claude-supabase-neon-mi-27ec41-jonncy18.vercel.app`,
+   PR #142's Next.js build): upload an actual Monarch transaction export
+   through Settings → Data Management (or onboarding's CSV step) and confirm
+   the whole pipeline end-to-end — parse → unmapped-category screen →
+   dedup → insert → import summary (X new, Y duplicates skipped) → the
+   transactions actually show up in the Dashboard/Cash Flow/Forecast
+   widgets. This preview is still Supabase-backed (Phase A′ only changed
+   routing/hosting, not the data layer — see `MIGRATION_PLAN.md`), so this
+   also doubles as the last unverified piece of Gate A′ under real load,
+   not just the click-through smoke test already done. Closes the
+   long-standing "parser logic written but never run against a real
+   12–24 month export" gap.
 7. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars match hand-calculated take-home.
 
 **Polish**
