@@ -410,6 +410,52 @@ written as `${JSON.stringify(value)}::jsonb`.
 - [ ] `monarch-sync` still authenticates and paginates correctly — same
       blocker (needs a live Monarch account + frontend switch to test).
 
+## Frontend cutover — Supabase → Neon in the app itself (done 2026-07-05)
+
+Phases B1/B2/B5 above built a parallel Neon-backed API layer, but the app
+never called it — `Login.jsx`, `useAuth.js`, and all 17 `src/lib/db/*.js`
+modules still talked to Supabase directly. Phase C's checklist assumes the
+frontend already speaks to Neon, so this had to happen first. Built in
+staged, verified waves (parallel background build agents per module, same
+pattern as the B1 rollout), preserving every function's exact exported
+signature/return shape so no `src/modules/*.jsx` UI component needed to
+change:
+
+- [x] **Stage 1 — auth + profile:** `useAuth.js`/`Login.jsx` switched to the
+      `@neondatabase/auth` client SDK (`authClient.useSession()`/
+      `signUp.email()`/`signIn.email()`), preserving the `{session, loading,
+      user}` hook shape. Added a required `name` field to sign-up (Neon
+      Auth's user table is `NOT NULL name`, unlike Supabase).
+      `app/AppRoot.jsx` sign-out → `authClient.signOut()`. `profile.js`
+      rewritten as the template every later module followed
+      (`parseJsonOrThrow` helper, `fetch(url, {credentials:'include'})`,
+      `_userId` for unused params). Commit `9e14963`.
+- [x] **Wave A:** `commitments`, `transactions`, `budgetCategories`,
+      `scenarios`, `wealthSnapshots`, `aiBriefings`+`aiPreferences`.
+- [x] **Wave B:** `importLog`+`budgetStatus`, `taxBrackets`+`income`,
+      `budgetLineItems`, `forecastLineItems`+`forecastOverrides`,
+      `creditCards`, `bills`.
+- [x] All 17 `src/lib/db/*.js` modules now call Neon. `npm run build`
+      verified clean after every wave landed.
+- [ ] **Known gaps, still on Supabase (no matching Neon route):**
+      `budgetCategories.js#seedDefaultCategories`,
+      `scenarios.js#deleteAdjustment` (route needs a parent scenario id the
+      real call site never passes), `scenarios.js#cloneScenario` (no atomic
+      multi-step route). Not on the hot path for a fresh sign-up.
+- [ ] `src/modules/dashboard/Dashboard.jsx` and
+      `src/modules/creditcards/CreditCards.jsx` bypass the `db/` layer and
+      still query Supabase directly — not yet folded onto Neon routes.
+- [ ] `sendMessage.js`/`monarch.js` still call
+      `supabase.functions.invoke(...)` — unchanged, tracked separately under
+      Phase B5's golden-question-suite item above.
+- [ ] Bridge-user-id reconciliation: migrated data's `user_id` still points
+      at the temporary bridge row (`157a1267-6adf-4371-bd72-2e9bdbca64ad`)
+      created in Phase B0 — needs a real Neon Auth sign-up through an actual
+      browser (blocked in this sandbox), then a one-time SQL reassignment of
+      every table's `user_id` to the real signed-up user's id.
+- [ ] Live browser verification of the full cutover (blocked in this
+      sandbox, same network restriction as B0/B4).
+
 ## Phase C — Cutover
 
 - [ ] Write out the rollback script (revert Vercel env vars, resume
