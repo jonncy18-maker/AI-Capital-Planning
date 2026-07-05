@@ -225,9 +225,30 @@ written as `${JSON.stringify(value)}::jsonb`.
     `by-category/route.js`, `by-month/route.js`, `year/[year]/route.js` —
     full read path + bulk-import POST (`ON CONFLICT (user_id, dedup_key) DO
     NOTHING` via `jsonb_to_recordset`)
-- [ ] **Wave 2 (next):** `user_profiles`, `import_logs`, `budget_status`,
-      `tax_brackets`, `income_actuals`, `budget_line_items`
-- [ ] **Wave 3:** `forecast_line_items`, `forecast_overrides`,
+- [x] **Wave 2 — done, committed (`5f981ff`, `e7804c1`, `86d994a`, `0a120db`,
+      `17bb0ce`, `a65c53c`):**
+  - `app/api/import-logs/route.js` — GET (last 50), POST
+  - `app/api/budget-status/route.js` — GET (`?year=&version=`), PUT upsert
+  - `app/api/tax-brackets/route.js` — GET, mirrors `loadAll()` (world-readable
+    reference data, no `user_id` column — only a session check, not an
+    ownership filter)
+  - `app/api/income-actuals/route.js` + `transactions/route.js` — GET/POST/
+    DELETE plus the "pull from transaction history" read
+  - `app/api/profile/route.js` — GET, PUT (full upsert), PATCH
+    (`min_checking_balance` only, kept separate so it can't clobber the
+    other ~19 fields)
+  - `app/api/budget-line-items/route.js`, `years/route.js`, `[id]/route.js`
+    — GET (joined with `budget_categories`), POST (bulk replace-for-year via
+    `sql.transaction([DELETE, INSERT])`, or single insert), PATCH/DELETE;
+    hardened beyond source (`updateLineItemAmount`/`deleteLineItem` only
+    filtered by `id` in Supabase, relying on RLS — added
+    `AND user_id = ...` + 404, same class of fix as Wave 1's scenarios port)
+  - **3 more real Phase B0 schema gaps found and fixed** (same pattern as
+    `budget_categories` in Wave 1): `income_actuals`, `tax_brackets`, and
+    `budget_status` were all missing their Supabase unique constraints on
+    Neon. Fixed via `017_neon_missing_unique_constraints.sql` (along with
+    `credit_card_earn_rates`, needed for Wave 3).
+- [ ] **Wave 3 (next):** `forecast_line_items`, `forecast_overrides`,
       `credit_cards` (+ earn rates/points/redemptions), `bills` (+
       `bill_amounts`/`account_balances`), plus fold in the two files that
       bypass the `db/` layer today: `src/modules/dashboard/Dashboard.jsx`,

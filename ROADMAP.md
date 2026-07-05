@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-05 (Phase B1 broad rollout, Wave 1 of 3 committed)
+**Last updated:** 2026-07-05 (Phase B1 broad rollout, Wave 2 of 3 committed)
 
 - **Supabase → Neon + Neon Auth + Vercel migration — Phase A′ complete (2026-07-04):**
   - Ran a full assessment against an external Supabase→Neon migration playbook: schema inventory, RLS, auth model, data-access pattern, realtime, edge functions, env vars, build/hosting.
@@ -40,7 +40,15 @@
   - **Real Phase B0 schema gap found and fixed:** Supabase's `budget_categories` has `unique(user_id, category)` (`001_initial_schema.sql` line 47) that was missed when the Neon schema was built from live introspection in Phase B0. Added directly to the Neon dev branch and documented as `supabase/migrations/016_neon_budget_categories_unique_constraint.sql`.
   - **Two real hardening fixes beyond the source modules**, found during the scenarios port: `deleteAdjustment` now scopes by `scenario_id+user_id` (source only filtered by `id`), and `addAdjustment` now verifies `category_id` ownership before insert (source never checked it) — both closing an unauthenticated-id-trust gap, not just porting behavior 1:1.
   - **Known gaps tracked, not blocking:** `cloneScenario` (multi-step: create scenario + copy adjustments) and `getUserGroups`/`getExcludedCategoryNames`/`seedDefaultCategories` (derived views/one-time seed, not simple CRUD) not yet ported.
-  - All new routes are build-verified (`npm run build` clean) but not yet live-browser-tested — only the original commitments pilot has had a live round-trip test so far. Wave 2 (`user_profiles`, `import_logs`, `budget_status`, `tax_brackets`, `income_actuals`, `budget_line_items`) and Wave 3 (`forecast_line_items`, `forecast_overrides`, `credit_cards`, `bills`, plus folding in `Dashboard.jsx`/`CreditCards.jsx`) remain.
+  - All new routes are build-verified (`npm run build` clean) but not yet live-browser-tested — only the original commitments pilot has had a live round-trip test so far.
+
+- **Phase B1 broad rollout, Wave 2 of 3 — committed (2026-07-05):** ported the next 6 modules: `import_logs`, `budget_status`, `tax_brackets`, `income_actuals`, `user_profiles`, `budget_line_items`. Commits `5f981ff`, `e7804c1`, `86d994a`, `0a120db`, `17bb0ce`, `a65c53c`.
+  - `tax_brackets` is world-readable reference data (no `user_id` column) — its route only checks for a valid session, matching Supabase's `for select to authenticated using (true)` policy exactly.
+  - `user_profiles`'s PK **is** the Neon Auth user id (no separate `user_id` column) — routes key off `WHERE id = userId`. Split into a full-row `PUT` upsert plus a narrow `PATCH` for `min_checking_balance` alone, so a partial update can't clobber the other ~19 fields.
+  - `budget_line_items`'s `saveBudgetForYear` (delete-then-bulk-insert for a year) was ported as a single atomic `sql.transaction([DELETE, INSERT])` via `@neondatabase/serverless`, rather than two independent statements — closes a real crash-mid-operation gap the original Supabase version also had.
+  - **Two more hardening fixes beyond the source module**, found in `budgetLineItems.js`: `updateLineItemAmount` and `deleteLineItem` filtered only by `id` in Supabase (relying entirely on RLS to block cross-user access) — both routes now also require `AND user_id = ...` and 404 otherwise. Same class of fix as the scenarios hardening in Wave 1.
+  - **3 more real Phase B0 schema gaps found and fixed**: grepped every migration for `unique` and cross-checked against Neon's actual `pg_constraint` — `income_actuals`, `tax_brackets`, and `budget_status` were all missing their Supabase unique constraints (same miss as `budget_categories` in Wave 1). Fixed directly on Neon and documented in `supabase/migrations/017_neon_missing_unique_constraints.sql` (bundled with `credit_card_earn_rates`, needed ahead of Wave 3).
+  - Wave 3 (`forecast_line_items`, `forecast_overrides`, `credit_cards`, `bills`, plus folding in `Dashboard.jsx`/`CreditCards.jsx`, the two files that bypass the `db/` layer) is next and last.
 
 **Previously last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 
