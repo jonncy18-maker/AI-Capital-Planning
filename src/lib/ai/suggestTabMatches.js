@@ -6,7 +6,7 @@
 // abbreviations, pluralization). Mirrors suggestBuckets — returns { matches } or
 // { error } so callers can fall back to the manual selections.
 
-import { supabase } from '../supabase.js'
+import { invokeAIChatRaw } from './aiChatRaw.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 
 // Returns { matches: [{ category, tab, confidence }] } or { error }.
@@ -33,13 +33,11 @@ Rules:
     `Categories:\n${categories.map(c => `- ${c}`).join('\n')}\n\n` +
     `Available tabs:\n${tabNames.map(t => `- ${t}`).join('\n')}`
 
-  const { data, error } = await supabase.functions.invoke('ai-chat', {
-    body: {
-      system,
-      messages: [{ role: 'user', content: userMessage }],
-      maxTokens: 1200,
-      modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
-    },
+  const { data, error } = await invokeAIChatRaw({
+    system,
+    messages: [{ role: 'user', content: userMessage }],
+    maxTokens: 1200,
+    modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
   })
 
   if (error || data?.error) {
