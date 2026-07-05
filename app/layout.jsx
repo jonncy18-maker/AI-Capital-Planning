@@ -1,5 +1,10 @@
-'use client'
-
+// NOTE: intentionally a Server Component (no 'use client'). If this layout is a
+// client component, React owns and re-reconciles the <html> element on every
+// client re-render, which strips the data-theme attribute that the inline
+// themeInitScript (and useTheme's effect) set imperatively — making the theme
+// toggle revert to dark on the next render/refresh. Keeping it server-rendered
+// leaves <html> static on the client so data-theme persists. AppRoot and
+// ErrorBoundary remain client components; a server layout can render them.
 import '../src/styles/tokens.css'
 import '../src/index.css'
 import '../src/App.css'
