@@ -468,23 +468,80 @@ change:
       to the new id, and updated `user_id` from the bridge id to the new id
       across all 22 other tables. Verified zero rows remain under the
       bridge id anywhere.
-- [ ] Live browser verification of the full cutover (blocked in this
-      sandbox, same network restriction as B0/B4) — needs the user to
-      exercise every module/write path in their own browser now that their
-      real data is visible under their real account.
+- [x] Live browser verification of the full cutover — done. User exercised
+      Dashboard, Scenarios, Credit Cards, Forecast, and the theme toggle
+      directly in-browser. Found and fixed 3 real bugs surfaced only by live
+      testing (see "Frontend cutover" section above): the theme
+      toggle/persistence chain (3 stacked root causes from the Next.js
+      migration), a scenario-data gap (2 scenarios added after the Phase B0
+      copy, missing from Neon), and a budget-data drift (119 rows lost to a
+      delete-and-reinsert triggered by using the preview's Budget page).
+      All confirmed fixed and re-verified in-browser.
 
 ## Phase C — Cutover
 
-- [ ] Write out the rollback script (revert Vercel env vars, resume
-      Supabase writes) *before* flipping anything
-- [ ] Pause your own writes (informal freeze)
-- [ ] Final data re-sync + full verification suite — must match exactly
-      across all 24 tables
-- [ ] Flip Vercel env vars to Neon/Neon Auth production config
-- [ ] Smoke test: login → one read (Dashboard) → one write (add a
+**Important context that changes this phase's shape:** production today is
+GitHub Pages (`.github/workflows/deploy.yml`, deploys `main` on every push,
+Vite build + `VITE_SUPABASE_*` secrets), no custom domain (`CNAME`) —
+accessed via the default `*.github.io` URL. This migration branch is
+Next.js with server-side API routes, which **cannot run on GitHub Pages**
+(static-only hosting). So this isn't an env-var flip on an already-live
+Vercel production — it's **switching hosting providers**, from GitHub Pages
+to Vercel, at the same time as switching backends from Supabase to Neon.
+`main` has never been merged with this branch, so GitHub Pages + Supabase
+stays fully live and untouched right up until the moment you stop using it.
+
+**Decision (2026-07-05): the `transactions` backfill is skipped.** Neon's
+transactions table is short of Supabase's by ~1,245 rows (4,980 vs 3,735 as
+of this check) — the CSV-import-via-preview-app route used during testing
+silently dropped rows via its own dedup logic, rather than a clean 1:1 copy.
+Decided this doesn't block cutover: the dashboard/app already look correct
+with what's there, and the shortfall doesn't block using the app going
+forward — genuinely missing historical rows can be backfilled later,
+non-urgently, via a direct `pg_dump | psql` pass (not the import UI) if it
+ever matters.
+
+### Rollback plan (write this down, don't rely on memory mid-cutover)
+
+Two rollback tiers, because "rollback" means something different before vs.
+after you start actually using the Vercel URL as primary:
+
+- **Tier 0 — free, always available until you say otherwise:** the
+  `*.github.io` URL (GitHub Pages + Vite + Supabase) keeps working with zero
+  action needed, since `main`/`deploy.yml` are untouched. If anything about
+  the Vercel/Neon side goes wrong, wrong, just... use the old URL. This is
+  the rollback for the entire trial period while you're kicking the tires on
+  the Vercel preview.
+- **Tier 1 — once you're relying on the Vercel URL as your daily driver:**
+  if something breaks after that point, the fix is: re-point yourself back
+  to the `*.github.io` URL (bookmark, home-screen shortcut, whatever you
+  actually use day to day) until the Neon-side issue is fixed, then switch
+  back. Nothing needs to be reverted in Vercel or Neon for this — both
+  backends stay live and untouched; you're just choosing which URL you open.
+  This tier only stops being trivially available once `deploy.yml`/GitHub
+  Pages is actually decommissioned (that's Phase D, not this phase).
+
+There is no scenario in this plan where Supabase itself needs to be
+"reverted" — it's never modified by anything on the Neon/Vercel side.
+
+### Checklist
+
+- [ ] Confirm how you actually access the app today (bookmark/home-screen
+      icon → the exact `*.github.io` URL) so Tier-0/Tier-1 rollback is a
+      known, one-second action, not something to figure out under pressure
+- [ ] Promote this branch's Vercel preview to a **Production** deployment
+      (or merge to `main` and point Vercel's Production target at it —
+      whichever this project is set up for) with Neon/Neon Auth env vars +
+      `ANTHROPIC_API_KEY` (already confirmed working on the branch preview)
+- [ ] Smoke test on the **production** Vercel URL specifically (not just the
+      branch preview): login → one read (Dashboard) → one write (add a
       transaction or adjustment) → one multi-step transaction (promote a
       scenario) → one AI call (briefing or command bar)
-- [ ] Leave the Supabase project **paused, not deleted**
+- [ ] Once satisfied, switch your actual daily-use bookmark/shortcut from
+      the `*.github.io` URL to the Vercel URL
+- [ ] Leave the Supabase project **paused, not deleted** — and leave
+      `deploy.yml`/GitHub Pages alone for now too, as the Tier-1 safety net,
+      until Phase D
 
 ## Phase D — Decommission
 
