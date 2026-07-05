@@ -437,24 +437,41 @@ change:
       `creditCards`, `bills`.
 - [x] All 17 `src/lib/db/*.js` modules now call Neon. `npm run build`
       verified clean after every wave landed.
-- [ ] **Known gaps, still on Supabase (no matching Neon route):**
-      `budgetCategories.js#seedDefaultCategories`,
-      `scenarios.js#deleteAdjustment` (route needs a parent scenario id the
-      real call site never passes), `scenarios.js#cloneScenario` (no atomic
-      multi-step route). Not on the hot path for a fresh sign-up.
-- [ ] `src/modules/dashboard/Dashboard.jsx` and
-      `src/modules/creditcards/CreditCards.jsx` bypass the `db/` layer and
-      still query Supabase directly — not yet folded onto Neon routes.
-- [ ] `sendMessage.js`/`monarch.js` still call
-      `supabase.functions.invoke(...)` — unchanged, tracked separately under
-      Phase B5's golden-question-suite item above.
-- [ ] Bridge-user-id reconciliation: migrated data's `user_id` still points
-      at the temporary bridge row (`157a1267-6adf-4371-bd72-2e9bdbca64ad`)
-      created in Phase B0 — needs a real Neon Auth sign-up through an actual
-      browser (blocked in this sandbox), then a one-time SQL reassignment of
-      every table's `user_id` to the real signed-up user's id.
+- [x] **Gap closure (5 parallel agents):** `budgetCategories.js#seedDefaultCategories`,
+      `scenarios.js#deleteAdjustment`, `scenarios.js#cloneScenario` all closed
+      — new routes `app/api/budget-categories/seed/route.js` (idempotent),
+      `app/api/scenarios/adjustments/[adjustmentId]/route.js` DELETE (flatter
+      path, ownership via `scenario_adjustments`' own `user_id`), and
+      `app/api/scenarios/[id]/clone/route.js` POST (single atomic CTE:
+      insert scenario + copy adjustments). Commit `4830da4`.
+- [x] `src/modules/dashboard/Dashboard.jsx` and
+      `src/modules/creditcards/CreditCards.jsx` folded off direct Supabase
+      access onto the already-migrated `db/*.js` functions (`getBills`,
+      `getBudgetLineItems`, `getForecastLineItems`) plus a small local PATCH
+      helper in `CreditCards.jsx` for `cc_category`/`cash_only`/
+      `pinned_card_id` (existing route, no new one needed). Commits
+      `611878b`, `1b83e5b`.
+- [x] `sendMessage.js`/`monarch.js` switched from
+      `supabase.functions.invoke(...)` to `fetch('/api/ai-chat')`/
+      `fetch('/api/monarch-sync')`, preserving equivalent error-shape
+      handling. Commit `ffa8e64`. **Manual step still needed:**
+      `ANTHROPIC_API_KEY` must be set as a Vercel env var for `/api/ai-chat`
+      to work once live.
+- [x] Bridge-user-id reconciliation — done. User signed up for real
+      (`jonncy18@gmail.com` → new id `10de683e-4eca-4465-98d2-2212c8fe5f17`)
+      after the bridge account's email was freed (renamed to
+      `bridge-migrated@internal.invalid`, since it held the same email with
+      no password credential — it was inserted directly via SQL in Phase
+      B0, never through a real sign-up). Ran a one-time SQL reassignment:
+      deleted the blank auto-provisioned `user_profiles` row for the new id,
+      moved the real migrated `user_profiles` row's `id` from the bridge id
+      to the new id, and updated `user_id` from the bridge id to the new id
+      across all 22 other tables. Verified zero rows remain under the
+      bridge id anywhere.
 - [ ] Live browser verification of the full cutover (blocked in this
-      sandbox, same network restriction as B0/B4).
+      sandbox, same network restriction as B0/B4) — needs the user to
+      exercise every module/write path in their own browser now that their
+      real data is visible under their real account.
 
 ## Phase C — Cutover
 
