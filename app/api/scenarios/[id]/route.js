@@ -2,7 +2,7 @@ import { getNeonSql } from '../../../../src/lib/neon/client.js'
 import { auth } from '../../../../src/lib/neon/authServer.js'
 
 const ALLOWED_STATES = ['modeled', 'committed', 'idea']
-const UPDATABLE_FIELDS = ['name', 'description', 'state']
+const UPDATABLE_FIELDS = ['name', 'description', 'state', 'parent_baseline']
 
 export async function PATCH(request, context) {
   const { data: session } = await auth.getSession()
@@ -40,9 +40,10 @@ export async function PATCH(request, context) {
 
   try {
     const sql = getNeonSql()
-    // WHERE user_id = ${userId} on both queries is the authorization check:
-    // it guarantees a user can never read or update a row they don't own,
-    // even by guessing an id.
+
+    // WHERE user_id = ${userId} on every query is the authorization check: it
+    // guarantees a user can never read or update a row they don't own, even
+    // by guessing an id.
     const [existing] = await sql`
       SELECT * FROM scenarios WHERE id = ${id} AND user_id = ${userId}
     `
@@ -50,13 +51,34 @@ export async function PATCH(request, context) {
       return Response.json({ error: 'Scenario not found.' }, { status: 404 })
     }
 
+    // parent_baseline references another scenario row the caller does not
+    // necessarily own. Never trust an id supplied in the request body —
+    // verify it belongs to this user before allowing the link.
+    if (
+      Object.prototype.hasOwnProperty.call(updates, 'parent_baseline') &&
+      updates.parent_baseline != null
+    ) {
+      const [parent] = await sql`
+        SELECT id FROM scenarios WHERE id = ${updates.parent_baseline} AND user_id = ${userId}
+      `
+      if (!parent) {
+        return Response.json({ error: 'parent_baseline scenario not found.' }, { status: 404 })
+      }
+    }
+
     const merged = { ...existing, ...updates }
 
     // Mirrors src/lib/db/scenarios.js#promoteToCommitted / #promoteToModeled:
     // committed_at is derived from the target state, not settable directly.
+    // 'idea' leaves committed_at untouched (no corresponding promote
+    // function in the source module).
     let committedAt = existing.committed_at
     if (Object.prototype.hasOwnProperty.call(updates, 'state')) {
-      committedAt = merged.state === 'committed' ? new Date().toISOString() : null
+      if (merged.state === 'committed') {
+        committedAt = new Date().toISOString()
+      } else if (merged.state === 'modeled') {
+        committedAt = null
+      }
     }
 
     const [row] = await sql`
@@ -65,6 +87,7 @@ export async function PATCH(request, context) {
         name = ${merged.name},
         description = ${merged.description},
         state = ${merged.state},
+        parent_baseline = ${merged.parent_baseline},
         committed_at = ${committedAt}
       WHERE id = ${id} AND user_id = ${userId}
       RETURNING *
