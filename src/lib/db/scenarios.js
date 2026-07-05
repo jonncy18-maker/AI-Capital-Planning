@@ -4,16 +4,6 @@
 // signature compatibility with existing callers (Scenarios.jsx, Forecast.jsx,
 // scenarioAgent.js, contextLoader.js) even though each route derives the
 // real identity from the session itself.
-//
-// KNOWN GAP — deleteAdjustment(adjustmentId) and cloneScenario(...) are left
-// on the Supabase client below: the built DELETE route for a single
-// adjustment lives at /api/scenarios/[id]/adjustments/[adjustmentId] and
-// requires the parent scenarioId in the URL, but deleteAdjustment's existing
-// signature/call sites only ever supply the adjustmentId. cloneScenario is a
-// multi-step write (create scenario + copy adjustments) that was
-// deliberately not given a dedicated route during the backend rollout. Both
-// are tracked as follow-ups, not solved here.
-import { supabase } from '../supabase.js'
 
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
@@ -92,28 +82,23 @@ export async function addAdjustment(_userId, scenarioId, { category_id, month, y
   return parseJsonOrThrow(res)
 }
 
-// Still Supabase-backed — see KNOWN GAP note at the top of this file.
 export async function deleteAdjustment(adjustmentId) {
-  const { error } = await supabase
-    .from('scenario_adjustments')
-    .delete()
-    .eq('id', adjustmentId)
-
-  if (error) throw error
+  const res = await fetch(`/api/scenarios/adjustments/${adjustmentId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body?.error || `Request failed (${res.status})`)
+  }
 }
 
-// Still Supabase-backed — see KNOWN GAP note at the top of this file.
-export async function cloneScenario(userId, scenarioId, { name, description = '' }) {
-  const newScenario = await createScenario(userId, { name, description })
-  const adjs = await getAdjustments(userId, scenarioId)
-  for (const adj of adjs) {
-    await addAdjustment(userId, newScenario.id, {
-      category_id: adj.category_id,
-      month: adj.month,
-      year: adj.year,
-      delta_amount: adj.delta_amount,
-      label: adj.label || '',
-    })
-  }
-  return newScenario
+export async function cloneScenario(_userId, scenarioId, { name, description = '' }) {
+  const res = await fetch(`/api/scenarios/${scenarioId}/clone`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  })
+  return parseJsonOrThrow(res)
 }

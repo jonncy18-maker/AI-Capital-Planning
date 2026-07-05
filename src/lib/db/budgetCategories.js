@@ -1,10 +1,8 @@
-import { supabase } from '../supabase.js'
-import { CATEGORY_SEED_DATA } from '../csv/categoryMap.js'
-
 // Neon-backed client seam for budget_categories, fronting
 // app/api/budget-categories/route.js, app/api/budget-categories/[id]/route.js,
-// and app/api/budget-categories/import/route.js. Session auth is via the Neon
-// Auth cookie (credentials: 'include'), so the routes derive the real user id
+// app/api/budget-categories/import/route.js, and
+// app/api/budget-categories/seed/route.js. Session auth is via the Neon Auth
+// cookie (credentials: 'include'), so the routes derive the real user id
 // from the session — `userId` params are kept for signature compatibility
 // with existing callers (contextLoader.js, scenarioAgent.js, and every
 // src/modules/* caller listed below).
@@ -15,27 +13,14 @@ async function parseJsonOrThrow(res) {
   return body
 }
 
-// seedDefaultCategories has no matching Neon API route (it was flagged during
-// the backend rollout as a one-time write path, not simple CRUD) — left on
-// the Supabase client unchanged. See migration report for details.
-//
 // Upsert the default Monarch category → group/type mappings for this user.
 // Safe to call multiple times — will not overwrite user-customized targets.
-export async function seedDefaultCategories(userId) {
-  const rows = CATEGORY_SEED_DATA.map(c => ({
-    user_id: userId,
-    category: c.category,
-    group: c.group,
-    type: c.type,
-    exclude_from_totals: !!c.exclude,
-    is_active: true,
-  }))
-
-  const { error } = await supabase
-    .from('budget_categories')
-    .upsert(rows, { onConflict: 'user_id,category', ignoreDuplicates: true })
-
-  if (error) throw error
+export async function seedDefaultCategories(_userId) {
+  const res = await fetch('/api/budget-categories/seed', {
+    method: 'POST',
+    credentials: 'include',
+  })
+  await parseJsonOrThrow(res)
 }
 
 // Upsert a single custom category mapping (e.g. from the unmapped-categories
