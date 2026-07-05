@@ -114,11 +114,11 @@ export default function CashFlowTab({
   useEffect(() => {
     if (!userId) return
     let cancelled = false
-    loadInflowSeries({ userId, profile })
+    loadInflowSeries({ userId, profile, budgetCategories })
       .then(d => { if (!cancelled) setInflowData(d) })
       .catch(e => { if (!cancelled) setLoadError(e.message) })
     return () => { cancelled = true }
-  }, [userId, profileKey, inflowVersion]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId, profileKey, catsKey, inflowVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Merge by month-key ──────────────────────────────────────────────────────
   const chartData = useMemo(() => {
@@ -298,7 +298,7 @@ export default function CashFlowTab({
       <div style={{ position: 'relative' }}>
         {hover != null && data[hover] && (() => {
           const s = data[hover]
-          const inKind = s.inflowKind === 'actual' ? 'ACTUAL' : s.inflowKind === 'forecast' ? 'FORECAST' : '—'
+          const inKind = s.inflowKind === 'actual' ? 'ACTUAL' : s.inflowKind === 'forecast' ? 'FORECAST' : s.inflowKind === 'live' ? 'LIVE' : '—'
           return (
             <div style={{
               position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
@@ -413,7 +413,7 @@ export default function CashFlowTab({
                 }} />
             </div>
             <div style={{ fontSize: 10.5, color: 'var(--tx-4)', marginTop: 5 }}>
-              {reconSlot?.inflowIsActual ? 'Overriding — clear to revert' : (reconSlot?.inflowKind === 'forecast' ? 'Forecast from Settings — type to override' : 'Empty — pull history or enter manually')}
+              {reconSlot?.inflowIsActual ? 'Overriding — clear to revert' : (reconSlot?.inflowKind === 'forecast' ? 'Forecast from Settings — type to override' : reconSlot?.inflowKind === 'live' ? 'Live from transactions — type to lock in an override' : 'Empty — pull history or enter manually')}
             </div>
           </div>
           {reconSlot && (
