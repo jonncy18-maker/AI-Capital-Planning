@@ -52,8 +52,16 @@
 
 body {
   margin: 0;
+  /* Center is the app-wide baseline: the old Vite app mounted React into
+     #root, whose `text-align: center` was inherited everywhere. Next.js
+     renders into <body> instead (no #root element exists), so that baseline
+     had to move here or centered numbers fall back to the browser default
+     (left). Components that set their own alignment override this as before. */
+  text-align: center;
 }
 
+/* Retained for reference/parity; #root no longer exists under Next.js (the
+   app shell in AppRoot.jsx now provides the flex-column full-height layout). */
 #root {
   width: 100%;
   text-align: center;
