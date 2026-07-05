@@ -200,13 +200,41 @@ module needs a direct-REST fallback:**
    `ai_preferences`, `user_profiles.tax_profile`, `tax_brackets`, etc.) —
    this one is unrelated to the auth switch and will still recur.
 
-### Full rollout (not started — resume after pilot verification)
+### Full rollout — broad, in waves (started 2026-07-04)
 
-- [ ] Port every remaining read call site — ~95 call sites across 17 files
-      in `src/lib/db/*.js` (commitments is the first of these, now done)
-- [ ] Fold in the two files that bypass the `db/` layer today and query
-      Supabase directly: `src/modules/dashboard/Dashboard.jsx`,
+Same pattern as the pilot, applied file-by-file: `auth.getSession()` check →
+401 if absent → every query scoped by `WHERE user_id = ...` → jsonb columns
+written as `${JSON.stringify(value)}::jsonb`.
+
+- [x] **Wave 1 — done, committed (`85a8674`, `e71e6b2`, `ee408ff`):**
+  - `app/api/ai-briefings/route.js` — GET (latest by `module_context`), POST
+  - `app/api/wealth-snapshots/route.js` + `[id]/route.js` — GET
+    (list/`?latest=true`), POST, DELETE
+  - `app/api/scenarios/route.js`, `[id]/route.js`,
+    `[id]/adjustments/route.js`, `[id]/adjustments/[adjustmentId]/route.js`
+    — full CRUD; hardened beyond source (adjustment writes verify category
+    ownership; adjustment delete scopes by `scenario_id+user_id`, not just
+    `id`); `cloneScenario` deliberately not ported (multi-step, out of
+    narrow scope) — tracked below
+  - `app/api/ai-preferences/route.js` — GET/PUT, single-row upsert via
+    `ON CONFLICT (user_id) DO UPDATE`
+  - `app/api/budget-categories/route.js`, `[id]/route.js`, `import/route.js`
+    — GET, POST/PATCH/DELETE, bulk import; also fixed a real Phase B0 schema
+    gap found in this wave (see `016_neon_budget_categories_unique_constraint.sql`)
+  - `app/api/transactions/route.js`, `recent/route.js`, `analysis/route.js`,
+    `by-category/route.js`, `by-month/route.js`, `year/[year]/route.js` —
+    full read path + bulk-import POST (`ON CONFLICT (user_id, dedup_key) DO
+    NOTHING` via `jsonb_to_recordset`)
+- [ ] **Wave 2 (next):** `user_profiles`, `import_logs`, `budget_status`,
+      `tax_brackets`, `income_actuals`, `budget_line_items`
+- [ ] **Wave 3:** `forecast_line_items`, `forecast_overrides`,
+      `credit_cards` (+ earn rates/points/redemptions), `bills` (+
+      `bill_amounts`/`account_balances`), plus fold in the two files that
+      bypass the `db/` layer today: `src/modules/dashboard/Dashboard.jsx`,
       `src/modules/creditcards/CreditCards.jsx`
+- [ ] Follow-up gaps tracked, not blocking: `cloneScenario`,
+      `getUserGroups`/`getExcludedCategoryNames`/`seedDefaultCategories`
+      (`src/lib/db/budgetCategories.js`)
 - [x] ~~Public whitelist endpoint~~ — not needed; no unauthenticated read
       paths exist anywhere in this app
 
@@ -214,6 +242,8 @@ module needs a direct-REST fallback:**
 - [x] Pilot module (commitments): auth check + query pattern built,
       code-reviewed, and confirmed working live end-to-end in browser
       (2026-07-04) — create + list round trip against Neon.
+- [~] Wave 1 modules built and build-verified (`npm run build` clean); live
+      browser verification still outstanding beyond the original pilot.
 - [ ] Every module renders from Neon, visually identical to Supabase version
 - [ ] A request with no/forged token 403s (not a silent broad read)
 

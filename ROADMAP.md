@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-04 (Phase A′ of Supabase→Neon migration built + verified on Vercel preview)
+**Last updated:** 2026-07-05 (Phase B1 broad rollout, Wave 1 of 3 committed)
 
 - **Supabase → Neon + Neon Auth + Vercel migration — Phase A′ complete (2026-07-04):**
   - Ran a full assessment against an external Supabase→Neon migration playbook: schema inventory, RLS, auth model, data-access pattern, realtime, edge functions, env vars, build/hosting.
@@ -35,6 +35,12 @@
   - **Two real bugs found via live testing and fixed:** (1) sign-up/sign-in's own response `token` field is an opaque session token, not a JWT — the real JWT has to be fetched separately via `GET {base_url}/token` using the session cookie sign-up already set. (2) `sql.json(...)` doesn't exist on `@neondatabase/serverless` (that's `postgres.js`'s API) — every jsonb write needs `JSON.stringify(value)::jsonb` instead; several other tables have jsonb columns and will need the same fix during the full rollout.
   - **Switched to Neon's official `@neondatabase/auth` SDK (2026-07-04)**, replacing the hand-rolled REST+JWT approach that surfaced bug (1) above. Added `src/lib/neon/authServer.js` (`createNeonAuth`), `app/api/auth/[...path]/route.js` (the auth proxy — confirmed by reading the installed package's source that the browser only ever talks to this app's own origin, never Neon's auth domain directly), and rewrote the test page to use cookie-based sessions with zero manual token handling. Deleted the now-superseded `src/lib/neon/auth.js`. Needs two Vercel env vars: `NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET`.
   - **Confirmed working live in browser a second time** against the SDK rework: sign-in → Get Session (cookie only) → create/list commitment, full round trip against Neon.
+
+- **Phase B1 broad rollout, Wave 1 of 3 — committed (2026-07-05):** with the pattern proven on the pilot, rolled it out across the first 6 of ~17 `src/lib/db/*.js` modules, run as parallel build agents against isolated new files (no shared-file conflicts): `ai_briefings`, `wealth_snapshots`, `scenarios` (+ `scenario_adjustments`), `ai_preferences`, `budget_categories` (+ bulk import), `transactions` (full read path + bulk-import POST). Same pattern throughout: `auth.getSession()` → 401 if absent → `WHERE user_id = ...` on every query → `${JSON.stringify(value)}::jsonb` for jsonb writes. Commits `85a8674`, `e71e6b2`, `ee408ff`.
+  - **Real Phase B0 schema gap found and fixed:** Supabase's `budget_categories` has `unique(user_id, category)` (`001_initial_schema.sql` line 47) that was missed when the Neon schema was built from live introspection in Phase B0. Added directly to the Neon dev branch and documented as `supabase/migrations/016_neon_budget_categories_unique_constraint.sql`.
+  - **Two real hardening fixes beyond the source modules**, found during the scenarios port: `deleteAdjustment` now scopes by `scenario_id+user_id` (source only filtered by `id`), and `addAdjustment` now verifies `category_id` ownership before insert (source never checked it) — both closing an unauthenticated-id-trust gap, not just porting behavior 1:1.
+  - **Known gaps tracked, not blocking:** `cloneScenario` (multi-step: create scenario + copy adjustments) and `getUserGroups`/`getExcludedCategoryNames`/`seedDefaultCategories` (derived views/one-time seed, not simple CRUD) not yet ported.
+  - All new routes are build-verified (`npm run build` clean) but not yet live-browser-tested — only the original commitments pilot has had a live round-trip test so far. Wave 2 (`user_profiles`, `import_logs`, `budget_status`, `tax_brackets`, `income_actuals`, `budget_line_items`) and Wave 3 (`forecast_line_items`, `forecast_overrides`, `credit_cards`, `bills`, plus folding in `Dashboard.jsx`/`CreditCards.jsx`) remain.
 
 **Previously last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 
