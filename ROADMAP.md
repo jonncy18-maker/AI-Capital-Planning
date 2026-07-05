@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-05 (Phase B1 broad rollout complete — all 17 modules ported to Neon API routes)
+**Last updated:** 2026-07-05 (Phases B1/B2/B5 built — broad rollout, profile auto-provisioning, AI/Monarch edge functions all ported to Neon/Vercel)
 
 - **Supabase → Neon + Neon Auth + Vercel migration — Phase A′ complete (2026-07-04):**
   - Ran a full assessment against an external Supabase→Neon migration playbook: schema inventory, RLS, auth model, data-access pattern, realtime, edge functions, env vars, build/hosting.
@@ -57,6 +57,13 @@
   - `forecast_line_items`' `resetForecastToBudget` (delete + reseed) and `setForecastRate` (delete + rate-fill insert) both run as a single atomic `sql.transaction([...])`, same pattern as `budget_line_items`' `saveBudgetForYear` in Wave 2.
   - Every new route is build-verified (`npm run build` clean, 51 routes total); none has been live-browser-tested yet beyond the original commitments pilot.
   - **Remaining, tracked, not blocking**: `cloneScenario` and `budgetCategories.js`'s `getUserGroups`/`getExcludedCategoryNames`/`seedDefaultCategories` (Wave 1 gaps, still open); folding `src/modules/dashboard/Dashboard.jsx` and `src/modules/creditcards/CreditCards.jsx` off their direct Supabase queries onto the new API routes — not started, and out of scope for this rollout (which only builds the parallel Neon layer; the frontend cutover itself is Phase C).
+
+- **Phase B2 (write path review) + B5 (AI/Monarch edge functions) — committed (2026-07-05):**
+  - **Profile auto-provisioning built**: Neon Auth has no equivalent of Supabase's `handle_new_user()` trigger (`insert into user_profiles (id) values (new.id) on conflict (id) do nothing`, fired on every `auth.users` insert). `GET /api/profile` now runs the same idempotent insert before its select, so a fresh signup always has a row by the time `Login → Onboarding` reads it. Verified live against the real Neon schema with a throwaway insert/re-insert/cleanup (idempotent, correct column defaults).
+  - **Multi-step write review**: re-read the three flagged call sites directly rather than trust the plan's framing — `promoteToCommitted`/`promoteToModeled` (`scenarios.js`) are each a single UPDATE with no second table write (no baseline-audit record exists in the source); `saveBudgetForYear` was already ported as an atomic transaction in Wave 2; the CSV import path (`importTransactions` + `logImport`) is deliberately non-transactional even in the source (the app wraps the `logImport` call in a non-fatal try/catch). No further server-transaction work was needed anywhere.
+  - **`ai-chat` and `monarch-sync` Supabase Edge Functions ported** to `app/api/ai-chat/route.js` and `app/api/monarch-sync/route.js` — same request/response contracts as the client wrappers (`src/lib/ai/sendMessage.js`, `src/lib/integrations/monarch.js`) already expect, so no client changes are needed once they're switched over. Both functions relied on the Supabase gateway to verify the caller's JWT before invocation; replaced with an explicit `auth.getSession()` check, same as every other route in this migration. `ai-chat` needs a fresh `ANTHROPIC_API_KEY` Vercel env var — not yet set, not copied from Supabase's secret.
+  - **Real bug fixed during the `monarch-sync` port**: the Deno function generated its Monarch `device-uuid` once at module scope (top-level `crypto.randomUUID()`), reused across every request served by that warm instance — different users sharing one device UUID. Now generated fresh per request.
+  - **Blocked in this sandbox**: the B4 direct-probe test (curl a scoped route with no token, confirm it's rejected) — outbound curl to the Vercel preview domain fails under this environment's network policy, the same restriction that blocked live Neon Auth testing in Phase B0. Every route's `401` guard was reviewed directly in code instead (all 22 route files). Needs a real probe from outside this sandbox to close out, along with the B5 golden-question suite (needs the `ANTHROPIC_API_KEY` set + the frontend actually switched from `supabase.functions.invoke` to `fetch('/api/...')`, neither done yet).
 
 **Previously last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 

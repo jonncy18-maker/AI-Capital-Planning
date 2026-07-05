@@ -378,18 +378,37 @@ written as `${JSON.stringify(value)}::jsonb`.
 
 ## Phase B5 — Remaining server-side logic
 
-- [ ] Port `supabase/functions/ai-chat` → Vercel serverless function (same
-      request/response contract); mint a fresh `ANTHROPIC_API_KEY`, don't
-      copy the Supabase secret
-- [ ] Port `supabase/functions/monarch-sync` → Vercel serverless function
-      (no stored secret, but needs the same JWT-verification rewrite)
+- [x] Port `supabase/functions/ai-chat` → `app/api/ai-chat/route.js` — same
+      request/response contract (`{messages, system, maxTokens, model,
+      modelFamily, cacheSystem, tools}` in, `{text, content, stop_reason}`
+      out), model-resolution caching logic ported as-is. Needs a fresh
+      `ANTHROPIC_API_KEY` Vercel env var — not yet set, not copied from
+      Supabase.
+- [x] Port `supabase/functions/monarch-sync` → `app/api/monarch-sync/route.js`
+      — same contract. The Supabase gateway's JWT verification (which the
+      Deno function relied on implicitly) is replaced with an explicit
+      `auth.getSession()` check, same pattern as every other route in this
+      migration. **Real bug fixed during the port**: the source generated
+      its Monarch `device-uuid` once at module scope (top-level
+      `crypto.randomUUID()`), reused across every request to a warm Deno
+      instance — different users would share one device UUID. Now generated
+      per-request.
 - [ ] Re-run the golden-question suite: grill session, scenario AI composer,
       AI briefing, category/bill/credit-card parsers (9 call sites funneled
-      through `sendMessage.js`)
+      through `sendMessage.js`) — blocked until an `ANTHROPIC_API_KEY` is set
+      on Vercel and the client wrappers (`sendMessage.js`, `monarch.js`) are
+      switched from `supabase.functions.invoke(...)` to `fetch('/api/...')`;
+      neither has happened yet (additive-only, same as every other module —
+      the frontend still calls the Supabase functions today).
 
 **Gate B5:**
-- [ ] Every AI capability produces the same response shape as today
-- [ ] `monarch-sync` still authenticates and paginates correctly
+- [ ] Every AI capability produces the same response shape as today — routes
+      are contract-compatible by construction (verified by reading the exact
+      shapes both `sendMessage.js` and `monarch.js` expect and matching them
+      exactly), but not yet exercised live: needs the API key + frontend
+      switch above.
+- [ ] `monarch-sync` still authenticates and paginates correctly — same
+      blocker (needs a live Monarch account + frontend switch to test).
 
 ## Phase C — Cutover
 
