@@ -2,9 +2,8 @@ import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { auth } from '../../../src/lib/neon/authServer.js'
 
 // Mirrors src/lib/db/transactions.js#buildDedupKey exactly. Duplicated here
-// (rather than imported) so this route has no dependency on
-// src/lib/supabase.js, which throws at import time if Supabase env vars are
-// absent — this pilot must load independently of the Supabase config.
+// (rather than imported) so this server route has no dependency on the
+// client-side db module.
 function buildDedupKey({ date, merchant, amount, account }) {
   return `${date}|${merchant.toLowerCase()}|${amount}|${account ?? ''}`
 }

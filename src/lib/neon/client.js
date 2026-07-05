@@ -2,9 +2,7 @@ import { neon } from '@neondatabase/serverless'
 
 let cachedSql = null
 
-// Pilot-only Neon client for the commitments module. Isolated from the rest
-// of the app, which continues to run entirely on Supabase — see
-// src/lib/supabase.js for the production data layer.
+// Shared Neon client used by every app/api/** route.
 export function getNeonSql() {
   if (cachedSql) return cachedSql
 
