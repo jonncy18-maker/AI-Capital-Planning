@@ -12,7 +12,9 @@ import {
   buildEarnRateMap,
 } from '../../lib/db/creditCards.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
-import { supabase } from '../../lib/supabase.js'
+import { getBills } from '../../lib/db/bills.js'
+import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
+import { getForecastLineItems } from '../../lib/db/forecastLineItems.js'
 import {
   computePointsForecast,
   estimateTotalValue,
@@ -22,6 +24,22 @@ import {
 import {
   routeForecastToCards, computeStatementForecast, statementDueIn,
 } from '../../lib/cashflow/cashflowEngine.js'
+
+// Patches cc_category/cash_only/pinned_card_id on a budget_categories row via
+// the already-migrated /api/budget-categories/[id] PATCH route (see
+// app/api/budget-categories/[id]/route.js). No matching wrapper exists yet in
+// src/lib/db/budgetCategories.js, so this seam is kept local to this module.
+async function patchCategoryCcMapping(catId, updates) {
+  const res = await fetch(`/api/budget-categories/${catId}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+  return body
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -941,10 +959,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
   async function saveCatMapping(catId, ccCategory, cashOnly, pinnedCardId) {
     setCatMapSaving(prev => ({ ...prev, [catId]: true }))
     try {
-      await supabase
-        .from('budget_categories')
-        .update({ cc_category: ccCategory || null, cash_only: cashOnly, pinned_card_id: pinnedCardId || null })
-        .eq('id', catId)
+      await patchCategoryCcMapping(catId, { cc_category: ccCategory || null, cash_only: cashOnly, pinned_card_id: pinnedCardId || null })
       setCatEdits(prev => { const next = { ...prev }; delete next[catId]; return next })
       await onCategoriesChanged()
     } finally {
@@ -960,9 +975,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
     try {
       await Promise.all(
         dirty.map(cat =>
-          supabase.from('budget_categories')
-            .update({ cc_category: getCatCcCat(cat) || null, cash_only: getCatCashOnly(cat), pinned_card_id: getCatPinnedCard(cat) || null })
-            .eq('id', cat.id)
+          patchCategoryCcMapping(cat.id, { cc_category: getCatCcCat(cat) || null, cash_only: getCatCashOnly(cat), pinned_card_id: getCatPinnedCard(cat) || null })
         )
       )
       setCatEdits({})
@@ -998,7 +1011,7 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
     try {
       await Promise.all(
         entries.map(([catId, ccCat]) =>
-          supabase.from('budget_categories').update({ cc_category: ccCat }).eq('id', catId)
+          patchCategoryCcMapping(catId, { cc_category: ccCat })
         )
       )
       setSuggestions({})
@@ -1532,12 +1545,12 @@ export default function CreditCards({ userId, mobile }) {
         getPointRedemptions(userId, year),
         getCCSettings(userId),
         getBudgetCategories(userId),
-        supabase.from('bills').select('*').eq('user_id', userId).eq('active', true).then(r => r.data ?? []),
+        getBills(userId),
       ])
 
       const [lineItemsRes, forecastLinesRes] = await Promise.all([
-        supabase.from('budget_line_items').select('*').eq('user_id', userId).eq('budget_year', year).then(r => r.data ?? []),
-        supabase.from('forecast_line_items').select('*').eq('user_id', userId).eq('budget_year', year).then(r => r.data ?? []),
+        getBudgetLineItems(userId, { year }),
+        getForecastLineItems(userId, year),
       ])
 
       setCards(cardsData)

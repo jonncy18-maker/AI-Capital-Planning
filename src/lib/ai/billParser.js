@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js'
+import { invokeAIChatRaw } from './aiChatRaw.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 import { readXlsx } from '../xlsx/xlsxReader.js'
 import { parserSystem, JSON_ARRAY_RULE, sheetsToText } from './parserBase.js'
@@ -49,13 +49,11 @@ ${text}`
 
   // Route through the ai-chat Edge Function (same path as the rest of the app),
   // which holds the Anthropic key server-side. The browser never sees the key.
-  const { data, error } = await supabase.functions.invoke('ai-chat', {
-    body: {
-      system: SYSTEM,
-      messages: [{ role: 'user', content: userPrompt }],
-      maxTokens: 2048,
-      modelFamily: AI_MODEL_FAMILIES.assistant,
-    },
+  const { data, error } = await invokeAIChatRaw({
+    system: SYSTEM,
+    messages: [{ role: 'user', content: userPrompt }],
+    maxTokens: 2048,
+    modelFamily: AI_MODEL_FAMILIES.assistant,
   })
 
   if (error) throw new Error(`Could not reach the AI service: ${error.message}`)

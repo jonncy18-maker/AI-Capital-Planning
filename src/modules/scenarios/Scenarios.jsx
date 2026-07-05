@@ -2631,16 +2631,6 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                   </div>
                 ) : (
                   <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-                    {/* AI toggle button */}
-                    <div style={{ position: 'absolute', top: 16, right: 20, zIndex: 10 }}>
-                      <button onClick={() => setShowComposer(true)} style={{
-                        background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
-                        color: 'var(--accent)', borderRadius: 6, padding: '5px 11px',
-                        fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                      }}>
-                        ✦ AI
-                      </button>
-                    </div>
                     <ScenarioDetail
                       scenario={selected}
                       adjustments={selectedAdjs}

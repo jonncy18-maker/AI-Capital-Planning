@@ -1,10 +1,10 @@
 // Single seam for AI command-bar calls.
 //
-// Routes through the `ai-chat` Supabase Edge Function (supabase/functions/ai-chat),
+// Routes through the `/api/ai-chat` Vercel route (app/api/ai-chat/route.js),
 // which holds the Anthropic key server-side. The browser never sees the key.
-// supabase.functions.invoke automatically attaches the signed-in user's JWT.
+// The route reads the signed-in user's session from the Neon Auth cookie
+// (sent automatically via `credentials: 'include'`).
 
-import { supabase } from '../supabase.js'
 import { buildContextBrief } from './contextLoader.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 
@@ -27,7 +27,7 @@ If the context includes a "How To Brief This User (personalization)" section, tr
 
 When the financial context contains both a "Current year projection" and a "Salary profile", the current-year projection is the authoritative income and expense figure — it blends YTD actuals with forward salary and budget forecasts. The salary profile provides gross salary and tax breakdown for reference only. Never quote annual net take-home derived from the salary profile alone; use the current-year projected net instead.`
 
-// Low-level call into the ai-chat Edge Function. Returns the assistant text, the
+// Low-level call into the ai-chat API route. Returns the assistant text, the
 // raw content blocks, and stop_reason so callers can drive multi-step tool use.
 // `systemExtra` appends to the system prompt (e.g. a tool-specific instruction
 // and the user's category names). Returns { status, text, content, stop_reason }.
@@ -50,15 +50,37 @@ export async function invokeAIChat({ messages, tools, context, yearTxns, systemE
   }
   if (Array.isArray(tools) && tools.length) body.tools = tools
 
-  const { data, error } = await supabase.functions.invoke('ai-chat', { body })
-
-  if (error) {
+  let res
+  try {
+    res = await fetch('/api/ai-chat', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (err) {
     return {
       status: 'error',
       text:
-        `Could not reach the AI service: ${error.message}. ` +
-        `Make sure the ai-chat Edge Function is deployed and the ANTHROPIC_API_KEY ` +
-        `secret is set (see supabase/functions/ai-chat/README.md).`,
+        `Could not reach the AI service: ${err.message}. ` +
+        `Make sure the ai-chat API route is deployed and the ANTHROPIC_API_KEY ` +
+        `env var is set (see app/api/ai-chat/route.js).`,
+    }
+  }
+
+  let data = null
+  try {
+    data = await res.json()
+  } catch {}
+
+  if (!res.ok) {
+    const message = data?.error || res.statusText || `HTTP ${res.status}`
+    return {
+      status: 'error',
+      text:
+        `Could not reach the AI service: ${message}. ` +
+        `Make sure the ai-chat API route is deployed and the ANTHROPIC_API_KEY ` +
+        `env var is set (see app/api/ai-chat/route.js).`,
     }
   }
   if (data?.error) return { status: 'error', text: data.error }

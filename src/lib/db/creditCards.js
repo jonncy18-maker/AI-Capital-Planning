@@ -1,67 +1,76 @@
-import { supabase } from '../supabase.js'
+// Neon-backed client seam for credit card data, fronting app/api/credit-cards/*
+// routes (Neon Auth session cookie via credentials: 'include' — no token
+// handling). `userId` params are kept for signature compatibility with
+// existing callers even though the routes derive the real identity from the
+// session itself.
+
+async function parseJsonOrThrow(res) {
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+  return body
+}
+
+async function noContentOrThrow(res) {
+  if (res.status === 204) return
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+}
 
 // ─── Credit Cards ─────────────────────────────────────────────────────────────
 
-export async function getCreditCards(userId) {
-  const { data, error } = await supabase
-    .from('credit_cards')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('active', true)
-    .order('display_order', { ascending: true })
-  if (error) throw error
+export async function getCreditCards(_userId) {
+  const res = await fetch('/api/credit-cards', { credentials: 'include' })
+  const data = await parseJsonOrThrow(res)
   return data ?? []
 }
 
-export async function upsertCreditCard(userId, card) {
-  const { data, error } = await supabase
-    .from('credit_cards')
-    .upsert({ ...card, user_id: userId })
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export async function upsertCreditCard(_userId, card) {
+  const res = await fetch('/api/credit-cards', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(card),
+  })
+  return parseJsonOrThrow(res)
 }
 
 export async function deleteCreditCard(id) {
-  const { error } = await supabase.from('credit_cards').delete().eq('id', id)
-  if (error) throw error
+  const res = await fetch(`/api/credit-cards/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  await noContentOrThrow(res)
 }
 
 // ─── Earn Rates ───────────────────────────────────────────────────────────────
 
-export async function getEarnRates(userId) {
-  const { data, error } = await supabase
-    .from('credit_card_earn_rates')
-    .select('*')
-    .eq('user_id', userId)
-  if (error) throw error
+export async function getEarnRates(_userId) {
+  const res = await fetch('/api/credit-cards/earn-rates', { credentials: 'include' })
+  const data = await parseJsonOrThrow(res)
   return data ?? []
 }
 
-export async function upsertEarnRate(userId, cardId, ccCategory, earnRate) {
-  const { data, error } = await supabase
-    .from('credit_card_earn_rates')
-    .upsert(
-      { card_id: cardId, user_id: userId, cc_category: ccCategory, earn_rate: earnRate },
-      { onConflict: 'card_id,cc_category' }
-    )
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export async function upsertEarnRate(_userId, cardId, ccCategory, earnRate) {
+  const res = await fetch('/api/credit-cards/earn-rates', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cardId, ccCategory, earnRate }),
+  })
+  return parseJsonOrThrow(res)
 }
 
 export async function deleteEarnRate(cardId, ccCategory) {
-  const { error } = await supabase
-    .from('credit_card_earn_rates')
-    .delete()
-    .eq('card_id', cardId)
-    .eq('cc_category', ccCategory)
-  if (error) throw error
+  const params = new URLSearchParams({ cardId, ccCategory })
+  const res = await fetch(`/api/credit-cards/earn-rates?${params.toString()}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  await noContentOrThrow(res)
 }
 
 // Returns a nested map: { [cardId]: { [cc_category]: earn_rate } }
+// Pure in-memory helper — does not touch the network.
 export function buildEarnRateMap(earnRates) {
   const map = {}
   for (const r of earnRates) {
@@ -74,127 +83,73 @@ export function buildEarnRateMap(earnRates) {
 // ─── Points Balances ──────────────────────────────────────────────────────────
 
 // Returns the latest snapshot per card as a map: { [cardId]: { balance, as_of_date } }
-export async function getPointsBalances(userId) {
-  const { data, error } = await supabase
-    .from('credit_card_points')
-    .select('*')
-    .eq('user_id', userId)
-    .order('as_of_date', { ascending: false })
-  if (error) throw error
-
-  const latest = {}
-  for (const row of (data ?? [])) {
-    if (!latest[row.card_id]) latest[row.card_id] = row
-  }
-  return latest
+export async function getPointsBalances(_userId) {
+  const res = await fetch('/api/credit-cards/points', { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-export async function upsertPointsBalance(userId, cardId, balance, asOfDate) {
-  const { data, error } = await supabase
-    .from('credit_card_points')
-    .insert({ card_id: cardId, user_id: userId, balance, as_of_date: asOfDate })
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export async function upsertPointsBalance(_userId, cardId, balance, asOfDate) {
+  const res = await fetch('/api/credit-cards/points', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cardId, balance, asOfDate }),
+  })
+  return parseJsonOrThrow(res)
 }
 
 // ─── Planned Redemptions ──────────────────────────────────────────────────────
 
-export async function getPointRedemptions(userId, year) {
-  const { data, error } = await supabase
-    .from('credit_card_point_redemptions')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('year', year)
-    .order('month', { ascending: true })
-  if (error) throw error
+export async function getPointRedemptions(_userId, year) {
+  const params = new URLSearchParams({ year: String(year) })
+  const res = await fetch(`/api/credit-cards/redemptions?${params.toString()}`, {
+    credentials: 'include',
+  })
+  const data = await parseJsonOrThrow(res)
   return data ?? []
 }
 
-export async function upsertPointRedemption(userId, redemption) {
-  const row = { ...redemption, user_id: userId }
-  if (row.id) {
-    const { data, error } = await supabase
-      .from('credit_card_point_redemptions')
-      .update(row)
-      .eq('id', row.id)
-      .select()
-      .single()
-    if (error) throw error
-    return data
-  }
-  const { data, error } = await supabase
-    .from('credit_card_point_redemptions')
-    .insert(row)
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export async function upsertPointRedemption(_userId, redemption) {
+  const res = await fetch('/api/credit-cards/redemptions', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(redemption),
+  })
+  return parseJsonOrThrow(res)
 }
 
 export async function deletePointRedemption(id) {
-  const { error } = await supabase
-    .from('credit_card_point_redemptions')
-    .delete()
-    .eq('id', id)
-  if (error) throw error
+  const res = await fetch(`/api/credit-cards/redemptions/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  await noContentOrThrow(res)
 }
 
 // ─── Transaction account detection ───────────────────────────────────────────
 
 // Returns distinct account names from transactions with their transaction counts,
 // for the AI to classify as credit cards. Caller passes result to parseCreditCardsFromTransactions.
-// Pages through results to avoid Supabase's default 1,000-row cap.
-export async function getDistinctTransactionAccounts(userId) {
-  const PAGE = 1000
-  const all = []
-  let from = 0
-  let more = true
-  while (more) {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('account')
-      .eq('user_id', userId)
-      .not('account', 'is', null)
-      .range(from, from + PAGE - 1)
-
-    if (error) throw error
-    const batch = data ?? []
-    all.push(...batch)
-    more = batch.length === PAGE
-    from += PAGE
-  }
-
-  const counts = {}
-  for (const t of all) {
-    counts[t.account] = (counts[t.account] ?? 0) + 1
-  }
-
-  return Object.entries(counts)
-    .map(([account, txn_count]) => ({ account, txn_count }))
-    .sort((a, b) => b.txn_count - a.txn_count)
+export async function getDistinctTransactionAccounts(_userId) {
+  const res = await fetch('/api/credit-cards/transaction-accounts', { credentials: 'include' })
+  const data = await parseJsonOrThrow(res)
+  return data ?? []
 }
 
 // ─── CC Settings (from user_profiles) ────────────────────────────────────────
 
-export async function getCCSettings(userId) {
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .select('cc_coverage_pct, cc_optimization_pct')
-    .eq('id', userId)
-    .single()
-  if (error) throw error
-  return {
-    coveragePct: data?.cc_coverage_pct ?? 80,
-    optimizationPct: data?.cc_optimization_pct ?? 100,
-  }
+export async function getCCSettings(_userId) {
+  const res = await fetch('/api/credit-cards/settings', { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-export async function updateCCSettings(userId, { coveragePct, optimizationPct }) {
-  const { error } = await supabase
-    .from('user_profiles')
-    .update({ cc_coverage_pct: coveragePct, cc_optimization_pct: optimizationPct })
-    .eq('id', userId)
-  if (error) throw error
+export async function updateCCSettings(_userId, { coveragePct, optimizationPct }) {
+  const res = await fetch('/api/credit-cards/settings', {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ coveragePct, optimizationPct }),
+  })
+  await parseJsonOrThrow(res)
 }

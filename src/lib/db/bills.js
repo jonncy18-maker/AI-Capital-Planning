@@ -1,176 +1,126 @@
-import { supabase } from '../supabase.js'
+// Neon-backed client seam for accounts/bills/bill_amounts/account_balances,
+// fronting the already-built app/api/accounts, app/api/bills,
+// app/api/bill-amounts and app/api/account-balances routes (Neon Auth session
+// cookie via credentials: 'include' — no token handling). `userId` params are
+// kept for signature compatibility with existing callers even though the
+// routes derive the real identity from the session itself.
+
+async function parseJsonOrThrow(res) {
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+  return body
+}
+
+async function parseNoContentOrThrow(res) {
+  if (res.status === 204) return
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+}
 
 // ─── Accounts ────────────────────────────────────────────────────────────────
 
-export async function getAccounts(userId) {
-  const { data, error } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('active', true)
-    .order('display_order', { ascending: true })
-  if (error) throw error
-  return data ?? []
+export async function getAccounts(_userId) {
+  const res = await fetch('/api/accounts', { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-export async function upsertAccount(userId, account) {
-  const { data, error } = await supabase
-    .from('accounts')
-    .upsert({ ...account, user_id: userId })
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export async function upsertAccount(_userId, account) {
+  const res = await fetch('/api/accounts', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(account),
+  })
+  return parseJsonOrThrow(res)
 }
 
 export async function deleteAccount(id) {
-  const { error } = await supabase.from('accounts').delete().eq('id', id)
-  if (error) throw error
+  const res = await fetch(`/api/accounts/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  await parseNoContentOrThrow(res)
 }
 
 // ─── Bills ───────────────────────────────────────────────────────────────────
 
-export async function getBills(userId) {
-  const { data, error } = await supabase
-    .from('bills')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('active', true)
-    .order('pay_day', { ascending: true })
-  if (error) throw error
-  return data ?? []
+export async function getBills(_userId) {
+  const res = await fetch('/api/bills', { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-export async function upsertBill(userId, bill) {
-  const row = {
-    ...bill,
-    user_id: userId,
-    // enforce pay_day = due_day when toggled
-    pay_day: bill.pay_same_as_due ? bill.due_day : bill.pay_day,
-  }
-  const { data, error } = await supabase
-    .from('bills')
-    .upsert(row)
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export async function upsertBill(_userId, bill) {
+  const res = await fetch('/api/bills', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(bill),
+  })
+  return parseJsonOrThrow(res)
 }
 
 export async function deleteBill(id) {
-  const { error } = await supabase.from('bills').delete().eq('id', id)
-  if (error) throw error
+  const res = await fetch(`/api/bills/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  await parseNoContentOrThrow(res)
 }
 
 // ─── Bill amounts (variable monthly amounts, e.g. CC statements) ─────────────
 
-export async function getBillAmounts(userId, year, month) {
-  const { data, error } = await supabase
-    .from('bill_amounts')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('year', year)
-    .eq('month', month)
-  if (error) throw error
-  return data ?? []
+export async function getBillAmounts(_userId, year, month) {
+  const params = new URLSearchParams({ year: String(year), month: String(month) })
+  const res = await fetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-// Pages through results to avoid Supabase's default 1,000-row cap.
 export async function getBillAmountsForBill(billId) {
-  const PAGE = 1000
-  const all = []
-  let from = 0
-  let more = true
-  while (more) {
-    const { data, error } = await supabase
-      .from('bill_amounts')
-      .select('*')
-      .eq('bill_id', billId)
-      .order('year', { ascending: false })
-      .order('month', { ascending: false })
-      .range(from, from + PAGE - 1)
-
-    if (error) throw error
-    const batch = data ?? []
-    all.push(...batch)
-    more = batch.length === PAGE
-    from += PAGE
-  }
-  return all
+  const params = new URLSearchParams({ billId })
+  const res = await fetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-// Pages through results to avoid Supabase's default 1,000-row cap.
-export async function getBillAmountsRange(userId, startYear, endYear) {
-  const PAGE = 1000
-  const all = []
-  let from = 0
-  let more = true
-  while (more) {
-    const { data, error } = await supabase
-      .from('bill_amounts')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('year', startYear)
-      .lte('year', endYear)
-      .range(from, from + PAGE - 1)
-
-    if (error) throw error
-    const batch = data ?? []
-    all.push(...batch)
-    more = batch.length === PAGE
-    from += PAGE
-  }
-  return all
+export async function getBillAmountsRange(_userId, startYear, endYear) {
+  const params = new URLSearchParams({ startYear: String(startYear), endYear: String(endYear) })
+  const res = await fetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-export async function upsertBillAmount(userId, billId, year, month, amount, notes = null) {
-  const { data, error } = await supabase
-    .from('bill_amounts')
-    .upsert(
-      { bill_id: billId, user_id: userId, year, month, amount, notes },
-      { onConflict: 'bill_id,year,month' }
-    )
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export async function upsertBillAmount(_userId, billId, year, month, amount, notes = null) {
+  const res = await fetch('/api/bill-amounts', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ billId, year, month, amount, notes }),
+  })
+  return parseJsonOrThrow(res)
 }
 
 export async function deleteBillAmount(billId, year, month) {
-  const { error } = await supabase
-    .from('bill_amounts')
-    .delete()
-    .eq('bill_id', billId)
-    .eq('year', year)
-    .eq('month', month)
-  if (error) throw error
+  const res = await fetch(`/api/bill-amounts/${billId}/${year}/${month}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  await parseNoContentOrThrow(res)
 }
 
 // ─── Account balances (manual period snapshots) ───────────────────────────────
 
-export async function getAccountBalances(userId, year, month) {
-  const { data, error } = await supabase
-    .from('account_balances')
-    .select('*, account:accounts(id, name, type, is_primary_checking)')
-    .eq('user_id', userId)
-    .eq('year', year)
-    .eq('month', month)
-    .order('period_half', { ascending: true })
-  if (error) throw error
-  return data ?? []
+export async function getAccountBalances(_userId, year, month) {
+  const params = new URLSearchParams({ year: String(year), month: String(month) })
+  const res = await fetch(`/api/account-balances?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-export async function upsertAccountBalance(userId, accountId, year, month, periodHalf, balance) {
-  const { data, error } = await supabase
-    .from('account_balances')
-    .upsert(
-      { account_id: accountId, user_id: userId, year, month, period_half: periodHalf, balance },
-      { onConflict: 'account_id,year,month,period_half' }
-    )
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export async function upsertAccountBalance(_userId, accountId, year, month, periodHalf, balance) {
+  const res = await fetch('/api/account-balances', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ accountId, year, month, periodHalf, balance }),
+  })
+  return parseJsonOrThrow(res)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -180,51 +130,17 @@ export async function upsertAccountBalance(userId, accountId, year, month, perio
 // Resolution: sum(forecast_line_items) ?? sum(budget_line_items) for that
 // category+month. The forecast is an independent dataset; where it has lines for
 // the category/month they define the amount, otherwise the budget is used.
-export async function getForecastAmountsForBills(userId, year, month, bills) {
+export async function getForecastAmountsForBills(_userId, year, month, bills) {
   const linkedBills = bills.filter(b => b.forecast_category_id)
   if (linkedBills.length === 0) return {}
 
-  const categoryIds = [...new Set(linkedBills.map(b => b.forecast_category_id))]
-
-  const [{ data: lineItems, error: liErr }, { data: forecastLines, error: fErr }] = await Promise.all([
-    supabase
-      .from('budget_line_items')
-      .select('category_id, amount')
-      .eq('user_id', userId)
-      .eq('budget_year', year)
-      .eq('month', month)
-      .in('category_id', categoryIds),
-    supabase
-      .from('forecast_line_items')
-      .select('category_id, amount')
-      .eq('user_id', userId)
-      .eq('budget_year', year)
-      .eq('month', month)
-      .in('category_id', categoryIds),
-  ])
-  if (liErr) throw liErr
-  if (fErr) throw fErr
-
-  // Sum budget_line_items per category
-  const lineItemTotals = {}
-  for (const li of (lineItems ?? [])) {
-    lineItemTotals[li.category_id] = (lineItemTotals[li.category_id] ?? 0) + Number(li.amount)
-  }
-
-  // Sum forecast_line_items per category (these take precedence when present)
-  const forecastTotals = {}
-  for (const fi of (forecastLines ?? [])) {
-    forecastTotals[fi.category_id] = (forecastTotals[fi.category_id] ?? 0) + Number(fi.amount)
-  }
-
-  const result = {}
-  for (const bill of linkedBills) {
-    const monthly = forecastTotals[bill.forecast_category_id] ?? lineItemTotals[bill.forecast_category_id] ?? null
-    if (monthly != null) {
-      result[bill.id] = monthly / Math.max(1, bill.forecast_divisor ?? 1)
-    }
-  }
-  return result
+  const res = await fetch('/api/bills/forecast-amounts', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ year, month, bills }),
+  })
+  return parseJsonOrThrow(res)
 }
 
 // Returns the effective amount for a bill in a given month.

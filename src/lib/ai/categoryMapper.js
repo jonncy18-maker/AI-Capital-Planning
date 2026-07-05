@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js'
+import { invokeAIChatRaw } from './aiChatRaw.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 import { CATEGORY_MAPPER_SYSTEM } from './categoryMapper.prompts.js'
 
@@ -30,13 +30,11 @@ Rules:
 
 Return ONLY a JSON array. Each object must have exactly two keys: "idx" (the integer index as given) and "cc_category" (one slug from the list above). No explanation. No markdown. Start with [ and end with ].`
 
-  const { data, error } = await supabase.functions.invoke('ai-chat', {
-    body: {
-      system: CATEGORY_MAPPER_SYSTEM,
-      messages: [{ role: 'user', content: userPrompt }],
-      maxTokens: 4096,
-      modelFamily: AI_MODEL_FAMILIES.assistant,
-    },
+  const { data, error } = await invokeAIChatRaw({
+    system: CATEGORY_MAPPER_SYSTEM,
+    messages: [{ role: 'user', content: userPrompt }],
+    maxTokens: 4096,
+    modelFamily: AI_MODEL_FAMILIES.assistant,
   })
 
   if (error) throw new Error(`Could not reach the AI service: ${error.message}`)

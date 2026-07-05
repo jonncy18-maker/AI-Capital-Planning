@@ -18,8 +18,9 @@ import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
 import { getCreditCards, getPointsBalances, getCCSettings, getEarnRates, buildEarnRateMap } from '../../lib/db/creditCards.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
+import { getForecastLineItems } from '../../lib/db/forecastLineItems.js'
 import { computePointsForecast, estimateTotalValue, estimateMonthlyEarnRate } from '../../lib/creditcards/pointsEngine.js'
-import { supabase } from '../../lib/supabase.js'
 
 // v5: decision-first default — surfaces the four decision-driver widgets up top,
 // groups secondary cards in the middle, and collapses the redundant plan-vs-actual
@@ -761,9 +762,9 @@ function PointsSummaryWidget({ userId }) {
           getBudgetCategories(userId),
         ])
         if (!cancelled && cards.length > 0) {
-          const [{ data: lineItems }, { data: forecastLines }] = await Promise.all([
-            supabase.from('budget_line_items').select('*').eq('user_id', userId).eq('budget_year', year),
-            supabase.from('forecast_line_items').select('*').eq('user_id', userId).eq('budget_year', year),
+          const [lineItems, forecastLines] = await Promise.all([
+            getBudgetLineItems(userId, { year }),
+            getForecastLineItems(userId, year),
           ])
           const earnRateMap = buildEarnRateMap(rates)
           const { monthlyForecast } = computePointsForecast({

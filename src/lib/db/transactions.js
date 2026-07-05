@@ -1,4 +1,14 @@
-import { supabase } from '../supabase.js'
+// Neon-backed client seam for transactions, fronting the routes under
+// app/api/transactions/ (Neon Auth session cookie via credentials: 'include'
+// — no token handling). `userId` params are kept for signature compatibility
+// with existing callers even though each route derives the real identity
+// from the session itself.
+
+async function parseJsonOrThrow(res) {
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+  return body
+}
 
 // Build the dedup key used for import deduplication.
 export function buildDedupKey({ date, merchant, amount, account }) {
@@ -7,204 +17,66 @@ export function buildDedupKey({ date, merchant, amount, account }) {
 
 // Insert rows from a parsed CSV, skipping duplicates.
 // Returns { inserted: number, skipped: number }.
-// Uses count-before / count-after to accurately measure inserts, and
-// batches in groups of 500 to avoid payload limits on large files.
-export async function importTransactions(userId, rows) {
-  const prepared = rows.map(r => ({
-    user_id: userId,
-    date: r.date,
-    merchant: r.merchant,
-    category: r.category ?? null,
-    group: r.group ?? null,
-    account: r.account ?? null,
-    amount: r.amount,
-    original_statement: r.originalStatement ?? null,
-    notes: r.notes ?? null,
-    owner: r.owner ?? null,
-    import_source: r.importSource ?? 'csv',
-    dedup_key: buildDedupKey(r),
-  }))
-
-  const { count: beforeCount, error: beforeErr } = await supabase
-    .from('transactions')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-  if (beforeErr) throw beforeErr
-
-  const BATCH = 500
-  for (let i = 0; i < prepared.length; i += BATCH) {
-    const { error } = await supabase
-      .from('transactions')
-      .upsert(prepared.slice(i, i + BATCH), { onConflict: 'user_id,dedup_key', ignoreDuplicates: true })
-    if (error) throw error
-  }
-
-  const { count: afterCount, error: afterErr } = await supabase
-    .from('transactions')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-  if (afterErr) throw afterErr
-
-  const inserted = (afterCount ?? 0) - (beforeCount ?? 0)
-  const skipped = prepared.length - inserted
-  return { inserted, skipped }
+export async function importTransactions(_userId, rows) {
+  const res = await fetch('/api/transactions', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ rows }),
+  })
+  return parseJsonOrThrow(res)
 }
 
 // Fetch recent transactions for AI context (last N days, summary level).
 // Defaults to a full trailing year so the AI sees the whole annual cycle.
-// Pages through results to avoid Supabase's default 1,000-row cap.
-export async function getRecentTransactions(userId, days = 365) {
-  const since = new Date()
-  since.setDate(since.getDate() - days)
-  const sinceStr = since.toISOString().slice(0, 10)
-
-  const PAGE = 1000
-  const all = []
-  let from = 0
-  let more = true
-  while (more) {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('date, merchant, category, "group", amount, account')
-      .eq('user_id', userId)
-      .gte('date', sinceStr)
-      .order('date', { ascending: false })
-      .range(from, from + PAGE - 1)
-
-    if (error) throw error
-    const batch = data ?? []
-    all.push(...batch)
-    more = batch.length === PAGE
-    from += PAGE
-  }
-  return all
+export async function getRecentTransactions(_userId, days = 365) {
+  const params = new URLSearchParams({ days: String(days) })
+  const res = await fetch(`/api/transactions/recent?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
 // Fetch transactions with optional filters.
-export async function getTransactions(userId, { from, to, category, limit = 500 } = {}) {
-  let q = supabase
-    .from('transactions')
-    .select('*')
-    .eq('user_id', userId)
-    .order('date', { ascending: false })
-    .limit(limit)
-
-  if (from) q = q.gte('date', from)
-  if (to)   q = q.lte('date', to)
-  if (category) q = q.eq('category', category)
-
-  const { data, error } = await q
-  if (error) throw error
-  return data ?? []
+export async function getTransactions(_userId, { from, to, category, limit = 500 } = {}) {
+  const params = new URLSearchParams()
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  if (category) params.set('category', category)
+  params.set('limit', String(limit))
+  const res = await fetch(`/api/transactions?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
 // Fetch a wide window of transactions for budget pattern analysis.
-// Pages through results so we aren't capped by Supabase's default row limit.
-export async function getTransactionsForAnalysis(userId, months = 24) {
-  const since = new Date()
-  since.setMonth(since.getMonth() - months)
-  const sinceStr = since.toISOString().slice(0, 10)
-
-  const PAGE = 1000
-  const all = []
-  let from = 0
-  let more = true
-  while (more) {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('date, amount, category, "group"')
-      .eq('user_id', userId)
-      .gte('date', sinceStr)
-      .order('date', { ascending: true })
-      .range(from, from + PAGE - 1)
-
-    if (error) throw error
-    const batch = data ?? []
-    all.push(...batch)
-    more = batch.length === PAGE
-    from += PAGE
-  }
-  return all
+export async function getTransactionsForAnalysis(_userId, months = 24) {
+  const params = new URLSearchParams({ months: String(months) })
+  const res = await fetch(`/api/transactions/analysis?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
 // Fetch all expense transactions for a full calendar year (for forecast actuals).
-// Pages through results to avoid Supabase's default 1,000-row cap.
-export async function getTransactionsForYear(userId, year) {
-  const PAGE = 1000
-  const all = []
-  let from = 0
-  let more = true
-  while (more) {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('date, amount, category, "group"')
-      .eq('user_id', userId)
-      .gte('date', `${year}-01-01`)
-      .lte('date', `${year}-12-31`)
-      .lt('amount', 0) // expenses only
-      .order('date', { ascending: true })
-      .range(from, from + PAGE - 1)
-
-    if (error) throw error
-    const batch = data ?? []
-    all.push(...batch)
-    more = batch.length === PAGE
-    from += PAGE
-  }
-  return all
+export async function getTransactionsForYear(_userId, year) {
+  const res = await fetch(`/api/transactions/year/${year}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
 // Fetch outflow (negative amount) transactions for the given category names
 // across a year range. Used to compute per-month actuals for bills that are
 // linked to an expense category instead of manual bill_amounts entries.
 // Returns rows with { date, category, amount } (amount is always negative).
-export async function getExpenseActualsByCategories(userId, categories, startYear, endYear) {
+export async function getExpenseActualsByCategories(_userId, categories, startYear, endYear) {
   if (!categories || categories.length === 0) return []
-  const PAGE = 1000
-  const all = []
-  let from = 0
-  let more = true
-  while (more) {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('date, category, amount')
-      .eq('user_id', userId)
-      .in('category', categories)
-      .lt('amount', 0)
-      .gte('date', `${startYear}-01-01`)
-      .lte('date', `${endYear}-12-31`)
-      .range(from, from + PAGE - 1)
-    if (error) throw error
-    const batch = data ?? []
-    all.push(...batch)
-    more = batch.length === PAGE
-    from += PAGE
-  }
-  return all
+  const params = new URLSearchParams({
+    categories: categories.join(','),
+    startYear: String(startYear),
+    endYear: String(endYear),
+  })
+  const res = await fetch(`/api/transactions/by-category?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
 // Fetch transactions in a date range for cash flow calendar aggregation.
-// Pages through results to avoid Supabase's default 1,000-row cap.
-export async function getTransactionsByMonth(userId, fromDate, toDate) {
-  const PAGE = 1000
-  const all = []
-  let from = 0
-  let more = true
-  while (more) {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('date, amount, "group", category, merchant')
-      .eq('user_id', userId)
-      .gte('date', fromDate)
-      .lte('date', toDate)
-      .order('date', { ascending: true })
-      .range(from, from + PAGE - 1)
-
-    if (error) throw error
-    const batch = data ?? []
-    all.push(...batch)
-    more = batch.length === PAGE
-    from += PAGE
-  }
-  return all
+export async function getTransactionsByMonth(_userId, fromDate, toDate) {
+  const params = new URLSearchParams({ from: fromDate, to: toDate })
+  const res = await fetch(`/api/transactions/by-month?${params}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }

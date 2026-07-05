@@ -8,7 +8,7 @@
 // Falls back gracefully — callers should handle { error } responses by
 // proceeding with the default Uncategorized mappings.
 
-import { supabase } from '../supabase.js'
+import { invokeAIChatRaw } from './aiChatRaw.js'
 import { ALL_GROUPS } from '../csv/categoryMap.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 import { buildBucketSystemPrompt } from './suggestBuckets.prompts.js'
@@ -41,13 +41,11 @@ export async function suggestBuckets(unmappedCats, profile, groups) {
     `Assign these ${unmappedCats.length} categories from a Monarch Money export ` +
     `(${profile.spanMonths}-month transaction history):\n\n${profileLines}`
 
-  const { data, error } = await supabase.functions.invoke('ai-chat', {
-    body: {
-      system,
-      messages: [{ role: 'user', content: userMessage }],
-      maxTokens: 1500,
-      modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
-    },
+  const { data, error } = await invokeAIChatRaw({
+    system,
+    messages: [{ role: 'user', content: userMessage }],
+    maxTokens: 1500,
+    modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
   })
 
   if (error || data?.error) {

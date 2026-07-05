@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js'
+import { invokeAIChatRaw } from './aiChatRaw.js'
 import { AI_MODEL_FAMILIES } from './models.js'
 import { readXlsx } from '../xlsx/xlsxReader.js'
 import { parserSystem, sheetsToText } from './parserBase.js'
@@ -103,13 +103,11 @@ ${SHARED_PROMPT_SUFFIX}
 Spreadsheet content:
 ${text}`
 
-  const { data, error } = await supabase.functions.invoke('ai-chat', {
-    body: {
-      system: SYSTEM,
-      messages: [{ role: 'user', content: userPrompt }],
-      maxTokens: 2048,
-      modelFamily: AI_MODEL_FAMILIES.assistant,
-    },
+  const { data, error } = await invokeAIChatRaw({
+    system: SYSTEM,
+    messages: [{ role: 'user', content: userPrompt }],
+    maxTokens: 2048,
+    modelFamily: AI_MODEL_FAMILIES.assistant,
   })
 
   if (error) throw new Error(`Could not reach the AI service: ${error.message}`)
@@ -137,13 +135,11 @@ ${SHARED_PROMPT_SUFFIX}
 
 Additional rule: include an "account_name" key with the exact original account name string so I can match back to the source.`
 
-  const { data, error } = await supabase.functions.invoke('ai-chat', {
-    body: {
-      system: SYSTEM,
-      messages: [{ role: 'user', content: userPrompt }],
-      maxTokens: 2048,
-      modelFamily: AI_MODEL_FAMILIES.assistant,
-    },
+  const { data, error } = await invokeAIChatRaw({
+    system: SYSTEM,
+    messages: [{ role: 'user', content: userPrompt }],
+    maxTokens: 2048,
+    modelFamily: AI_MODEL_FAMILIES.assistant,
   })
 
   if (error) throw new Error(`Could not reach the AI service: ${error.message}`)
