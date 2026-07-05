@@ -1,34 +1,27 @@
-import { supabase } from '../supabase.js'
+// Neon-backed client seam for ai_briefings, fronting app/api/ai-briefings/route.js
+// (Neon Auth session cookie via credentials: 'include' — no token handling).
+// `userId` params are kept for signature compatibility with existing callers
+// even though the route derives the real identity from the session itself.
 
-// Most recent cached briefing for a module context (or dashboard overview).
-export async function getLatestBriefing(userId, moduleContext = 'dashboard') {
-  const { data, error } = await supabase
-    .from('ai_briefings')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('module_context', moduleContext)
-    .order('generated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) throw error
-  return data
+async function parseJsonOrThrow(res) {
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+  return body
 }
 
-export async function saveBriefing(userId, { narrative, context_summary, module_context = 'dashboard' }) {
-  const { data, error } = await supabase
-    .from('ai_briefings')
-    .insert({
-      user_id: userId,
-      narrative,
-      context_summary: context_summary ?? null,
-      module_context,
-      is_cached: true,
-      generated_at: new Date().toISOString(),
-    })
-    .select()
-    .single()
+// Most recent cached briefing for a module context (or dashboard overview).
+export async function getLatestBriefing(_userId, moduleContext = 'dashboard') {
+  const params = new URLSearchParams({ module_context: moduleContext })
+  const res = await fetch(`/api/ai-briefings?${params.toString()}`, { credentials: 'include' })
+  return parseJsonOrThrow(res)
+}
 
-  if (error) throw error
-  return data
+export async function saveBriefing(_userId, { narrative, context_summary, module_context = 'dashboard' }) {
+  const res = await fetch('/api/ai-briefings', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ narrative, context_summary: context_summary ?? null, module_context }),
+  })
+  return parseJsonOrThrow(res)
 }
