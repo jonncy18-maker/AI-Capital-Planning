@@ -313,22 +313,44 @@ written as `${JSON.stringify(value)}::jsonb`.
 
 ## Phase B2 — Write path
 
-- [ ] Port every write call site (same file list as B1)
-- [ ] Review for multi-step client-orchestrated writes that should become
-      one server transaction — check first:
-  - [ ] `promoteToCommitted` (`src/lib/db/scenarios.js` — scenario commit +
-        baseline audit record)
-  - [ ] `saveBudgetForYear` (`src/lib/db/budgetLineItems.js` —
-        delete-then-insert per year/version)
-  - [ ] CSV import path (`importTransactions` batched upsert + `import_logs`
-        write)
-- [ ] Build an application-level equivalent of `handle_new_user()` (no
-      `auth.users` table to hang a Postgres trigger off under Neon Auth) —
-      "ensure profile row" on first authenticated request
+- [x] **Port every write call site** — already done: every Wave 1-3 route
+      was built with full CRUD (GET+POST/PATCH/DELETE together), not reads
+      first and writes later, so this phase's core work landed alongside
+      Phase B1's.
+- [x] **Reviewed multi-step client-orchestrated writes** — confirmed via a
+      fresh read of the source, no server transaction needed beyond what's
+      already built:
+  - [x] `promoteToCommitted`/`promoteToModeled` (`src/lib/db/scenarios.js`)
+        — each is a single UPDATE statement, no second table write (no
+        baseline audit record exists in the source despite the phase note
+        above suggesting one — verified by reading the actual functions).
+        Already correctly ported as a single UPDATE in
+        `app/api/scenarios/[id]/route.js`'s PATCH.
+  - [x] `saveBudgetForYear` (`src/lib/db/budgetLineItems.js`) — already
+        ported as an atomic `sql.transaction([DELETE, INSERT])` in Wave 2
+        (see above).
+  - [x] CSV import path — `importTransactions` and `logImport` are separate,
+        decoupled calls from `src/modules/import/ImportFlow.jsx` (the
+        source itself wraps the `logImport` call in a non-fatal try/catch,
+        confirming it's deliberately not transactional with the import).
+        Already correctly ported as two independent endpoints
+        (`app/api/transactions` POST, `app/api/import-logs` POST).
+- [x] **Application-level equivalent of `handle_new_user()`** — Neon Auth
+      has no trigger hook on user creation, so `GET /api/profile` now runs
+      the same idempotent `INSERT INTO user_profiles (id) VALUES (...) ON
+      CONFLICT (id) DO NOTHING` before its SELECT, ensuring a row exists on
+      first authenticated read (the same point `Login → Onboarding` already
+      gates on `onboarding_complete` from this table). Verified live against
+      the Neon dev branch with a throwaway insert/re-insert/cleanup.
 
 **Gate B2:**
-- [ ] Scripted CRUD walkthrough across all 24 tables passes
-- [ ] Profile auto-provisioning fires correctly for a fresh Neon Auth signup
+- [ ] Scripted CRUD walkthrough across all 24 tables passes — not yet run;
+      needs a live browser or scripted HTTP pass, deferred alongside the
+      rest of Phase B1's live-verification backlog.
+- [x] Profile auto-provisioning fires correctly for a fresh Neon Auth signup
+      — verified via direct SQL insert/re-insert against the real schema
+      (idempotent, correct defaults). Not yet exercised through an actual
+      Neon Auth sign-up + first `GET /api/profile` call in a browser.
 
 ## Phase B3 — Realtime → polling
 
