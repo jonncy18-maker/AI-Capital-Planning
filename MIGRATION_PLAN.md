@@ -149,42 +149,56 @@ first (`commitments` — single table, simple CRUD, 0 production rows at
 risk):
 
 - [x] Shared Postgres client for Neon — `src/lib/neon/client.js`
-- [x] JWT-verification helper (JWKS, cached at module scope) —
-      `src/lib/neon/auth.js`. Verifies a Neon Auth bearer token, returns
-      `{ userId }` from the JWT's `sub` claim.
+- [x] ~~Hand-rolled JWT-verification helper~~ — built, tested working, then
+      **superseded and deleted** in favor of Neon's official SDK (see below).
 - [x] Commitments CRUD API routes — `app/api/commitments/route.js` (GET/POST),
       `app/api/commitments/[id]/route.js` (PATCH/DELETE). Every query's
       `WHERE` clause includes `user_id = <verified userId>` as the
       authorization boundary — reviewed directly, not just self-reported by
       the build agent.
 - [x] Standalone test harness — `app/neon-auth-test/page.jsx` (unlinked from
-      any nav), signs in via Neon Auth's REST API directly and exercises the
-      Commitments routes. Token field name (`session.access_token`)
-      confirmed against Neon's own docs, not guessed.
-- [x] **Live browser verification — confirmed 2026-07-04.** Sign-up →
-      real JWT fetched from Neon Auth's `/token` endpoint → create
-      commitment → list commitment, full round trip working in the
-      browser against the Vercel preview + Neon dev branch.
+      any nav), exercises sign-up/sign-in/session/Commitments end to end.
+- [x] **Live browser verification — confirmed twice, 2026-07-04.** Once
+      against the hand-rolled REST+JWT approach, then again against the
+      official SDK rework below — both proved the full round trip working.
 - Main app's `Login.jsx`, `Commitments.jsx`, and everything Supabase-related
-  are **untouched** — purely additive, reversible by deleting 4 files.
+  are **untouched** — purely additive, reversible by deleting the pilot files.
 
-**Two real bugs found and fixed during live testing (both will recur for
-every future table/route, now documented so they don't get rediscovered):**
-1. **Sign-up/sign-in's own response `token` field is an opaque session
-   token, not a JWT** — fails JWKS verification (`Invalid Compact JWS`).
-   The real JWT must be fetched separately via `GET {base_url}/token`,
-   authenticated by the session cookie sign-up/sign-in already set. Fixed
-   in the test page; any future direct-REST auth integration needs the
-   same two-step flow (or use Neon's official `@neondatabase/auth` SDK,
-   which handles this automatically — worth considering for the full
-   rollout instead of hand-rolling REST calls, see Phase B1 full rollout
-   notes below).
+**Switched to Neon's official `@neondatabase/auth` SDK (2026-07-04)** —
+decided after the hand-rolled pass surfaced two real, non-obvious bugs
+(below). The SDK handles session cookies, JWT refresh, and CSRF
+automatically instead of us re-deriving it:
+- `src/lib/neon/authServer.js` — `createNeonAuth({ baseUrl, cookies: { secret } })`
+- `app/api/auth/[...path]/route.js` — `auth.handler()`, proxies all auth
+  calls through this app's own origin (confirmed by reading the installed
+  package's actual source, not assumed: `createAuthClient()` takes no
+  arguments and issues relative fetches — the browser never talks to
+  Neon's auth domain directly, sidestepping CORS/trusted-origin concerns
+  entirely for every future module).
+- API routes now check `const { data: session } = await auth.getSession()`
+  instead of a hand-rolled Bearer/JWKS check — same `WHERE user_id = ...`
+  authorization boundary, just a different auth-check block.
+- Requires two Vercel env vars: `NEON_AUTH_BASE_URL`,
+  `NEON_AUTH_COOKIE_SECRET` (a random signing key, generated once, not
+  tied to any account).
+- **Live browser verification confirmed 2026-07-04** — sign-in → Get
+  Session (cookie, no token handling) → create/list commitment, all
+  working against the Vercel preview + Neon dev branch.
+
+**Two real bugs found and fixed during the hand-rolled pass, now moot
+since the SDK replaced that code, but documented in case any future
+module needs a direct-REST fallback:**
+1. Sign-up/sign-in's own REST response `token` field is an opaque session
+   token, not a JWT — fails JWKS verification (`Invalid Compact JWS`). The
+   real JWT requires a separate `GET {base_url}/token` call. The SDK
+   avoids this entirely (session cookies, no manual token handling).
 2. **`sql.json(...)` doesn't exist on `@neondatabase/serverless`** — that's
    `postgres.js`'s API, not Neon's driver. Every jsonb column write across
    the app needs `JSON.stringify(value)::jsonb` instead. Fixed in both
    Commitments routes; grep for this pattern before porting any other
    table with jsonb columns (`budget_categories`, `commitments`,
-   `ai_preferences`, `user_profiles.tax_profile`, `tax_brackets`, etc.).
+   `ai_preferences`, `user_profiles.tax_profile`, `tax_brackets`, etc.) —
+   this one is unrelated to the auth switch and will still recur.
 
 ### Full rollout (not started — resume after pilot verification)
 
