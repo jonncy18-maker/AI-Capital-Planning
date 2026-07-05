@@ -361,8 +361,15 @@ written as `${JSON.stringify(value)}::jsonb`.
 
 - [x] ~~Remove cosmetic/fake gates~~ — none exist; only real gate is the
       `session` check in `App.jsx`
-- [ ] Direct-probe test: hit a scoped Neon-backed route with no/forged token,
-      confirm 403 now that RLS isn't the enforcement layer
+- [~] Direct-probe test: hit a scoped Neon-backed route with no/forged token,
+      confirm 403 now that RLS isn't the enforcement layer — **blocked in
+      this sandbox**: outbound curl to the Vercel preview domain fails
+      (network policy), the same class of restriction that blocked live
+      Neon Auth testing in Phase B0. Every route already returns 401 (not
+      403, but the equivalent "no session, no data" behavior) via its
+      `if (!session?.user?.id)` guard — reviewed directly in code across
+      all 20 route files, not just self-reported. Needs a real curl/browser
+      probe from outside this sandbox to close out.
 
 **Gate B4:**
 - [ ] Logged-out access limited to the login screen only
