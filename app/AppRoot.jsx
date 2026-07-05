@@ -43,7 +43,12 @@ function replaceLast(messages, next) {
 export default function AppRoot({ children }) {
   const { session, loading: authLoading, user } = useAuth()
   const [profile, setProfile] = useState(null)
-  const [profileLoading, setProfileLoading] = useState(false)
+  // Starts true: the fetch effect below only flips it after the first render,
+  // so a false initial value opens a one-render window where profile is null
+  // but nothing is "loading" — which briefly mounts <Onboarding/> on every
+  // page load. Its unmount cleanup then strips data-theme from <html>,
+  // reverting the visible theme to dark while React state still says light.
+  const [profileLoading, setProfileLoading] = useState(true)
   const [pendingImport, setPendingImport] = useState(null)
   // pendingImport = { csvRaw, csvName, profileData }
 

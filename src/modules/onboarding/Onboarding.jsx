@@ -1208,11 +1208,18 @@ export default function Onboarding({ onComplete }) {
   const vw = useWindowWidth()
   const mobile = vw < 560
 
-  // Apply theme to document root
+  // Apply theme to document root. On unmount, restore the app's persisted
+  // theme rather than removing the attribute — removeAttribute would drop the
+  // page back to the CSS :root default (dark) regardless of the user's saved
+  // choice, clobbering the theme the main app shell (useTheme) manages.
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    return () => document.documentElement.removeAttribute('data-theme')
   }, [theme])
+  useEffect(() => () => {
+    let saved = 'dark'
+    try { saved = localStorage.getItem('acp-theme') || 'dark' } catch { /* keep default */ }
+    document.documentElement.setAttribute('data-theme', saved)
+  }, [])
 
   function toggleTheme() {
     setTheme(t => t === 'dark' ? 'light' : 'dark')
