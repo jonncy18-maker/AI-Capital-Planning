@@ -65,8 +65,9 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
 - **Backend/Database:** Neon (serverless PostgreSQL) via `app/api/**` route handlers — every route does its own `auth.getSession()` check and scopes every query by `user_id` (no RLS layer; the API route is the authorization boundary)
 - **Auth:** Neon Auth (Better Auth), session via an httpOnly cookie; `src/lib/neon/authServer.js`/`authClient.js`
 - **AI:** Anthropic API (model resolved per-family at request time), proxied through `/api/ai-chat` — the key lives server-side only, never shipped to the browser
-- **Deployment:** Vercel (production + branch previews), auto-deploys on push to the tracked branch
-- **Rollback net (temporary):** the pre-migration stack — Vite build + Supabase + Supabase Auth, deployed via `.github/workflows/deploy.yml` to GitHub Pages — is deliberately left running untouched as a fallback until the Neon/Vercel cutover is fully trusted (see `MIGRATION_PLAN.md` Phase C/D). Once retired, `supabase/` and `deploy.yml` will be removed and this section trimmed.
+- **Deployment:** Vercel (production + branch previews); `main` merged and set as Vercel's Production-tracked branch (2026-07-05) — auto-deploys on every push
+- **GitHub Pages — retired (2026-07-05):** `.github/workflows/deploy.yml` (the old Vite+Supabase static build/deploy pipeline) has been deleted now that `main` is fully on the Neon/Vercel stack. The last successful Pages build stays published as a frozen snapshot (deleting the workflow doesn't take down existing Pages content), but nothing will deploy there again. GitHub itself remains the source-control repo throughout — only the old static-hosting pipeline is gone.
+- **Remaining fallback:** the Supabase project itself is still live (not paused/deleted) as a final, deliberately temporary safety net — see `MIGRATION_PLAN.md` Phase D.
 - **Future:** React Native native app (planned migration, not V1 scope)
 
 ---

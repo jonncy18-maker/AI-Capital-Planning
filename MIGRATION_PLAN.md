@@ -32,15 +32,14 @@ repo's real tables, files, and decisions, as a checklist to track against
 
 ## Phase A′ — Next.js migration (Supabase untouched)
 
-> ⚠️ **DO NOT MERGE THIS PHASE'S BRANCH TO `main` YET.** `next build` now
-> evaluates the whole app at build time (unlike Vite) and requires
-> `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`, but
-> `.github/workflows/deploy.yml` still injects the old `VITE_*`-named
-> secrets into a `vite build`-shaped pipeline (`dist/` output, no
-> `output: 'export'`). Merging before the hosting cutover is decided would
-> silently break the production GitHub Pages auto-deploy for the live,
-> daily-use app. `deploy.yml` is deliberately left untouched for now — this
-> phase is Vercel-preview-only until a hosting decision is made.
+> ⚠️ **~~DO NOT MERGE THIS PHASE'S BRANCH TO `main` YET.~~ — Resolved
+> 2026-07-05.** This warning held for the entire migration (all of Phase
+> A′–D was built and live-tested on a branch, Vercel-preview-only) until the
+> hosting cutover was deliberately decided and executed: merged to `main`,
+> Vercel's Production branch tracking flipped to `main`, and
+> `.github/workflows/deploy.yml` removed once GitHub Pages was confirmed
+> safe to retire (see Phase C/D below). Left here for history — this is
+> exactly the sequencing the warning was protecting.
 
 - [x] Scaffold Next.js App Router routes as thin wrappers around existing
       screen components in `src/modules/*` — no UI rewrite. (`app/layout.jsx`,
@@ -599,12 +598,24 @@ There is no scenario in this plan where Supabase itself needs to be
 - [ ] Delete `supabase/` (functions + migrations) after archiving final
       schema state wherever Neon migrations are tracked going forward —
       **deliberately not done yet**; kept as historical/rollback reference.
-- [ ] Delete `.github/workflows/deploy.yml` — **deliberately not done**; this
-      is the GitHub Pages/Supabase rollback net (Tier 0/1, see Phase C).
-      Only remove once the Vercel/Neon cutover has been trusted for a while.
-- [ ] Update `ARCHITECTURE.md` §3.3 and §5 to describe Neon as current
-- [ ] Pause (don't delete) the Supabase project for a fallback window —
-      not done; hold until the rollback net above is also retired
+- [x] **Merged to `main` and cut over (2026-07-05).** PR #142 merged
+      (commit `44aa527`); Vercel's Production environment's branch tracking
+      flipped from the migration branch to `main`; confirmed the resulting
+      production deployment builds from `main` and serves correctly
+      (`ai-capital-planning.vercel.app`), with Neon Auth's `trusted_origins`
+      already covering that domain — no auth breakage.
+- [x] **Deleted `.github/workflows/deploy.yml` (2026-07-05)**, after
+      explicit confirmation. GitHub Pages stops receiving new deployments
+      but its last successful build stays published/frozen — Pages doesn't
+      take down content just because the workflow that produced it is gone.
+      GitHub itself remains the source-control repo throughout; only the
+      *hosting* pipeline for the old static site is gone.
+- [x] Updated `ARCHITECTURE.md` §3.3 and §5 to describe Neon as current
+      (done alongside the earlier Phase D commits, before this merge).
+- [ ] Pause (don't delete) the Supabase project — **still deliberately
+      deferred**; this is the one piece of the original rollback net left
+      live. Revisit once daily use on the merged `main`/Vercel/Neon stack
+      has been trusted for a few more days.
 
 ---
 
