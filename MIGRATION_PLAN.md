@@ -526,22 +526,34 @@ There is no scenario in this plan where Supabase itself needs to be
 
 ### Checklist
 
-- [ ] Confirm how you actually access the app today (bookmark/home-screen
-      icon → the exact `*.github.io` URL) so Tier-0/Tier-1 rollback is a
-      known, one-second action, not something to figure out under pressure
-- [ ] Promote this branch's Vercel preview to a **Production** deployment
-      (or merge to `main` and point Vercel's Production target at it —
-      whichever this project is set up for) with Neon/Neon Auth env vars +
-      `ANTHROPIC_API_KEY` (already confirmed working on the branch preview)
-- [ ] Smoke test on the **production** Vercel URL specifically (not just the
-      branch preview): login → one read (Dashboard) → one write (add a
-      transaction or adjustment) → one multi-step transaction (promote a
-      scenario) → one AI call (briefing or command bar)
-- [ ] Once satisfied, switch your actual daily-use bookmark/shortcut from
-      the `*.github.io` URL to the Vercel URL
-- [ ] Leave the Supabase project **paused, not deleted** — and leave
-      `deploy.yml`/GitHub Pages alone for now too, as the Tier-1 safety net,
-      until Phase D
+- [x] Confirmed access: daily-use bookmark was the default `*.github.io` URL
+      (no custom domain).
+- [x] Promoted to Vercel **Production** — done via the dashboard's
+      "Promote to Production" action (not a `main` merge), then switched to
+      **Branch Tracking** (Project Settings → Environments → Production) so
+      every push to `claude/supabase-neon-migration-review-2np75c` now
+      auto-deploys straight to `ai-capital-planning.vercel.app`. All Neon/
+      Neon Auth/`ANTHROPIC_API_KEY` env vars confirmed present for both
+      Production and Preview.
+- [x] Smoke-tested on the production Vercel URL: login, every module's
+      reads, writes across Budget/Credit Cards/Scenarios, a scenario
+      clone + delete, and an AI call — all confirmed working (see Phase D
+      below for the bugs this surfaced and fixed).
+- [x] Switched daily-use to `ai-capital-planning.vercel.app`.
+- [~] **Burn-in decision (2026-07-05): pausing Supabase and retiring the
+      GitHub Pages fallback are both deliberately deferred a few days** so
+      the user can trust the Vercel/Neon stack under real daily use first.
+      Until then:
+      - Supabase project stays live, untouched, unpaused.
+      - `deploy.yml`/GitHub Pages stays as a genuinely *working* Tier-0/1
+        fallback (the old Vite+Supabase app, not just a bookmark) — pausing
+        Supabase would break it, since it needs a live Supabase connection
+        to load any data.
+      - Once trust is established, next: (a) pause the Supabase project
+        (dashboard action, reversible), and (b) replace the GitHub Pages
+        deploy with a redirect to the Vercel URL (a deliberate,
+        harder-to-casually-undo step — explicitly discussed and deferred,
+        not done by accident). Both are the user's call to greenlight.
 
 ## Phase D — Decommission
 
