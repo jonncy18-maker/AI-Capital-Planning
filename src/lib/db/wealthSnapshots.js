@@ -1,31 +1,30 @@
-import { supabase } from '../supabase.js'
+// Neon-backed client seam for wealth_snapshots, fronting
+// app/api/wealth-snapshots/route.js and app/api/wealth-snapshots/[id]/route.js
+// (Neon Auth session cookie via credentials: 'include' — no token handling).
+// `userId` params are kept for signature compatibility with existing callers
+// (Wealth.jsx, contextLoader.js) even though the routes derive the real
+// identity from the session itself.
 
-export async function getWealthSnapshots(userId, limit = 24) {
-  const { data, error } = await supabase
-    .from('wealth_snapshots')
-    .select('*')
-    .eq('user_id', userId)
-    .order('snapshot_date', { ascending: false })
-    .limit(limit)
+async function parseJsonOrThrow(res) {
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+  return body
+}
 
-  if (error) throw error
+export async function getWealthSnapshots(_userId, limit = 24) {
+  const res = await fetch(`/api/wealth-snapshots?limit=${encodeURIComponent(limit)}`, {
+    credentials: 'include',
+  })
+  const data = await parseJsonOrThrow(res)
   return data ?? []
 }
 
-export async function getLatestWealthSnapshot(userId) {
-  const { data, error } = await supabase
-    .from('wealth_snapshots')
-    .select('*')
-    .eq('user_id', userId)
-    .order('snapshot_date', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) throw error
-  return data
+export async function getLatestWealthSnapshot(_userId) {
+  const res = await fetch('/api/wealth-snapshots?latest=true', { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-export async function saveWealthSnapshot(userId, {
+export async function saveWealthSnapshot(_userId, {
   snapshot_date,
   net_worth,
   investment_balance,
@@ -34,10 +33,11 @@ export async function saveWealthSnapshot(userId, {
   liabilities,
   notes,
 }) {
-  const { data, error } = await supabase
-    .from('wealth_snapshots')
-    .insert({
-      user_id: userId,
+  const res = await fetch('/api/wealth-snapshots', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
       snapshot_date,
       net_worth,
       investment_balance: investment_balance ?? null,
@@ -45,15 +45,18 @@ export async function saveWealthSnapshot(userId, {
       other_assets: other_assets ?? null,
       liabilities: liabilities ?? null,
       notes: notes ?? null,
-    })
-    .select()
-    .single()
-
-  if (error) throw error
-  return data
+    }),
+  })
+  return parseJsonOrThrow(res)
 }
 
 export async function deleteWealthSnapshot(id) {
-  const { error } = await supabase.from('wealth_snapshots').delete().eq('id', id)
-  if (error) throw error
+  const res = await fetch(`/api/wealth-snapshots/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body?.error || `Request failed (${res.status})`)
+  }
 }
