@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import '../src/App.css'
-import { supabase } from '../src/lib/supabase.js'
+import { authClient } from '../src/lib/neon/authClient.js'
 import { useAuth } from '../src/lib/auth/useAuth.js'
 import { getProfile, saveProfile } from '../src/lib/db/profile.js'
 import { parseBudgetCSV } from '../src/lib/csv/budgetParser.js'
@@ -100,7 +100,7 @@ export default function AppRoot({ children }) {
   }
 
   function handleSignOut() {
-    supabase.auth.signOut()
+    authClient.signOut()
   }
 
   // --- AppShell logic below ---

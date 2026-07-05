@@ -1,56 +1,36 @@
-import { supabase } from '../supabase.js'
+// Neon-backed client seam for user_profiles, fronting app/api/profile/route.js
+// (Neon Auth session cookie via credentials: 'include' — no token handling).
+// `userId` params are kept for signature compatibility with existing callers
+// (AppRoot.jsx, GrillSession.jsx, PayPeriodPlanner.jsx, contextLoader.js) even
+// though the route derives the real identity from the session itself.
 
-export async function getProfile(userId) {
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
-
-  if (error) throw error
-  return data
+async function parseJsonOrThrow(res) {
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+  return body
 }
 
-export async function saveMinCheckingBalance(userId, amount) {
-  const { error } = await supabase
-    .from('user_profiles')
-    .update({ min_checking_balance: amount, updated_at: new Date().toISOString() })
-    .eq('id', userId)
-  if (error) throw error
+export async function getProfile(_userId) {
+  const res = await fetch('/api/profile', { credentials: 'include' })
+  return parseJsonOrThrow(res)
 }
 
-export async function saveProfile(userId, profile) {
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .upsert({
-      id: userId,
-      focuses: profile.focuses ?? [],
-      commitments: profile.commitments ?? [],
-      planning_horizon: profile.planningHorizon ?? [],
-      period_options: profile.periodOptions ?? [],
-      period_default: profile.periodDefault ?? null,
-      data_path: profile.dataPath ?? profile.data_path ?? null,
-      onboarding_complete: profile.onboardingComplete ?? profile.onboarding_complete ?? false,
-      annual_income: profile.annualIncome ?? null,
-      annual_bonus: profile.annualBonus ?? null,
-      savings_goal_amount: profile.savingsGoalAmount ?? null,
-      savings_goal_pct: profile.savingsGoalPct ?? null,
-      savings_goal_type: profile.savingsGoalType ?? null,
-      tax_profile: profile.taxProfile ?? null,
-      variance_threshold: profile.varianceThreshold ?? 10,
-      bonus_month: profile.bonusMonth ?? null,
-      benefits_amount: profile.benefitsAmount ?? null,
-      benefits_pct: profile.benefitsPct ?? null,
-      four01k_pct: profile.four01kPct ?? null,
-      four01k_on_bonus: profile.four01kOnBonus ?? false,
-      pay_frequency: profile.payFrequency ?? null,
-      pay_day_1: profile.payDay1 ?? null,
-      pay_day_2: profile.payDay2 ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .select()
-    .single()
+export async function saveMinCheckingBalance(_userId, amount) {
+  const res = await fetch('/api/profile', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ minCheckingBalance: amount }),
+  })
+  await parseJsonOrThrow(res)
+}
 
-  if (error) throw error
-  return data
+export async function saveProfile(_userId, profile) {
+  const res = await fetch('/api/profile', {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(profile),
+  })
+  return parseJsonOrThrow(res)
 }

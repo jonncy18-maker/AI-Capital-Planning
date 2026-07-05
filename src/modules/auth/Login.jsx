@@ -1,16 +1,17 @@
 import { useState } from 'react'
-import { supabase } from '../../lib/supabase.js'
+import { authClient } from '../../lib/neon/authClient.js'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
   const [mode, setMode] = useState('signin') // 'signin' | 'signup'
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null) // { type: 'error'|'info', text }
 
-  // Coerce any error shape (Error, Supabase AuthError, plain object, string)
-  // into displayable text. Error subclasses keep message/status/code on
-  // non-enumerable props, so JSON.stringify alone yields "{}" — pull the
+  // Coerce any error shape (Error, Neon Auth/Better Auth error, plain object,
+  // string) into displayable text. Error subclasses keep message/status/code
+  // on non-enumerable props, so JSON.stringify alone yields "{}" — pull the
   // known fields explicitly so the box is never blank/uninformative.
   function readableError(err) {
     if (!err) return ''
@@ -41,8 +42,8 @@ export default function Login() {
     let result
     try {
       result = mode === 'signup'
-        ? await supabase.auth.signUp({ email, password })
-        : await supabase.auth.signInWithPassword({ email, password })
+        ? await authClient.signUp.email({ email, password, name: name || email.split('@')[0] })
+        : await authClient.signIn.email({ email, password })
     } catch (err) {
       // Network/CORS/thrown errors never reach the { error } shape below.
       console.error('[auth] threw:', err)
@@ -51,7 +52,7 @@ export default function Login() {
       return
     }
 
-    const { data, error } = result
+    const { error } = result
     setLoading(false)
 
     if (error) {
@@ -60,17 +61,10 @@ export default function Login() {
       return
     }
 
-    if (mode === 'signup') {
-      // Supabase returns a user with no identities when the email already exists.
-      const alreadyExists = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0
-      if (alreadyExists) {
-        setMessage({ type: 'error', text: 'An account with this email already exists. Try signing in.' })
-      } else if (data?.session) {
-        // Confirmation disabled — signed in immediately; auth listener takes over.
-      } else {
-        setMessage({ type: 'info', text: 'Account created. Check your email to confirm, then sign in.' })
-      }
-    }
+    // Neon Auth's default config has no email-confirmation step (confirmed
+    // during the pilot) — a successful sign-up returns a session cookie
+    // immediately, same as sign-in. useAuth's useSession() picks it up via
+    // its own subscription, so there's nothing further to do here.
   }
 
   const field = {
@@ -119,6 +113,15 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {mode === 'signup' && (
+            <input
+              type="text"
+              placeholder="Name"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              style={field}
+            />
+          )}
           <input
             type="email"
             placeholder="Email"
