@@ -545,18 +545,54 @@ There is no scenario in this plan where Supabase itself needs to be
 
 ## Phase D — Decommission
 
-- [ ] Run the fresh-context audit (`06-post-migration-audit-prompt.md`) as a
-      genuinely new subagent — both the code-reference sweep and the
-      data-path trace variant (this repo has one confirmed history of
-      live-only undocumented state, so don't skip the trace variant)
-- [ ] Fix anything the audit finds
-- [ ] Remove `@supabase/supabase-js` from `package.json`
+- [x] **Fresh-context audit — done (2026-07-05).** A subagent read-only audit
+      found the real remaining gap: 8 AI parser modules under `src/lib/ai/`
+      (`accountParser`, `billParser`, `billAmountsParser`, `creditCardParser`
+      ×2 sites, `categoryMapper`, `suggestBuckets`, `suggestTabMatches`,
+      `grillSession`) still called `supabase.functions.invoke('ai-chat')`
+      directly, bypassing `/api/ai-chat` — silently still hitting the old
+      Supabase edge function. Everything else (db modules, Dashboard/
+      CreditCards, Vite entry files, dead code) was already clean.
+- [x] **Fixed — all 8 AI parsers re-pointed to `/api/ai-chat`** via a new
+      `src/lib/ai/aiChatRaw.js` helper preserving the exact `{ data, error }`
+      contract, so no caller's error handling changed. Commit `65d5eb8`.
+      Live testing then found and fixed 3 more real bugs this surfaced:
+      - Grill session's opening call sent an empty `messages: []` array,
+        which both the old Supabase function and the new route reject
+        (Anthropic requires ≥1 message) — a **pre-existing bug**, not a
+        migration regression (traced via git blame to the original feature
+        commit). Fixed by seeding a minimal kickoff message. Commit `621e9f1`.
+      - An overlapping in-detail "✦ AI" shortcut button in Scenarios was
+        covering the Confirm-delete/Cancel buttons at a lower z-index,
+        making scenario deletion unclickable. Removed (the AI composer is
+        still reachable via "+ New" and when no scenario is selected).
+        Commit `f2e81c5`.
+      - **A systemic FK-cascade bug**: an FK-parity sweep (Supabase vs Neon)
+        found all 15 foreign keys in the schema lost their delete rule
+        during the Phase B0 schema recreation (every `CASCADE`/`SET NULL` on
+        Supabase became `NO ACTION` on Neon), and every DELETE route with
+        child data did a plain single-table delete relying on the dropped
+        cascade — so deleting an account, bill, credit card, budget
+        category, commitment, or scenario with any related data 500'd.
+        Fixed all 6 affected routes atomically (`sql.transaction`),
+        replicating Supabase's exact original semantics. Commits `0c62ca5`,
+        `a800946`.
+- [x] **Removed `@supabase/supabase-js` and `src/lib/supabase.js`** — zero
+      real importers remained (verified twice, before and after the AI
+      parser fix). Also removed: `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` from
+      `.env.example`, the orphaned `app/neon-auth-test/` pilot diagnostic
+      page, and Vite-era `eslint-plugin-react-refresh`. `npm run build`
+      verified to succeed with **zero Supabase env vars set at all**.
+      Commits `ceaa093`, `f0f63df`.
 - [ ] Delete `supabase/` (functions + migrations) after archiving final
-      schema state wherever Neon migrations are tracked going forward
-- [ ] Delete `.github/workflows/deploy.yml` if fully replaced by Vercel's
-      own deploy
+      schema state wherever Neon migrations are tracked going forward —
+      **deliberately not done yet**; kept as historical/rollback reference.
+- [ ] Delete `.github/workflows/deploy.yml` — **deliberately not done**; this
+      is the GitHub Pages/Supabase rollback net (Tier 0/1, see Phase C).
+      Only remove once the Vercel/Neon cutover has been trusted for a while.
 - [ ] Update `ARCHITECTURE.md` §3.3 and §5 to describe Neon as current
-- [ ] Pause (don't delete) the Supabase project for a fallback window
+- [ ] Pause (don't delete) the Supabase project for a fallback window —
+      not done; hold until the rollback net above is also retired
 
 ---
 

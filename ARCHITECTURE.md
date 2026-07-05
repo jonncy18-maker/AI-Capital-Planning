@@ -60,10 +60,13 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
 
 ### 3.3 Platform Architecture
 
-- **Frontend:** React SPA (Vite), responsive at mobile and desktop breakpoints
-- **Backend/Database:** Supabase (PostgreSQL)
-- **AI:** Anthropic API (`claude-sonnet-4-6`), context loaded from Supabase at session start
-- **Deployment:** GitHub Pages (V1 personal use); Netlify Functions proxy added before any public deployment to shield API key
+**Current (post Supabase → Neon migration, 2026-07-05):**
+- **Frontend:** React 19 on Next.js App Router, responsive at mobile and desktop breakpoints
+- **Backend/Database:** Neon (serverless PostgreSQL) via `app/api/**` route handlers — every route does its own `auth.getSession()` check and scopes every query by `user_id` (no RLS layer; the API route is the authorization boundary)
+- **Auth:** Neon Auth (Better Auth), session via an httpOnly cookie; `src/lib/neon/authServer.js`/`authClient.js`
+- **AI:** Anthropic API (model resolved per-family at request time), proxied through `/api/ai-chat` — the key lives server-side only, never shipped to the browser
+- **Deployment:** Vercel (production + branch previews), auto-deploys on push to the tracked branch
+- **Rollback net (temporary):** the pre-migration stack — Vite build + Supabase + Supabase Auth, deployed via `.github/workflows/deploy.yml` to GitHub Pages — is deliberately left running untouched as a fallback until the Neon/Vercel cutover is fully trusted (see `MIGRATION_PLAN.md` Phase C/D). Once retired, `supabase/` and `deploy.yml` will be removed and this section trimmed.
 - **Future:** React Native native app (planned migration, not V1 scope)
 
 ---
@@ -202,7 +205,14 @@ Navigation entry point exists in sidebar. Clicking opens a "Coming Soon" page. U
 
 ## 5. Data Architecture
 
-### 5.1 Supabase Schema (Core Tables)
+*Schema originated on Supabase and was ported table-for-table to Neon during
+the 2026-07 migration (see §3.3, `MIGRATION_PLAN.md`) — every table/column
+below is current on Neon; only the hosting/auth provider changed. FK
+`ON DELETE` behavior (CASCADE/SET NULL) is enforced at the application layer
+in `app/api/**` route handlers rather than the database, since the Phase B0
+schema recreation didn't carry those rules over 1:1.*
+
+### 5.1 Neon Schema (Core Tables)
 
 **transactions**
 ```
