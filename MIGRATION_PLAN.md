@@ -612,10 +612,11 @@ There is no scenario in this plan where Supabase itself needs to be
       *hosting* pipeline for the old static site is gone.
 - [x] Updated `ARCHITECTURE.md` §3.3 and §5 to describe Neon as current
       (done alongside the earlier Phase D commits, before this merge).
-- [ ] Pause (don't delete) the Supabase project — **still deliberately
-      deferred**; this is the one piece of the original rollback net left
-      live. Revisit once daily use on the merged `main`/Vercel/Neon stack
-      has been trusted for a few more days.
+- [x] **Paused the Supabase project (2026-07-05, user action).** Data is
+      preserved, not deleted — the project can be resumed if ever needed.
+      No app code depends on it (verified: `npm run build` succeeds with
+      zero Supabase env vars set). This was the last piece of the original
+      rollback net; the migration is now fully complete end to end.
 
 ---
 
