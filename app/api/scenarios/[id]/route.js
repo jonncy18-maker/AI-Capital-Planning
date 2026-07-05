@@ -113,13 +113,17 @@ export async function DELETE(request, context) {
 
   try {
     const sql = getNeonSql()
-    // WHERE user_id = ${userId} is the authorization check: it guarantees a
-    // user can never delete a row they don't own, even by guessing an id.
-    const rows = await sql`
-      DELETE FROM scenarios
-      WHERE id = ${id} AND user_id = ${userId}
-      RETURNING id
-    `
+    // scenario_adjustments.scenario_id FKs scenarios(id) with NO ACTION on
+    // Neon (the Supabase source had ON DELETE CASCADE, dropped during the
+    // Phase B0 schema recreation), so deleting a scenario that still has
+    // adjustments would raise a foreign-key violation. Delete the adjustments
+    // first, then the scenario, atomically — replicating the cascade the
+    // original relied on. WHERE user_id = ${userId} on both is the
+    // authorization check: a user can never delete rows they don't own.
+    const [, rows] = await sql.transaction([
+      sql`DELETE FROM scenario_adjustments WHERE scenario_id = ${id} AND user_id = ${userId}`,
+      sql`DELETE FROM scenarios WHERE id = ${id} AND user_id = ${userId} RETURNING id`,
+    ])
 
     if (rows.length === 0) {
       return Response.json({ error: 'Scenario not found.' }, { status: 404 })
