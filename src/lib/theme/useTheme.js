@@ -27,10 +27,17 @@ export function useTheme() {
     } catch {
       // ignore storage failures (private mode, etc.)
     }
+    // TEMP theme diagnostic — remove once toggle is confirmed working.
+    console.log('[theme] effect applied →', theme, '| html data-theme =', document.documentElement.getAttribute('data-theme'), '| localStorage =', (() => { try { return localStorage.getItem(STORAGE_KEY) } catch { return 'n/a' } })())
   }, [theme])
 
   const toggleTheme = useCallback(() => {
-    setTheme(t => (t === 'dark' ? 'light' : 'dark'))
+    setTheme(t => {
+      const next = t === 'dark' ? 'light' : 'dark'
+      // TEMP theme diagnostic — remove once toggle is confirmed working.
+      console.log('[theme] toggle clicked:', t, '→', next)
+      return next
+    })
   }, [])
 
   return { theme, toggleTheme }
