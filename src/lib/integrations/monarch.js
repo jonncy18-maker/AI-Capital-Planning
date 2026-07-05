@@ -6,14 +6,12 @@
 // on that here, but the browser cannot talk to Monarch directly — its GraphQL
 // endpoint rejects cross-origin requests and a session token must never live in
 // client JS. So the actual login + transaction pull runs server-side in the
-// `monarch-sync` Supabase Edge Function (see supabase/functions/monarch-sync),
-// which holds the session and returns normalized rows. This module is the thin
-// client seam; it mirrors how sendMessage.js fronts the ai-chat function.
+// `/api/monarch-sync` Vercel route (see app/api/monarch-sync/route.js), which
+// holds the session and returns normalized rows. This module is the thin
+// client seam; it mirrors how sendMessage.js fronts the ai-chat route.
 //
 // The reliable, always-available path remains the Monarch CSV export — this just
-// removes the manual download/upload step when the function is deployed.
-
-import { supabase } from '../supabase.js'
+// removes the manual download/upload step when the route is deployed.
 
 const MONARCH_COLUMNS = [
   'Date', 'Merchant', 'Category', 'Account',
@@ -55,26 +53,40 @@ export async function syncMonarchTransactions({ email, password, mfaCode, since 
     return { status: 'error', message: 'Enter your Monarch email and password to connect.' }
   }
 
-  const { data, error } = await supabase.functions.invoke('monarch-sync', {
-    body: { email, password, mfaCode: mfaCode || null, since: since || null },
-  })
-
-  if (error) {
-    // FunctionsHttpError means the function ran but returned a non-2xx status —
-    // the real error message is in the response body. Try to extract it first.
-    // Any other error type (relay/network) means the function isn't reachable.
-    if (error.context?.json) {
-      try {
-        const body = await error.context.json()
-        if (body?.error) return { status: 'error', message: body.error }
-      } catch {}
-    }
+  let res
+  try {
+    res = await fetch('/api/monarch-sync', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password, mfaCode: mfaCode || null, since: since || null }),
+    })
+  } catch (err) {
     return {
       status: 'gated',
       message:
-        `Could not reach the Monarch sync service: ${error.message}. ` +
-        `This needs the monarch-sync Edge Function deployed ` +
-        `(see supabase/functions/monarch-sync/README.md). ` +
+        `Could not reach the Monarch sync service: ${err.message}. ` +
+        `This needs the monarch-sync API route deployed ` +
+        `(see app/api/monarch-sync/route.js). ` +
+        `Until then, use the Monarch CSV export below.`,
+    }
+  }
+
+  let data = null
+  try {
+    data = await res.json()
+  } catch {}
+
+  if (!res.ok) {
+    // A non-2xx response means the route ran but returned an error — the real
+    // error message is in the response body. Try to extract it first.
+    if (data?.error) return { status: 'error', message: data.error }
+    return {
+      status: 'gated',
+      message:
+        `Could not reach the Monarch sync service: ${res.statusText || `HTTP ${res.status}`}. ` +
+        `This needs the monarch-sync API route deployed ` +
+        `(see app/api/monarch-sync/route.js). ` +
         `Until then, use the Monarch CSV export below.`,
     }
   }
