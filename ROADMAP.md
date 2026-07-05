@@ -8,7 +8,7 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-05 (Phase B1 broad rollout, Wave 2 of 3 committed)
+**Last updated:** 2026-07-05 (Phase B1 broad rollout complete — all 17 modules ported to Neon API routes)
 
 - **Supabase → Neon + Neon Auth + Vercel migration — Phase A′ complete (2026-07-04):**
   - Ran a full assessment against an external Supabase→Neon migration playbook: schema inventory, RLS, auth model, data-access pattern, realtime, edge functions, env vars, build/hosting.
@@ -49,6 +49,14 @@
   - **Two more hardening fixes beyond the source module**, found in `budgetLineItems.js`: `updateLineItemAmount` and `deleteLineItem` filtered only by `id` in Supabase (relying entirely on RLS to block cross-user access) — both routes now also require `AND user_id = ...` and 404 otherwise. Same class of fix as the scenarios hardening in Wave 1.
   - **3 more real Phase B0 schema gaps found and fixed**: grepped every migration for `unique` and cross-checked against Neon's actual `pg_constraint` — `income_actuals`, `tax_brackets`, and `budget_status` were all missing their Supabase unique constraints (same miss as `budget_categories` in Wave 1). Fixed directly on Neon and documented in `supabase/migrations/017_neon_missing_unique_constraints.sql` (bundled with `credit_card_earn_rates`, needed ahead of Wave 3).
   - Wave 3 (`forecast_line_items`, `forecast_overrides`, `credit_cards`, `bills`, plus folding in `Dashboard.jsx`/`CreditCards.jsx`, the two files that bypass the `db/` layer) is next and last.
+
+- **Phase B1 broad rollout, Wave 3 of 3 — committed, rollout complete (2026-07-05):** ported the final 4 modules: `forecast_overrides`, `credit_cards` (+ earn rates/points/redemptions), `bills` (+ `accounts`/`bill_amounts`/`account_balances`), `forecast_line_items`. Commits `71d4caa`, `ef428f2`, `9386448`, `bb2b860`. **This completes the broad rollout — all 17 `src/lib/db/*.js` modules, plus the original `commitments` pilot, now have a parallel Neon-backed API route.**
+  - **2 more real Phase B0 schema gaps found and fixed**: `forecast_overrides(user_id,category_id,budget_year,month)` and, in the bills port, `bill_amounts(bill_id,year,month)` + `account_balances(account_id,year,month,period_half)` — all missing their Supabase unique constraints on Neon, same recurring class of gap as every prior wave. Fixed and documented in `018_neon_bills_unique_constraints.sql` / `019_neon_forecast_overrides_unique_constraint.sql`.
+  - **Several more hardening fixes beyond source**, all following the same pattern (bare-`id` mutations that relied on Supabase RLS, now requiring an explicit `user_id`/ownership check since Neon has none): `deleteCreditCard`, `deleteEarnRate`, `upsertPointRedemption`'s update path, `deletePointRedemption`, `deleteAccount`, `deleteBill`, `updateForecastLineItem`, `deleteForecastLineItem`. The `bills.js` port went further still: `getBillAmountsForBill`/`upsertBillAmount`/`deleteBillAmount` took no `userId` at all in the source, so each now verifies bill ownership via an `EXISTS` join against `bills` before reading or writing.
+  - `credit_cards.settings` (the two `cc_coverage_pct`/`cc_optimization_pct` columns living on `user_profiles`) got its own dedicated endpoint rather than being folded into `app/api/profile/route.js`'s `PUT`, since that route already deliberately excludes those two columns to avoid clobbering them.
+  - `forecast_line_items`' `resetForecastToBudget` (delete + reseed) and `setForecastRate` (delete + rate-fill insert) both run as a single atomic `sql.transaction([...])`, same pattern as `budget_line_items`' `saveBudgetForYear` in Wave 2.
+  - Every new route is build-verified (`npm run build` clean, 51 routes total); none has been live-browser-tested yet beyond the original commitments pilot.
+  - **Remaining, tracked, not blocking**: `cloneScenario` and `budgetCategories.js`'s `getUserGroups`/`getExcludedCategoryNames`/`seedDefaultCategories` (Wave 1 gaps, still open); folding `src/modules/dashboard/Dashboard.jsx` and `src/modules/creditcards/CreditCards.jsx` off their direct Supabase queries onto the new API routes — not started, and out of scope for this rollout (which only builds the parallel Neon layer; the frontend cutover itself is Phase C).
 
 **Previously last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 

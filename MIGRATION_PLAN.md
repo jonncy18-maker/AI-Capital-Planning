@@ -248,14 +248,54 @@ written as `${JSON.stringify(value)}::jsonb`.
     `budget_status` were all missing their Supabase unique constraints on
     Neon. Fixed via `017_neon_missing_unique_constraints.sql` (along with
     `credit_card_earn_rates`, needed for Wave 3).
-- [ ] **Wave 3 (next):** `forecast_line_items`, `forecast_overrides`,
-      `credit_cards` (+ earn rates/points/redemptions), `bills` (+
-      `bill_amounts`/`account_balances`), plus fold in the two files that
-      bypass the `db/` layer today: `src/modules/dashboard/Dashboard.jsx`,
-      `src/modules/creditcards/CreditCards.jsx`
+- [x] **Wave 3 — done, committed (`71d4caa`, `ef428f2`, `9386448`,
+      `bb2b860`):**
+  - `app/api/forecast-overrides/route.js` — GET (joined with
+    `budget_categories`), POST upsert, DELETE; fixed a real missing unique
+    constraint on `(user_id, category_id, budget_year, month)`
+    (`019_neon_forecast_overrides_unique_constraint.sql`)
+  - `app/api/credit-cards/route.js`, `[id]/route.js`, `earn-rates/route.js`,
+    `points/route.js`, `redemptions/route.js` + `[id]/route.js`,
+    `transaction-accounts/route.js`, `settings/route.js` — full CRUD across
+    all 4 credit-card tables plus a dedicated `cc_coverage_pct`/
+    `cc_optimization_pct` settings endpoint (kept separate from
+    `app/api/profile/route.js`, which deliberately excludes those two
+    columns); hardened beyond source on `deleteCreditCard`, `deleteEarnRate`,
+    `upsertPointRedemption`'s update path, and `deletePointRedemption` (all
+    bare-`id` mutations in Supabase, relying on RLS alone)
+  - `app/api/accounts/route.js` + `[id]/route.js`, `app/api/bills/route.js` +
+    `[id]/route.js` + `forecast-amounts/route.js`,
+    `app/api/bill-amounts/route.js` + `[billId]/[year]/[month]/route.js`,
+    `app/api/account-balances/route.js` — full CRUD across `accounts`,
+    `bills`, `bill_amounts`, `account_balances`; hardened beyond source on
+    `deleteAccount`/`deleteBill` (bare-id) and on every `bill_amounts`
+    operation (source took no `userId` at all — added an `EXISTS` ownership
+    join against `bills`); `pay_day` is recomputed server-side from
+    `pay_same_as_due` rather than trusted from the client. Fixed 2 more real
+    missing unique constraints (`bill_amounts(bill_id,year,month)`,
+    `account_balances(account_id,year,month,period_half)`,
+    `018_neon_bills_unique_constraints.sql`)
+  - `app/api/forecast-line-items/route.js`, `[id]/route.js`, `seed/route.js`,
+    `reset/route.js`, `by-label/route.js`, `set-rate/route.js` — full CRUD +
+    seed/reset/rate-fill operations; hardened beyond source on
+    `updateForecastLineItem`/`deleteForecastLineItem` (bare-id); reads
+    `budget_line_items` directly via SQL join rather than an internal HTTP
+    round-trip; `resetForecastToBudget`'s delete-then-reseed and
+    `setForecastRate`'s delete-then-insert both run as a single atomic
+    `sql.transaction([...])`
+  - **This completes the broad rollout — all 17 `src/lib/db/*.js` modules
+    (plus the `commitments` pilot) now have a parallel Neon-backed API
+    route.** `src/lib/db/*.js` and every Supabase-backed module remain fully
+    intact and untouched — the app still runs on Supabase in production;
+    this rollout only built the new Neon API layer alongside it.
 - [ ] Follow-up gaps tracked, not blocking: `cloneScenario`,
       `getUserGroups`/`getExcludedCategoryNames`/`seedDefaultCategories`
       (`src/lib/db/budgetCategories.js`)
+- [ ] Fold in the two files that bypass the `db/` layer today and query
+      Supabase directly: `src/modules/dashboard/Dashboard.jsx`,
+      `src/modules/creditcards/CreditCards.jsx` — not yet started; these
+      still read/write Supabase directly, same as every other module's UI
+      layer (frontend cutover to the Neon API is Phase C, not this rollout)
 - [x] ~~Public whitelist endpoint~~ — not needed; no unauthenticated read
       paths exist anywhere in this app
 
@@ -263,9 +303,12 @@ written as `${JSON.stringify(value)}::jsonb`.
 - [x] Pilot module (commitments): auth check + query pattern built,
       code-reviewed, and confirmed working live end-to-end in browser
       (2026-07-04) — create + list round trip against Neon.
-- [~] Wave 1 modules built and build-verified (`npm run build` clean); live
-      browser verification still outstanding beyond the original pilot.
+- [x] All 17 modules (Waves 1-3) built and build-verified (`npm run build`
+      clean each time); live browser verification still outstanding beyond
+      the original pilot — deferred to Phase C cutover testing.
 - [ ] Every module renders from Neon, visually identical to Supabase version
+      — blocked on the frontend actually switching to the new API routes
+      (currently additive-only; UI still reads Supabase)
 - [ ] A request with no/forged token 403s (not a silent broad read)
 
 ## Phase B2 — Write path
