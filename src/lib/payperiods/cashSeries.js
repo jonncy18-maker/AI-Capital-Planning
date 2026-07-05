@@ -7,7 +7,7 @@ import {
 } from '../db/bills.js'
 import { getBudgetLineItems } from '../db/budgetLineItems.js'
 import { getForecastLineItems } from '../db/forecastLineItems.js'
-import { getIncomeActualsRange } from '../db/income.js'
+import { getIncomeActualsRange, getIncomeTransactions } from '../db/income.js'
 import { getExpenseActualsByCategories } from '../db/transactions.js'
 import { estimateNet } from '../db/taxBrackets.js'
 import { monthlyNetForecast } from './incomeForecast.js'
@@ -169,12 +169,15 @@ export async function loadOutflowSeries({
 // Compute per-month cash inflow. Resolution per month:
 //   stored actual (pulled from transactions or manually adjusted)        →
 //   else, current + future months: net salary/bonus forecast from Settings →
-//   else (an elapsed past month that wasn't pulled): 0.
+//   else, an elapsed past month with no stored actual: live sum of income
+//     transactions for that month (same filter "Pull income from history" uses,
+//     just computed on the fly instead of requiring the user to click it) →
+//   else (no income transactions found either): 0.
 // The current month is forecast, not history — it's still in progress, so pulling
 // partial month-to-date income would understate it.
 // Returns the slots array, each with { inflow, inflowIsActual, inflowKind }.
-//   inflowKind: 'actual' | 'forecast' | 'none'
-export async function loadInflowSeries({ userId, profile, now = new Date() }) {
+//   inflowKind: 'actual' | 'forecast' | 'live' | 'none'
+export async function loadInflowSeries({ userId, profile, budgetCategories = [], now = new Date() }) {
   const { slots } = buildMonthSlots(now)
   const startYear = slots[0].year
   const endYear = slots[slots.length - 1].year
@@ -185,6 +188,27 @@ export async function loadInflowSeries({ userId, profile, now = new Date() }) {
   for (const row of rawActuals) {
     if (!actualIndex[row.year]) actualIndex[row.year] = {}
     actualIndex[row.year][row.month] = Number(row.amount)
+  }
+
+  // Live fallback for elapsed past months with no stored actual: sum income
+  // transactions directly, same category exclusions as the manual pull.
+  const unresolvedPast = slots.filter(s => !s.isFuture && !s.isCurrent && actualIndex[s.year]?.[s.month] == null)
+  const liveIndex = {}
+  if (unresolvedPast.length > 0) {
+    const excludedSet = new Set((budgetCategories ?? []).filter(c => c.exclude_from_totals).map(c => c.category))
+    const first = unresolvedPast[0]
+    const last = unresolvedPast[unresolvedPast.length - 1]
+    const startDate = `${first.year}-${String(first.month).padStart(2, '0')}-01`
+    const lastDay = new Date(last.year, last.month, 0).getDate()
+    const endDate = `${last.year}-${String(last.month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    const txns = await getIncomeTransactions(userId, startDate, endDate)
+    for (const t of txns) {
+      if (excludedSet.has(t.category)) continue
+      const d = new Date(t.date)
+      const y = d.getFullYear(), m = d.getMonth() + 1
+      if (!liveIndex[y]) liveIndex[y] = {}
+      liveIndex[y][m] = (liveIndex[y][m] ?? 0) + Number(t.amount)
+    }
   }
 
   // Settings-derived net forecast, per year the current+future window spans.
@@ -213,6 +237,7 @@ export async function loadInflowSeries({ userId, profile, now = new Date() }) {
       const fc = forecastByYear[slot.year]?.[slot.month - 1] ?? 0
       return { ...slot, inflow: fc, inflowIsActual: false, inflowKind: fc > 0 ? 'forecast' : 'none' }
     }
-    return { ...slot, inflow: 0, inflowIsActual: false, inflowKind: 'none' }
+    const live = liveIndex[slot.year]?.[slot.month] ?? 0
+    return { ...slot, inflow: live, inflowIsActual: false, inflowKind: live > 0 ? 'live' : 'none' }
   })
 }
