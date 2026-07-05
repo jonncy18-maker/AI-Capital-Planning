@@ -10,15 +10,22 @@ export async function GET() {
 
   try {
     const sql = getNeonSql()
+    // Application-level equivalent of Supabase's handle_new_user() trigger
+    // (supabase/migrations/002_fix_new_user_trigger.sql: `insert into
+    // user_profiles (id) values (new.id) on conflict (id) do nothing`,
+    // fired after every auth.users insert). Neon Auth has no equivalent
+    // trigger hook available on user creation, so the row is ensured here
+    // instead, on first authenticated read — GET /api/profile is the first
+    // thing the app calls after login (Login → Onboarding gates on
+    // onboarding_complete from this same row). Idempotent: a no-op for an
+    // existing user.
+    await sql`INSERT INTO user_profiles (id) VALUES (${userId}) ON CONFLICT (id) DO NOTHING`
     // id IS the PK here (no separate user_id column) — this is both the
     // lookup and the authorization boundary in one condition.
     const [row] = await sql`
       SELECT * FROM user_profiles WHERE id = ${userId}
     `
-    // Mirrors src/lib/db/profile.js#getProfile: a plain select with no
-    // .single() error-swallowing — a fresh signup with no row yet just
-    // gets null back, not a 404.
-    return Response.json(row ?? null)
+    return Response.json(row)
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 })
   }
