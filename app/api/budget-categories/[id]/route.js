@@ -101,13 +101,20 @@ export async function DELETE(request, context) {
 
   try {
     const sql = getNeonSql()
-    // WHERE user_id = ${userId} is the authorization check: it guarantees a
-    // user can never delete a row they don't own, even by guessing an id.
-    const rows = await sql`
-      DELETE FROM budget_categories
-      WHERE id = ${id} AND user_id = ${userId}
-      RETURNING id
-    `
+    // The Supabase source had budget_line_items/forecast_line_items/
+    // forecast_overrides/scenario_adjustments.category_id ON DELETE CASCADE,
+    // and bills.forecast_category_id ON DELETE SET NULL — all dropped to
+    // NO ACTION during the Neon schema recreation. A plain DELETE here would
+    // foreign-key-violate the moment the category has any budget/forecast
+    // lines, overrides, scenario adjustments, or a linked bill.
+    const [, , , , , rows] = await sql.transaction([
+      sql`DELETE FROM budget_line_items WHERE category_id = ${id} AND user_id = ${userId}`,
+      sql`DELETE FROM forecast_line_items WHERE category_id = ${id} AND user_id = ${userId}`,
+      sql`DELETE FROM forecast_overrides WHERE category_id = ${id} AND user_id = ${userId}`,
+      sql`DELETE FROM scenario_adjustments WHERE category_id = ${id} AND user_id = ${userId}`,
+      sql`UPDATE bills SET forecast_category_id = NULL WHERE forecast_category_id = ${id} AND user_id = ${userId}`,
+      sql`DELETE FROM budget_categories WHERE id = ${id} AND user_id = ${userId} RETURNING id`,
+    ])
 
     if (rows.length === 0) {
       return Response.json({ error: 'Budget category not found.' }, { status: 404 })

@@ -113,15 +113,17 @@ export async function DELETE(request, context) {
 
   try {
     const sql = getNeonSql()
-    // scenario_adjustments.scenario_id FKs scenarios(id) with NO ACTION on
-    // Neon (the Supabase source had ON DELETE CASCADE, dropped during the
-    // Phase B0 schema recreation), so deleting a scenario that still has
-    // adjustments would raise a foreign-key violation. Delete the adjustments
-    // first, then the scenario, atomically — replicating the cascade the
-    // original relied on. WHERE user_id = ${userId} on both is the
-    // authorization check: a user can never delete rows they don't own.
-    const [, rows] = await sql.transaction([
+    // scenario_adjustments.scenario_id and scenarios.parent_baseline both FK
+    // scenarios(id) with NO ACTION on Neon (the Supabase source had
+    // adjustments ON DELETE CASCADE and parent_baseline ON DELETE SET NULL,
+    // both dropped during the Phase B0 schema recreation), so deleting a
+    // scenario that still has adjustments, or that another scenario clones
+    // from as its parent_baseline, would raise a foreign-key violation.
+    // Replicate both atomically. WHERE user_id = ${userId} throughout is the
+    // authorization check: a user can never touch rows they don't own.
+    const [, , rows] = await sql.transaction([
       sql`DELETE FROM scenario_adjustments WHERE scenario_id = ${id} AND user_id = ${userId}`,
+      sql`UPDATE scenarios SET parent_baseline = NULL WHERE parent_baseline = ${id} AND user_id = ${userId}`,
       sql`DELETE FROM scenarios WHERE id = ${id} AND user_id = ${userId} RETURNING id`,
     ])
 

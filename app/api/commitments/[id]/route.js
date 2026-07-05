@@ -105,13 +105,14 @@ export async function DELETE(request, context) {
 
   try {
     const sql = getNeonSql()
-    // WHERE user_id = ${userId} is the authorization check: it guarantees a
-    // user can never delete a row they don't own, even by guessing an id.
-    const rows = await sql`
-      DELETE FROM commitments
-      WHERE id = ${id} AND user_id = ${userId}
-      RETURNING id
-    `
+    // The Supabase source had budget_line_items.commitment_id ON DELETE SET
+    // NULL, dropped to NO ACTION during the Neon schema recreation. A plain
+    // DELETE here would foreign-key-violate the moment a budget line item
+    // still references this commitment.
+    const [, rows] = await sql.transaction([
+      sql`UPDATE budget_line_items SET commitment_id = NULL WHERE commitment_id = ${id} AND user_id = ${userId}`,
+      sql`DELETE FROM commitments WHERE id = ${id} AND user_id = ${userId} RETURNING id`,
+    ])
 
     if (rows.length === 0) {
       return Response.json({ error: 'Commitment not found.' }, { status: 404 })

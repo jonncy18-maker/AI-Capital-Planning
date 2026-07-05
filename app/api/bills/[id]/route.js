@@ -15,11 +15,13 @@ export async function DELETE(request, context) {
 
   try {
     const sql = getNeonSql()
-    const rows = await sql`
-      DELETE FROM bills
-      WHERE id = ${id} AND user_id = ${userId}
-      RETURNING id
-    `
+    // The Supabase source had bill_amounts.bill_id ON DELETE CASCADE, dropped
+    // to NO ACTION during the Neon schema recreation, so a plain DELETE here
+    // would foreign-key-violate the moment the bill has any amount rows.
+    const [, rows] = await sql.transaction([
+      sql`DELETE FROM bill_amounts WHERE bill_id = ${id} AND user_id = ${userId}`,
+      sql`DELETE FROM bills WHERE id = ${id} AND user_id = ${userId} RETURNING id`,
+    ])
 
     if (rows.length === 0) {
       return Response.json({ error: 'Bill not found.' }, { status: 404 })
