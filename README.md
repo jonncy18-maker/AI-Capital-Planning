@@ -62,12 +62,8 @@ trustworthy build. Roughly in order of leverage:
 5. **Money precision.** Currency is JS floats with `Math.round` scattered across
    modules; over many months/categories this drifts. Move to integer cents or a
    single rounding seam.
-6. **Pin the AI model.** `resolveModel` always floats to the newest model. For a
-   financial product that's a silent behavior-change risk (tool-use / JSON output
-   can shift) — pin and upgrade deliberately, spot-checking tool calls and
-   `suggestBuckets` JSON after each bump.
-7. **Stop swallowing errors.** Many `.catch(() => [])` hide failures; finance
+6. **Stop swallowing errors.** Many `.catch(() => [])` hide failures; finance
    needs surfaced errors plus basic telemetry/observability.
-8. **Data-source consistency.** The dashboard chart fetches full-year transactions
+7. **Data-source consistency.** The dashboard chart fetches full-year transactions
    separately from the trailing-12-month AI context, and Monarch↔CSV dedup leans on
    merchant/account strings matching. Nail down these correctness edges.

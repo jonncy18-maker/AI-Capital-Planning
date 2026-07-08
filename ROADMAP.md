@@ -276,15 +276,16 @@
 ~~**Add React error boundary**~~ — done, Phase 11. ✓
 ~~**Deploy + verify `ai-chat`**~~ — superseded by the Neon/Vercel migration; `/api/ai-chat` confirmed live. ✓
 
+~~**Pin the AI model version**~~ — decided against (2026-07-08): `resolveModel()` (`app/api/ai-chat/route.js`) is kept as-is, resolving to the newest release within a named family (`sonnet`/`haiku`). The family is the intentional pin; the exact version is meant to float so the app always runs on Anthropic's latest release for that family.
+~~**Verify income forecast math**~~ — confirmed good (2026-07-08). ✓
+
 **Reliability (current priority — see `ARCHITECTURE.md` §10 hardening backlog)**
-1. **Pin the AI model version** — `resolveModel()` (`app/api/ai-chat/route.js`) auto-adopts the newest Claude release in each family every 6 hours; pin an explicit model string and upgrade deliberately instead.
-2. **Add Vitest unit tests** for pure modeling functions — `widgetData.js`, `patternAnalyzer.js`, `schedule.js`, scenario delta math.
-3. **Move currency math to integer cents** — dollar amounts are currently JS floats throughout; no visible bug yet, but a known rounding-error risk as data volume grows.
-4. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars match hand-calculated take-home.
+1. **Add Vitest unit tests** for pure modeling functions — `widgetData.js`, `patternAnalyzer.js`, `schedule.js`, scenario delta math.
+2. **Move currency math to integer cents** — dollar amounts are currently JS floats throughout; no visible bug yet, but a known rounding-error risk as data volume grows.
 
 **Polish**
-5. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile.
-6. **Make the repo public** — held from Phase 11, now that the AI proxy/key handling is confirmed solid post-migration.
+3. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile. **In progress (2026-07-08):** dashboard has a slight horizontal scroll on mobile (should fit edge-to-edge); Forecast module's mobile view (stacked month blocks) is under review for a better layout.
+4. **Make the repo public** — held from Phase 11, now that the AI proxy/key handling is confirmed solid post-migration.
 
 ~~**Transactions backfill**~~ — resolved via the live browser-verification re-upload (2026-07-05); no gap worth closing. ✓
 ~~**Security cleanup**~~ — `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from build workflow and `.env`; GitHub secret confirmed empty. ✓
