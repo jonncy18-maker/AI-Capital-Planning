@@ -3,7 +3,7 @@ import { auth } from '../../../src/lib/neon/authServer.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/forecastOverrides.js#getForecastOverrides returns via
-// Supabase's `*, budget_categories(id, category, "group", type)` embedded
+// the original `*, budget_categories(id, category, "group", type)` embedded
 // select. Same pattern as app/api/budget-line-items/route.js#shapeLineItem.
 function shapeOverride(row) {
   const { cat_id, cat_category, cat_group, cat_type, ...rest } = row
@@ -56,7 +56,7 @@ export async function GET(request) {
 // Body: { categoryId, year, month, amount, note }
 // Mirrors src/lib/db/forecastOverrides.js#upsertForecastOverride: upsert on
 // the (user_id, category_id, budget_year, month) unique constraint (added to
-// Neon via supabase/migrations/018_neon_forecast_overrides_unique_constraint.sql,
+// Neon via db/migrations/018_neon_forecast_overrides_unique_constraint.sql,
 // since it was missing from the original Neon schema recovery). Unlike the
 // source's fire-and-forget upsert, this route returns the resulting row.
 export async function POST(request) {

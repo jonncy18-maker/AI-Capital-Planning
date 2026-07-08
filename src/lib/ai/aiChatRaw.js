@@ -1,6 +1,6 @@
 // Raw client for the `/api/ai-chat` Vercel route (app/api/ai-chat/route.js)
-// that preserves the exact return contract of the old
-// `supabase.functions.invoke('ai-chat', { body })` — it resolves to
+// that preserves the exact return contract of the original edge-function
+// client's `invoke('ai-chat', { body })` — it resolves to
 // `{ data, error }`, where `data` is the parsed JSON response and `error` is
 // non-null only on a transport/HTTP failure. The AI parser modules
 // (accountParser, billParser, creditCardParser, categoryMapper, …) destructure
@@ -19,7 +19,7 @@ export async function invokeAIChatRaw(body) {
       body: JSON.stringify(body),
     })
   } catch (err) {
-    // Network/CORS failure — mirror supabase-js, which surfaces this as `error`.
+    // Network/CORS failure — mirrors the old client's error shape, which surfaces this as `error`.
     return { data: null, error: err }
   }
 

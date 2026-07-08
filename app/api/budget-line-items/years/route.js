@@ -3,9 +3,9 @@ import { auth } from '../../../../src/lib/neon/authServer.js'
 
 // GET /api/budget-line-items/years
 // Mirrors src/lib/db/budgetLineItems.js#getBudgetYears: distinct sorted list
-// of budget_year values for the user. Neon has no default row cap (unlike
-// Supabase's 1,000-row page limit), so a single DISTINCT query covers this
-// without the source's manual paging loop.
+// of budget_year values for the user. Neon has no default row cap, so a
+// single DISTINCT query covers this without the source's manual paging loop
+// (a 1,000-row page limit would have required one).
 export async function GET() {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {

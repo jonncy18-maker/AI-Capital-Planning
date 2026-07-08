@@ -5,7 +5,7 @@ import { auth } from '../../../../src/lib/neon/authServer.js'
 // Mirrors src/lib/db/transactions.js#getRecentTransactions: summary-level
 // columns for AI context, defaults to a trailing year (365 days), newest
 // first. Neon has no default row cap, so no paging loop is needed here
-// (the Supabase version paged in chunks of 1,000 to work around that cap).
+// (the original version paged in chunks of 1,000 to work around that cap).
 export async function GET(request) {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {

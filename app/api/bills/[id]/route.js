@@ -2,8 +2,9 @@ import { getNeonSql } from '../../../../src/lib/neon/client.js'
 import { auth } from '../../../../src/lib/neon/authServer.js'
 
 // Mirrors src/lib/db/bills.js#deleteBill. Hardened: the source only filters
-// by `id` (relying on Supabase RLS) — here we add an explicit user_id check
-// since Neon has no RLS layer to fall back on.
+// by `id` (the original schema relied on RLS to prevent cross-user access) —
+// here we add an explicit user_id check since Neon has no RLS layer to fall
+// back on.
 export async function DELETE(request, context) {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {
@@ -15,7 +16,7 @@ export async function DELETE(request, context) {
 
   try {
     const sql = getNeonSql()
-    // The Supabase source had bill_amounts.bill_id ON DELETE CASCADE, dropped
+    // The original schema had bill_amounts.bill_id ON DELETE CASCADE, dropped
     // to NO ACTION during the Neon schema recreation, so a plain DELETE here
     // would foreign-key-violate the moment the bill has any amount rows.
     const [, rows] = await sql.transaction([

@@ -766,7 +766,7 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
       // choices made on the unmapped screen (new choices win on overlap).
       const mappedRows = applyMappings(rows, { ...knownMap, ...customMappings })
 
-      // Import to Supabase
+      // Import to the database
       const { inserted, skipped } = await importTransactions(userId, mappedRows)
 
       // Log the import

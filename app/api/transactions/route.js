@@ -27,9 +27,9 @@ export async function GET(request) {
 
   try {
     const sql = getNeonSql()
-    // Neon has no default row cap (unlike Supabase's 1,000-row page limit),
-    // so a single filtered query with an explicit LIMIT covers this function
-    // without the paging loop the Supabase version needed.
+    // Neon has no default row cap, so a single filtered query with an explicit
+    // LIMIT covers this function without a paging loop (a 1,000-row page limit
+    // would have required one).
     const rows = await sql`
       SELECT * FROM transactions
       WHERE user_id = ${userId}
@@ -50,7 +50,7 @@ export async function GET(request) {
 //   originalStatement, notes, owner, importSource }, ...] }
 // Mirrors src/lib/db/transactions.js#importTransactions: bulk insert with
 // dedup via the (user_id, dedup_key) unique constraint. Uses
-// INSERT ... ON CONFLICT DO NOTHING (rather than Supabase's
+// INSERT ... ON CONFLICT DO NOTHING (rather than the original
 // count-before/count-after) since RETURNING gives an exact inserted count
 // directly. Batches of 500 via jsonb_to_recordset to match the source
 // file's batching and avoid oversized statements.

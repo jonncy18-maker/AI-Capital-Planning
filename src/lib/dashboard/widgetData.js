@@ -1,5 +1,5 @@
 // Derives dashboard widget data from the loaded AI context. Pure functions so
-// widgets render deterministically from Supabase data with zero AI token cost.
+// widgets render deterministically from database data with zero AI token cost.
 
 import { aggregateCommitmentsForYear, commitmentMonthlyDemand } from '../commitments/schedule.js'
 

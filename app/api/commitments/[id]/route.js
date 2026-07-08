@@ -105,7 +105,7 @@ export async function DELETE(request, context) {
 
   try {
     const sql = getNeonSql()
-    // The Supabase source had budget_line_items.commitment_id ON DELETE SET
+    // The original schema had budget_line_items.commitment_id ON DELETE SET
     // NULL, dropped to NO ACTION during the Neon schema recreation. A plain
     // DELETE here would foreign-key-violate the moment a budget line item
     // still references this commitment.

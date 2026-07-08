@@ -47,7 +47,7 @@ Assume a sophisticated user. No hand-holding, no beginner guardrails in V1. The 
 The app has two coexisting layers:
 
 **Dashboard Layer (deterministic)**
-Traditional UI — widgets, sliders, toggles, charts, assumption inputs. Renders directly from Supabase. Zero AI token cost. Fast, tactile, always available. The user can interact entirely without invoking the AI.
+Traditional UI — widgets, sliders, toggles, charts, assumption inputs. Renders directly from Neon. Zero AI token cost. Fast, tactile, always available. The user can interact entirely without invoking the AI.
 
 **AI Layer (conversational)**
 The AI acts *on* the dashboard — it doesn't replace it. User asks a question via the command bar; the AI moves levers, surfaces a scenario widget, and delivers a short narrative answer. The dashboard updates to reflect the AI's output. Chat history is accessible but secondary.
@@ -89,12 +89,12 @@ The default landing screen after login. Widget canvas with drag-to-rearrange con
 
 **Layout configurability:** Drag-to-reorder, show/hide per card, collapse/expand per card (chevron in each card header), global Collapse All / Expand All. All layout state persisted to localStorage.
 
-**AI-generated widgets:** Savable as custom widgets. Generated once (one token cost), then rendered deterministically from Supabase like any pre-defined widget.
+**AI-generated widgets:** Savable as custom widgets. Generated once (one token cost), then rendered deterministically from Neon like any pre-defined widget.
 
 **Command Bar:** Persistent, context-aware input that follows the user across all modules. On desktop: bottom-of-canvas input bar. On mobile: floating action button (FAB) that expands to a bottom sheet. AI responses manifest as widgets or cards in the canvas — not as a separate chat screen.
 
 ### 4.2 Cash Flow Timing
-Month-by-month view of when money actually moves. Surfaces large and irregular expenses before they arrive. Powered entirely by the Non-Monthly commitment structure in Supabase — no AI required to render.
+Month-by-month view of when money actually moves. Surfaces large and irregular expenses before they arrive. Powered entirely by the Non-Monthly commitment structure in Neon — no AI required to render.
 
 Key views:
 - 12-month rolling cash demand calendar
@@ -132,7 +132,7 @@ The core decision engine. Where the user goes to answer "what happens if" questi
 Replaces the manual spreadsheet process. AI-guided session that generates the month-by-month cash flow schedule from historical transaction data and user-confirmed commitments.
 
 **Build flow:**
-1. AI ingests last 12–24 months of transaction history from Supabase
+1. AI ingests last 12–24 months of transaction history from Neon
 2. AI identifies recurring patterns by category and type (Fixed, Flexible, Non-Monthly)
 3. AI surfaces non-monthly items and asks timing questions conversationally: "Your cruise final payment hit September last year — is that timing the same for next year?"
 4. User confirms, adjusts, or overrides through conversation or direct input
@@ -333,7 +333,7 @@ updated_at          timestamptz
 
 ### 5.1.1 Recovered Tables (existed live only, never committed)
 
-Discovered during Supabase → Neon migration assessment (2026-07-04): 5 tables were created directly in the Supabase SQL editor and queried by the app, but never had a `CREATE TABLE` in any committed migration — only later `ALTER TABLE` statements referenced them. Recovered from live introspection and committed as `supabase/migrations/015_recover_undocumented_tables.sql`. Live row counts as of the audit noted in parens.
+Discovered during Supabase → Neon migration assessment (2026-07-04): 5 tables were created directly in the Supabase SQL editor and queried by the app, but never had a `CREATE TABLE` in any committed migration — only later `ALTER TABLE` statements referenced them. Recovered from live introspection and committed as `db/migrations/015_recover_undocumented_tables.sql`. Live row counts as of the audit noted in parens.
 
 **accounts** (6 rows) — bank/investment accounts (`checking` | `savings` | `investment` | `other`), one flagged `is_primary_checking`.
 
@@ -349,7 +349,7 @@ All five carry `user_id → auth.users(id)` and the same `for all using (user_id
 
 ### 5.2 AI Context Strategy
 
-At session start, the app automatically loads the following from Supabase into the AI's context window:
+At session start, the app automatically loads the following from Neon into the AI's context window:
 
 - Trailing 12 months of transactions (summary level, not full row detail) — a full annual cycle so the AI captures seasonality and annual bills rather than anchoring to a rolling quarter
 - Full budget_categories table (targets and types)
@@ -364,9 +364,9 @@ This gives the AI enough context to answer any decision question without requiri
 
 **Current-year income/expense projection in context** *(added 2026-06-23):* `buildContextBrief` now computes the same current-year projection as the Income vs. Expenses dashboard widget: YTD actuals from `yearTxns` (Jan–Dec, current year) + salary/budget forecast for remaining months via `incomeVsExpenses()`. This ensures AI briefings quote the same income and expense figures the user sees on screen. The command bar path still uses `ctx.transactions` (trailing 365 days); this is a known gap to resolve.
 
-**yearTxns threading** *(added 2026-06-23):* The dashboard `BriefingWidget` now passes `yearTxns` (the same fresh Jan–Dec slice the widgets use) into `sendAIMessage` → `buildContextBrief`, bypassing `ctx.transactions` which is loaded once at session start and subject to the Supabase 1000-row default limit on the trailing-365-day window.
+**yearTxns threading** *(added 2026-06-23):* The dashboard `BriefingWidget` now passes `yearTxns` (the same fresh Jan–Dec slice the widgets use) into `sendAIMessage` → `buildContextBrief`, bypassing `ctx.transactions` which is loaded once at session start and subject to a 1,000-row default limit on the trailing-365-day window.
 
-**Supabase query pagination** *(added 2026-06-23):* All DB helper functions that could realistically return >1000 rows now use a `.range()`-based pagination loop. The 1000-row default limit is silent (no error, no warning) — it simply returns a truncated result set. Affected functions: `getRecentTransactions`, `getTransactionsByMonth`, `getTransactionsForYear`, `getDistinctTransactionAccounts`, `getIncomeTransactions`, `getBudgetLineItems`, `getBudgetYears`, `getBillAmountsForBill`, `getBillAmountsRange`. Low-volume tables (categories, commitments, scenarios, snapshots, etc.) are left with default limits.
+**Query pagination (1,000-row default limit)** *(added 2026-06-23):* All DB helper functions that could realistically return >1000 rows now use a `.range()`-based pagination loop. The original backend's 1,000-row default limit was silent (no error, no warning) — it simply returned a truncated result set. Affected functions: `getRecentTransactions`, `getTransactionsByMonth`, `getTransactionsForYear`, `getDistinctTransactionAccounts`, `getIncomeTransactions`, `getBudgetLineItems`, `getBudgetYears`, `getBillAmountsForBill`, `getBillAmountsRange`. Low-volume tables (categories, commitments, scenarios, snapshots, etc.) are left with default limits.
 
 #### 5.2.1 AI Prompt Stack
 
@@ -374,7 +374,7 @@ All AI calls are assembled from four layers in this order:
 
 1. **Main persona** (`sendMessage.js` → `SYSTEM_PROMPT`) — the assistant's core identity, reasoning style, clarification rules, and financial domain instructions. Appended to every single AI call.
 
-2. **Context brief** (`contextLoader.js` → `buildContextBrief()`) — the user's live financial picture: transactions, budget targets, commitments, scenarios, salary profile. Regenerated per call from Supabase data.
+2. **Context brief** (`contextLoader.js` → `buildContextBrief()`) — the user's live financial picture: transactions, budget targets, commitments, scenarios, salary profile. Regenerated per call from Neon data.
 
 3. **systemExtra** (`*.prompts.js` files) — call-specific instructions appended for a given agent or capability. Examples: category name hints for `create_scenario`, existing-adjustment context for `add_adjustment`, phase instructions for the Grill Session interview.
 
@@ -423,7 +423,7 @@ The parser maps Monarch's Category directly to `budget_categories.category`. Gro
 
 ## 7. Onboarding Flow
 
-1. **Login** (auth via Supabase)
+1. **Login** (auth via Neon Auth)
 2. **Welcome screen** — app detects no data, surfaces greeting
 3. **Priority mapping** — AI asks 3–5 questions to understand the user's financial priorities and commitment types
 4. **CSV upload** — user uploads 12–24 months of transaction history

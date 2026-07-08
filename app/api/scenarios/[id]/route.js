@@ -114,7 +114,7 @@ export async function DELETE(request, context) {
   try {
     const sql = getNeonSql()
     // scenario_adjustments.scenario_id and scenarios.parent_baseline both FK
-    // scenarios(id) with NO ACTION on Neon (the Supabase source had
+    // scenarios(id) with NO ACTION on Neon (the original schema had
     // adjustments ON DELETE CASCADE and parent_baseline ON DELETE SET NULL,
     // both dropped during the Phase B0 schema recreation), so deleting a
     // scenario that still has adjustments, or that another scenario clones

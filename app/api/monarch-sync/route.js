@@ -1,20 +1,20 @@
 import { auth } from '../../../src/lib/neon/authServer.js'
 
-// Next.js port of supabase/functions/monarch-sync (Deno edge function).
+// Next.js port of db/functions/monarch-sync (Deno edge function).
 // Pulls transactions from Monarch Money's private GraphQL API server-side —
 // Monarch's endpoint isn't CORS-enabled and the session token must never
 // live in browser JS. UNOFFICIAL, may break if Monarch changes its schema;
 // the Monarch CSV export remains the supported fallback (see
 // src/lib/integrations/monarch.js).
 //
-// The Supabase version relied on the platform gateway to verify the caller's
+// The original edge function relied on the platform gateway to verify the caller's
 // JWT before invocation. Neon Auth has no equivalent gateway, so this route
 // does the same check itself, matching every other route in this migration
 // — this gates who can trigger an outbound Monarch login attempt through
 // this server, independent of the Monarch credentials themselves.
 //
 // Invoked from src/lib/integrations/monarch.js#syncMonarchTransactions.
-// Request/response shape unchanged from the Supabase version: { email,
+// Request/response shape unchanged from the original version: { email,
 // password, mfaCode, since } in, { transactions, count } (or { error }) out.
 
 const MONARCH_GRAPHQL = 'https://api.monarchmoney.com/graphql'

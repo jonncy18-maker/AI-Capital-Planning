@@ -6,8 +6,8 @@ import { auth } from '../../../src/lib/neon/authServer.js'
 //   1. ?billId=            -> mirrors getBillAmountsForBill(billId)
 //   2. ?startYear=&endYear= -> mirrors getBillAmountsRange(userId, startYear, endYear)
 //   3. ?year=&month=        -> mirrors getBillAmounts(userId, year, month)
-// Neon has no default row cap (unlike Supabase's 1,000-row page limit), so
-// modes 1 and 2 skip the source's manual paging loop.
+// Neon has no default row cap, so modes 1 and 2 skip the source's manual
+// paging loop (a 1,000-row page limit would have required one).
 export async function GET(request) {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {
@@ -82,7 +82,7 @@ export async function GET(request) {
 // src/lib/db/bills.js#upsertBillAmount. The unique constraint this relies on
 // (bill_amounts_bill_id_year_month_key) was missing on the Neon dev branch
 // and was added directly + documented in
-// supabase/migrations/018_neon_bills_unique_constraints.sql.
+// db/migrations/018_neon_bills_unique_constraints.sql.
 export async function POST(request) {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {

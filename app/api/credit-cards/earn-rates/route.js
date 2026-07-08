@@ -23,7 +23,7 @@ export async function GET() {
 // Mirrors src/lib/db/creditCards.js#upsertEarnRate: upsert on (card_id,
 // cc_category), which now has a real unique constraint on Neon
 // (credit_card_earn_rates_card_id_cc_category_key — verified via pg_constraint,
-// see supabase/migrations/017_neon_missing_unique_constraints.sql).
+// see db/migrations/017_neon_missing_unique_constraints.sql).
 export async function POST(request) {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {

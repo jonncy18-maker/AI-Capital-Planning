@@ -10,7 +10,7 @@ const ALLOWED_TYPES = ['Fixed', 'Flexible', 'Non-Monthly']
 // skipped, matching the source's filter.
 //
 // There is no unique constraint on (user_id, category) in the Neon schema
-// (unlike the Supabase onConflict: 'user_id,category' upsert), so each row is
+// (unlike the original onConflict: 'user_id,category' upsert), so each row is
 // applied as a sequential fetch-then-insert-or-update rather than a single
 // INSERT ... ON CONFLICT statement (judgment call — see report).
 export async function POST(request) {

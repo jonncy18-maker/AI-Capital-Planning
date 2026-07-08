@@ -12,7 +12,7 @@ async function parseJsonOrThrow(res) {
   return body
 }
 
-// Returns rows shaped like Supabase's `*, budget_categories(id, category, "group", type)`
+// Returns rows shaped like the original `*, budget_categories(id, category, "group", type)`
 // embedded select — callers read `li.budget_categories?.group` etc.
 export async function getBudgetLineItems(_userId, { year } = {}) {
   const params = new URLSearchParams()
