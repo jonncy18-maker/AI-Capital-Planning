@@ -1404,18 +1404,18 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
         <>
           {/* Layer toggle + bucket expand/collapse */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-            <div style={{ display: 'flex', gap: 0, border: '1px solid var(--bd)', borderRadius: 8, width: 'fit-content' }}>
+            <div style={{ display: 'flex', gap: 0, border: '1px solid var(--bd)', borderRadius: 8, width: mobile ? '100%' : 'fit-content', overflowX: mobile ? 'auto' : 'visible' }}>
               {[
                 { id: 'budget', label: 'Budget' },
                 { id: 'forecast', label: 'Forecast' },
-                { id: 'committed', label: 'Committed Scenarios', tier: 'committed' },
+                { id: 'committed', label: mobile ? 'Committed' : 'Committed Scenarios', tier: 'committed' },
                 { id: 'modeled', label: 'Modeled', tier: 'modeled' },
               ].map(({ id, label, tier }, i, arr) => {
                 const active = layer === id
                 const scns = tier ? listFor(tier) : []
                 const sel = tier === 'committed' ? selectedCommitted : tier === 'modeled' ? selectedModeled : null
                 return (
-                  <div key={id} style={{ position: 'relative', display: 'flex' }}>
+                  <div key={id} style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
                     <button
                       onClick={() => {
                         if (tier) {
@@ -1426,7 +1426,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
                         }
                       }}
                       style={{
-                        padding: '7px 14px',
+                        padding: mobile ? '7px 10px' : '7px 14px',
                         background: active ? 'var(--accent)' : 'transparent',
                         color: active ? '#fff' : 'var(--tx-2)',
                         border: 'none',
