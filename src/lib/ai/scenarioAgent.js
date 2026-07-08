@@ -1,7 +1,7 @@
 // AI scenario agent — lets the assistant actually CREATE a scenario (instead of
 // only describing the steps), via Anthropic tool use. The tool loop runs in the
 // browser: the model returns a create_scenario tool call, we execute it against
-// Supabase with the user's session (RLS), return a tool_result, and continue
+// the database scoped to the user's session, return a tool_result, and continue
 // until the model produces its final summary. This mirrors how the rest of the
 // app does its DB writes client-side.
 //

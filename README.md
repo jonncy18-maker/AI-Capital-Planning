@@ -7,20 +7,22 @@ See [`ROADMAP.md`](./ROADMAP.md) for the phase-by-phase build plan.
 
 ## Stack
 
-- **Frontend:** React 19 + Vite (this repo)
-- **Database:** Supabase (PostgreSQL)
-- **AI:** Anthropic API (`claude-sonnet-4-6`)
-- **Deployment:** GitHub Pages (personal use); Netlify Functions proxy before any public deployment
+- **Frontend:** Next.js 16 (App Router) + React 19 (this repo)
+- **Database:** Neon (serverless PostgreSQL)
+- **AI:** Anthropic API (`claude-sonnet-4-6`), server-side via the `app/api/ai-chat` route
+- **Deployment:** Vercel (personal use)
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# Fill in VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
-# (the Anthropic key is server-side only — set it as a Supabase secret, never in .env)
+# Fill in DATABASE_URL (Neon), NEON_AUTH_BASE_URL, and NEON_AUTH_COOKIE_SECRET
+# (ANTHROPIC_API_KEY is server-side only — set it as a Vercel env var, never in the browser bundle)
 
 npm install
-npm run dev
+npm run dev      # next dev
+npm run build    # next build
+npm run start    # next start — serve the production build
 ```
 
 ## Current Phase
@@ -39,7 +41,7 @@ Recent work completed (2026-06-23):
 
 This is an AI-first forecasting tool, so it carries the complexity of financial
 modeling *and* an AI layer on top. The foundations are sound (deterministic
-modeling engine + AI as the intent/translation layer + Supabase/RLS), but the
+modeling engine + AI as the intent/translation layer + Neon + API-layer authorization), but the
 following are the priorities to take it from "impressive prototype" to a robust,
 trustworthy build. Roughly in order of leverage:
 

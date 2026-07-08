@@ -2,7 +2,7 @@ import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { auth } from '../../../src/lib/neon/authServer.js'
 
 // Reshapes the flat join result back into the nested shape
-// src/lib/db/forecastLineItems.js's functions return via Supabase's
+// src/lib/db/forecastLineItems.js's functions return via the original
 // `*, budget_categories(id, category, "group", type)` embedded select.
 function shapeForecastLineItem(row) {
   const { cat_id, cat_category, cat_group, cat_type, ...rest } = row

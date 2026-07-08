@@ -3,7 +3,7 @@ import { auth } from '../../../src/lib/neon/authServer.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/budgetLineItems.js#getBudgetLineItems/#insertBudgetLineItem
-// return via Supabase's `*, budget_categories(id, category, "group", type)`
+// return via the original `*, budget_categories(id, category, "group", type)`
 // embedded select — callers (e.g. src/modules/budget/Budget.jsx,
 // src/lib/dashboard/widgetData.js) read `li.budget_categories?.group` etc.
 function shapeLineItem(row) {
@@ -19,8 +19,8 @@ function shapeLineItem(row) {
 
 // GET /api/budget-line-items?year=
 // Mirrors src/lib/db/budgetLineItems.js#getBudgetLineItems. Neon has no
-// default row cap (unlike Supabase's 1,000-row page limit), so a single
-// joined query covers this function without the source's manual paging loop.
+// default row cap, so a single joined query covers this function without the
+// source's manual paging loop (a 1,000-row page limit would have required one).
 export async function GET(request) {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {

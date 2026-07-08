@@ -1,6 +1,6 @@
 // Pure gross→net income estimator. No DB or React imports — the caller supplies
 // the resolved reference data (`taxData`) so this stays unit-testable. The async
-// wrapper that loads taxData from Supabase lives in src/lib/db/taxBrackets.js.
+// wrapper that loads taxData from the database lives in src/lib/db/taxBrackets.js.
 //
 // PHASE 1 scope & simplifications (documented intentionally):
 //   - Federal: progressive brackets on taxable income (gross + bonus − pre-tax

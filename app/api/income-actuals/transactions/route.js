@@ -7,8 +7,8 @@ import { auth } from '../../../../src/lib/neon/authServer.js'
 // history" action. Kept as its own route (rather than a query-param branch
 // on the parent income-actuals route) since it queries a different table
 // (transactions, not income_actuals) and has a distinct response shape.
-// Neon has no default row cap (unlike Supabase's 1,000-row page limit), so
-// the source file's manual paging loop is unnecessary here — same reasoning
+// Neon has no default row cap, so the source file's manual paging loop is
+// unnecessary here (a 1,000-row page limit would have required one) — same reasoning
 // already applied in the Wave 1 transactions/recent route.
 export async function GET(request) {
   const { data: session } = await auth.getSession()

@@ -101,7 +101,7 @@ export async function DELETE(request, context) {
 
   try {
     const sql = getNeonSql()
-    // The Supabase source had budget_line_items/forecast_line_items/
+    // The original schema had budget_line_items/forecast_line_items/
     // forecast_overrides/scenario_adjustments.category_id ON DELETE CASCADE,
     // and bills.forecast_category_id ON DELETE SET NULL — all dropped to
     // NO ACTION during the Neon schema recreation. A plain DELETE here would

@@ -17,9 +17,13 @@ At the start of each session, read `ARCHITECTURE.md` and `ROADMAP.md` to orient 
 - App is in daily personal use — reliability and data integrity take priority over new features
 - Never expose the Anthropic API key in the browser; all AI calls route through the server-side `app/api/ai-chat` route.
 
-> **Code naming drift (harmless):** some `app/api/*` route files still contain
-> leftover `supabase`-named strings/identifiers from before the migration. The
-> live backend is Neon; these are cosmetic and safe to rename in a cleanup pass.
+> **Backend:** Neon (serverless Postgres) throughout. The old `supabase/`
+> reference directory was renamed to `db/` (schema migrations + the original,
+> since-ported edge functions, kept as history), and the leftover
+> `supabase`-named strings in `app/api/*`/`src/*` comments were cleaned up in a
+> 2026-07-08 pass. Remaining "Supabase" mentions live only in the migration
+> history docs (`ROADMAP.md`, `MIGRATION_PLAN.md`, `ARCHITECTURE.md` history
+> sections), where they are accurate record.
 
 ## Native app (PWA → Play Store) — PLANNED
 

@@ -2,8 +2,8 @@ import { getNeonSql } from '../../../../src/lib/neon/client.js'
 import { auth } from '../../../../src/lib/neon/authServer.js'
 
 // Mirrors src/lib/db/creditCards.js#getDistinctTransactionAccounts. The
-// source pages through all rows (1000 at a time) to work around Supabase's
-// default row cap, then reduces to counts in JS. Neon has no such cap, so
+// source pages through all rows (1000 at a time) to work around the original
+// backend's default row cap, then reduces to counts in JS. Neon has no such cap, so
 // this does the grouping/sorting directly in SQL instead.
 export async function GET() {
   const { data: session } = await auth.getSession()

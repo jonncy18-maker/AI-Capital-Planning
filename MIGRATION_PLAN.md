@@ -23,7 +23,7 @@ repo's real tables, files, and decisions, as a checklist to track against
       migrations) — confirmed **24 tables**, not the 19 in prior migrations.
 - [x] Recover DDL/RLS for the 5 live-only tables (`bills`, `accounts`,
       `bill_amounts`, `account_balances`, `forecast_overrides`) as
-      `supabase/migrations/015_recover_undocumented_tables.sql`.
+      `db/migrations/015_recover_undocumented_tables.sql`.
 - [x] Confirm no other undocumented triggers/functions exist (only
       `handle_new_user()` / `on_auth_user_created`).
 - [x] Document recovered tables in `ARCHITECTURE.md` §5.1.1.
@@ -377,13 +377,13 @@ written as `${JSON.stringify(value)}::jsonb`.
 
 ## Phase B5 — Remaining server-side logic
 
-- [x] Port `supabase/functions/ai-chat` → `app/api/ai-chat/route.js` — same
+- [x] Port `db/functions/ai-chat` → `app/api/ai-chat/route.js` — same
       request/response contract (`{messages, system, maxTokens, model,
       modelFamily, cacheSystem, tools}` in, `{text, content, stop_reason}`
       out), model-resolution caching logic ported as-is. Needs a fresh
       `ANTHROPIC_API_KEY` Vercel env var — not yet set, not copied from
       Supabase.
-- [x] Port `supabase/functions/monarch-sync` → `app/api/monarch-sync/route.js`
+- [x] Port `db/functions/monarch-sync` → `app/api/monarch-sync/route.js`
       — same contract. The Supabase gateway's JWT verification (which the
       Deno function relied on implicitly) is replaced with an explicit
       `auth.getSession()` check, same pattern as every other route in this

@@ -2,7 +2,7 @@
 //
 // The client sends a *family* ('haiku' | 'sonnet'), not a pinned model ID.
 // The ai-chat Edge Function resolves the family to the NEWEST available model
-// in that family at request time (see supabase/functions/ai-chat/index.ts →
+// in that family at request time (see db/functions/ai-chat/index.ts →
 // resolveModel), so new Anthropic releases are adopted without a code change.
 // Pinned fallbacks live in the Edge Function for when the Models API is
 // unreachable.

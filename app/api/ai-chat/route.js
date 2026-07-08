@@ -1,17 +1,17 @@
 import { auth } from '../../../src/lib/neon/authServer.js'
 
-// Next.js port of supabase/functions/ai-chat (Deno edge function). Server-side
+// Next.js port of db/functions/ai-chat (Deno edge function). Server-side
 // proxy to the Anthropic API — the ANTHROPIC_API_KEY secret lives only in this
 // route's server environment, never shipped to the browser. Set a FRESH key
-// as a Vercel env var; do not reuse the Supabase function's secret.
+// as a Vercel env var; do not reuse the original function's secret.
 //
-// The Supabase version relied on the platform gateway to verify the caller's
-// JWT before invocation ("Supabase verifies the JWT at the gateway"). Neon
+// The original edge function relied on the platform gateway to verify the caller's
+// JWT before invocation (the JWT was verified at the gateway). Neon
 // Auth has no equivalent gateway, so this route does the same check itself,
 // matching every other route in this migration.
 //
 // Invoked from src/lib/ai/sendMessage.js#invokeAIChat. Request/response shape
-// is unchanged from the Supabase version so the client needs no changes when
+// is unchanged from the original version so the client needs no changes when
 // it's later switched over: { messages, system, maxTokens, model, modelFamily,
 // cacheSystem, tools } in, { text, content, stop_reason } (or { error }) out.
 

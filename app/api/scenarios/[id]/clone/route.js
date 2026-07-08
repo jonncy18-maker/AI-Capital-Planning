@@ -3,7 +3,7 @@ import { auth } from '../../../../../src/lib/neon/authServer.js'
 
 // Mirrors src/lib/db/scenarios.js#cloneScenario: create a new scenario and
 // copy every adjustment from the source scenario onto it. Unlike the old
-// Supabase implementation (separate create + per-adjustment insert calls),
+// implementation (separate create + per-adjustment insert calls),
 // this runs as a single statement — a CTE chaining the new scenario's INSERT
 // straight into the adjustments copy INSERT ... SELECT — so the clone is
 // atomic by construction (a lone Postgres statement) without needing to

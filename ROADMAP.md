@@ -46,7 +46,7 @@
 
 - **Supabase → Neon + Neon Auth + Vercel migration — Phase A′ complete (2026-07-04):**
   - Ran a full assessment against an external Supabase→Neon migration playbook: schema inventory, RLS, auth model, data-access pattern, realtime, edge functions, env vars, build/hosting.
-  - **Live-schema gap found and fixed:** 5 tables (`bills`, `accounts`, `bill_amounts`, `account_balances`, `forecast_overrides`) existed only in the live Supabase database — never in a committed migration (only later `ALTER TABLE`s referenced them). Recovered via direct introspection (Supabase MCP) and committed as `supabase/migrations/015_recover_undocumented_tables.sql`. All 24 live tables now match committed migrations. Documented in `ARCHITECTURE.md` §5.1.1.
+  - **Live-schema gap found and fixed:** 5 tables (`bills`, `accounts`, `bill_amounts`, `account_balances`, `forecast_overrides`) existed only in the live Supabase database — never in a committed migration (only later `ALTER TABLE`s referenced them). Recovered via direct introspection (Supabase MCP) and committed as `db/migrations/015_recover_undocumented_tables.sql`. All 24 live tables now match committed migrations. Documented in `ARCHITECTURE.md` §5.1.1.
   - **Decisions recorded:** full custom API layer (not Neon Data API); switch Vite SPA → Next.js App Router (current app had no router at all — `registry.js` was state-based nav); staged cutover with an informal freeze (single-user app).
   - Instantiated the phased plan as `MIGRATION_PLAN.md` (Phase A′ Next.js → B0 provisioning → B1 read path → B2 write path → B3 skipped, no realtime in use → B4 auth → B5 edge functions → C cutover → D decommission).
   - **Phase A′ built and audited** (separate build/audit subagent pass, per this file's Agentic Loop protocol): converted the Vite SPA to Next.js App Router. `App.jsx` + `AppShell.jsx` logic merged into `app/AppRoot.jsx` verbatim; `activeModule` now derives from the URL (`usePathname()`/`router.push`) instead of internal state + `sessionStorage`, so every module gets a real, bookmarkable route and browser back/forward now works between them. One `app/<id>/page.jsx` per module, all sourcing shared state via a new `useShell()` context. Env vars moved `import.meta.env.VITE_*` → `process.env.NEXT_PUBLIC_*`. Zero changes to any module's visual design or to the data layer.
@@ -71,7 +71,7 @@
   - **Confirmed working live in browser a second time** against the SDK rework: sign-in → Get Session (cookie only) → create/list commitment, full round trip against Neon.
 
 - **Phase B1 broad rollout, Wave 1 of 3 — committed (2026-07-05):** with the pattern proven on the pilot, rolled it out across the first 6 of ~17 `src/lib/db/*.js` modules, run as parallel build agents against isolated new files (no shared-file conflicts): `ai_briefings`, `wealth_snapshots`, `scenarios` (+ `scenario_adjustments`), `ai_preferences`, `budget_categories` (+ bulk import), `transactions` (full read path + bulk-import POST). Same pattern throughout: `auth.getSession()` → 401 if absent → `WHERE user_id = ...` on every query → `${JSON.stringify(value)}::jsonb` for jsonb writes. Commits `85a8674`, `e71e6b2`, `ee408ff`.
-  - **Real Phase B0 schema gap found and fixed:** Supabase's `budget_categories` has `unique(user_id, category)` (`001_initial_schema.sql` line 47) that was missed when the Neon schema was built from live introspection in Phase B0. Added directly to the Neon dev branch and documented as `supabase/migrations/016_neon_budget_categories_unique_constraint.sql`.
+  - **Real Phase B0 schema gap found and fixed:** Supabase's `budget_categories` has `unique(user_id, category)` (`001_initial_schema.sql` line 47) that was missed when the Neon schema was built from live introspection in Phase B0. Added directly to the Neon dev branch and documented as `db/migrations/016_neon_budget_categories_unique_constraint.sql`.
   - **Two real hardening fixes beyond the source modules**, found during the scenarios port: `deleteAdjustment` now scopes by `scenario_id+user_id` (source only filtered by `id`), and `addAdjustment` now verifies `category_id` ownership before insert (source never checked it) — both closing an unauthenticated-id-trust gap, not just porting behavior 1:1.
   - **Known gaps tracked, not blocking:** `cloneScenario` (multi-step: create scenario + copy adjustments) and `getUserGroups`/`getExcludedCategoryNames`/`seedDefaultCategories` (derived views/one-time seed, not simple CRUD) not yet ported.
   - All new routes are build-verified (`npm run build` clean) but not yet live-browser-tested — only the original commitments pilot has had a live round-trip test so far.
@@ -81,7 +81,7 @@
   - `user_profiles`'s PK **is** the Neon Auth user id (no separate `user_id` column) — routes key off `WHERE id = userId`. Split into a full-row `PUT` upsert plus a narrow `PATCH` for `min_checking_balance` alone, so a partial update can't clobber the other ~19 fields.
   - `budget_line_items`'s `saveBudgetForYear` (delete-then-bulk-insert for a year) was ported as a single atomic `sql.transaction([DELETE, INSERT])` via `@neondatabase/serverless`, rather than two independent statements — closes a real crash-mid-operation gap the original Supabase version also had.
   - **Two more hardening fixes beyond the source module**, found in `budgetLineItems.js`: `updateLineItemAmount` and `deleteLineItem` filtered only by `id` in Supabase (relying entirely on RLS to block cross-user access) — both routes now also require `AND user_id = ...` and 404 otherwise. Same class of fix as the scenarios hardening in Wave 1.
-  - **3 more real Phase B0 schema gaps found and fixed**: grepped every migration for `unique` and cross-checked against Neon's actual `pg_constraint` — `income_actuals`, `tax_brackets`, and `budget_status` were all missing their Supabase unique constraints (same miss as `budget_categories` in Wave 1). Fixed directly on Neon and documented in `supabase/migrations/017_neon_missing_unique_constraints.sql` (bundled with `credit_card_earn_rates`, needed ahead of Wave 3).
+  - **3 more real Phase B0 schema gaps found and fixed**: grepped every migration for `unique` and cross-checked against Neon's actual `pg_constraint` — `income_actuals`, `tax_brackets`, and `budget_status` were all missing their Supabase unique constraints (same miss as `budget_categories` in Wave 1). Fixed directly on Neon and documented in `db/migrations/017_neon_missing_unique_constraints.sql` (bundled with `credit_card_earn_rates`, needed ahead of Wave 3).
   - Wave 3 (`forecast_line_items`, `forecast_overrides`, `credit_cards`, `bills`, plus folding in `Dashboard.jsx`/`CreditCards.jsx`, the two files that bypass the `db/` layer) is next and last.
 
 - **Phase B1 broad rollout, Wave 3 of 3 — committed, rollout complete (2026-07-05):** ported the final 4 modules: `forecast_overrides`, `credit_cards` (+ earn rates/points/redemptions), `bills` (+ `accounts`/`bill_amounts`/`account_balances`), `forecast_line_items`. Commits `71d4caa`, `ef428f2`, `9386448`, `bb2b860`. **This completes the broad rollout — all 17 `src/lib/db/*.js` modules, plus the original `commitments` pilot, now have a parallel Neon-backed API route.**
@@ -103,7 +103,7 @@
 
 ### Done so far
 - **Phase 0 complete** — Vite + React SPA, GitHub Pages deploy (auto on push to `main`), Supabase project live, client configured.
-- **Phase 1 schema live** — all tables created in Supabase via `supabase/migrations/001_initial_schema.sql`: `transactions`, `budget_categories`, `budget_line_items`, `commitments`, `scenarios`, `scenario_adjustments`, `wealth_snapshots`, `ai_briefings`, plus `user_profiles`. **RLS enabled** on every table (per-user `auth.uid()` policies).
+- **Phase 1 schema live** — all tables created in Supabase via `db/migrations/001_initial_schema.sql`: `transactions`, `budget_categories`, `budget_line_items`, `commitments`, `scenarios`, `scenario_adjustments`, `wealth_snapshots`, `ai_briefings`, plus `user_profiles`. **RLS enabled** on every table (per-user `auth.uid()` policies).
 - **Auth working** (done early, ahead of Phase 10) — email/password sign-up + sign-in (`src/modules/auth/Login.jsx`), session tracking (`src/lib/auth/useAuth.js`), auth gate in `App.jsx` (Login → Onboarding → App shell), sign-out.
 - **Profile persistence** — onboarding answers saved to `user_profiles` in Supabase (`src/lib/db/profile.js`); a signup trigger auto-creates the profile row (`migration 002` hardened it with pinned `search_path` to fix a signup 500).
 - **DB helper layer scaffolded** — `src/lib/db/transactions.js` (`importTransactions` w/ dedup, `getRecentTransactions`, `getTransactions`), `src/lib/db/commitments.js`, `src/lib/db/profile.js`.
@@ -113,7 +113,7 @@
   - `src/lib/csv/categoryMap.js` — 100+ Monarch category → group/type mappings; `findUnmappedCategories`, `applyMappings`.
   - `src/lib/db/budgetCategories.js` — `seedDefaultCategories(userId)` (idempotent upsert on first import), `upsertCategory`, `getBudgetCategories`.
   - `src/lib/db/importLog.js` — `logImport`, `getImportHistory` backed by new `import_logs` table.
-  - `supabase/migrations/003_import_logs.sql` — `import_logs` table with RLS (apply in Supabase SQL Editor).
+  - `db/migrations/003_import_logs.sql` — `import_logs` table with RLS (apply in Supabase SQL Editor).
   - `src/modules/import/ImportFlow.jsx` — Full-screen import state machine: parsing → unmapped-categories dialog → importing → summary.
   - Onboarding now passes `raw` CSV through to `onComplete`; App.jsx inserts ImportFlow between onboarding and main app when CSV is present.
   - Settings → Data Management section: re-import CSV drop zone + import history log.
@@ -126,7 +126,7 @@
   - Module stubs: `cashflow`, `scenarios`, `budget`, `commitments`, `wealth` (shared `common/ModuleStub.jsx`), plus `mapping` "Coming Soon".
   - `src/lib/theme/useTheme.js` — persistent dark/light toggle (localStorage, sets `data-theme`).
   - `src/lib/ai/contextLoader.js` — `loadAIContext(userId)` (90d txns + categories + active commitments + latest wealth snapshot), `summarizeContext`, `buildContextBrief`.
-  - **AI now wired through a secure Supabase Edge Function** — `supabase/functions/ai-chat/index.ts` holds the Anthropic key server-side; `src/lib/ai/sendMessage.js` calls it via `supabase.functions.invoke('ai-chat')` (JWT auto-attached). The browser never sees the key.
+  - **AI now wired through a secure Supabase Edge Function** — `db/functions/ai-chat/index.ts` holds the Anthropic key server-side; `src/lib/ai/sendMessage.js` calls it via `supabase.functions.invoke('ai-chat')` (JWT auto-attached). The browser never sees the key.
 - **Phase 4 complete** — Cash Flow Timing Module:
   - `src/modules/cashflow/CashFlow.jsx` — full 12-month rolling calendar; month cards with spike detection, configurable threshold, click-to-expand category breakdown, trailing 4-quarter summary, loading/error/empty states.
   - `src/lib/db/transactions.js` — added `getTransactionsByMonth(userId, fromDate, toDate)` for date-range queries used by the calendar.
@@ -257,9 +257,9 @@
   - Modeled scenarios (with adjustments) are now loaded alongside committed ones; selections reconcile across reloads/year changes (new scenarios default to selected, removed ones drop, prior picks preserved). The "with scenarios" summary stat, legend, and delta highlighting all follow the active tier.
 
 ### Known follow-ups / gotchas
-- **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `supabase/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
+- **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `db/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
 - **Retire the browser-side path:** `src/lib/anthropic.js` (direct browser call via `VITE_ANTHROPIC_API_KEY`) is now superseded by the Edge Function and should not be used. Keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty; rotate the key if it was ever exposed.
-- **Apply migration 003** in Supabase SQL Editor (`supabase/migrations/003_import_logs.sql`) before import logging will work. The import itself succeeds without it; logging fails silently (non-fatal).
+- **Apply migration 003** in Supabase SQL Editor (`db/migrations/003_import_logs.sql`) before import logging will work. The import itself succeeds without it; logging fails silently (non-fatal).
 - **Apply schema additions for income/settings** — `variance_threshold`, `bonus_month`, `benefits_amount`, `benefits_pct`, `four01k_pct`, `four01k_on_bonus` columns must exist in `user_profiles` for Settings save and income forecast to work. Add via SQL Editor if the migration wasn't applied.
 - **Test with real Monarch CSV** — dedup logic and parser logic are written but not tested against an actual 12–24 month export.
 - **No error boundary** — unhandled React render errors still produce a blank page. Add one soon.
@@ -359,7 +359,7 @@
 - [x] Build Dashboard canvas (empty widget grid, drag-to-rearrange scaffold) — `Dashboard.jsx`
 - [x] Build AI command bar (persistent, bottom of canvas on desktop) — `CommandBar.jsx`
 - [x] Build FAB + bottom sheet AI input (mobile)
-- [x] Wire command bar to Anthropic API — via secure Supabase Edge Function proxy (`supabase/functions/ai-chat`), not direct browser call
+- [x] Wire command bar to Anthropic API — via secure Supabase Edge Function proxy (`db/functions/ai-chat`), not direct browser call
 - [x] Build AI context loader (pulls user data from Supabase at session start) — `lib/ai/contextLoader.js`
 - [x] Build "Coming Soon" stub page for Mapping module — `mapping/Mapping.jsx`
 - [x] Implement dark/light mode toggle — `lib/theme/useTheme.js`, persisted to localStorage

@@ -2,7 +2,7 @@ import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { auth } from '../../../src/lib/neon/authServer.js'
 
 // Reshapes the flat join result back into the nested shape
-// src/lib/db/bills.js#getAccountBalances returns via Supabase's
+// src/lib/db/bills.js#getAccountBalances returns via the original
 // `*, account:accounts(id, name, type, is_primary_checking)` embedded select.
 function shapeBalance(row) {
   const { acct_id, acct_name, acct_type, acct_is_primary_checking, ...rest } = row
@@ -60,7 +60,7 @@ export async function GET(request) {
 // mirroring src/lib/db/bills.js#upsertAccountBalance. The unique constraint
 // this relies on (account_balances_account_id_year_month_period_half_key) was
 // missing on the Neon dev branch and was added directly + documented in
-// supabase/migrations/018_neon_bills_unique_constraints.sql.
+// db/migrations/018_neon_bills_unique_constraints.sql.
 export async function POST(request) {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {

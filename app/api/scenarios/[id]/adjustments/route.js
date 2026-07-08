@@ -2,7 +2,7 @@ import { getNeonSql } from '../../../../../src/lib/neon/client.js'
 import { auth } from '../../../../../src/lib/neon/authServer.js'
 
 // Reshapes the flat join result back into the nested shape
-// src/lib/db/scenarios.js#getAdjustments/#addAdjustment return via Supabase's
+// src/lib/db/scenarios.js#getAdjustments/#addAdjustment return via the original
 // `*, budget_categories(category, "group", type)` embedded select.
 function shapeAdjustment(row) {
   const { category_category, category_group, category_type, ...rest } = row

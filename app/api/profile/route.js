@@ -10,8 +10,8 @@ export async function GET() {
 
   try {
     const sql = getNeonSql()
-    // Application-level equivalent of Supabase's handle_new_user() trigger
-    // (supabase/migrations/002_fix_new_user_trigger.sql: `insert into
+    // Application-level equivalent of the original handle_new_user() trigger
+    // (db/migrations/002_fix_new_user_trigger.sql: `insert into
     // user_profiles (id) values (new.id) on conflict (id) do nothing`,
     // fired after every auth.users insert). Neon Auth has no equivalent
     // trigger hook available on user creation, so the row is ensured here
@@ -74,7 +74,7 @@ export async function PUT(request) {
   try {
     const sql = getNeonSql()
     // ON CONFLICT (id) DO UPDATE is the full-row upsert equivalent of
-    // supabase's .upsert(). Only the ~20 columns saveProfile touches are
+    // an .upsert(). Only the ~20 columns saveProfile touches are
     // listed here; cc_coverage_pct, cc_optimization_pct and
     // min_checking_balance are intentionally left out of both the insert
     // column list defaults and the update SET clause so this endpoint never
