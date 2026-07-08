@@ -222,7 +222,7 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
                 onMouseEnter={() => setHover(d.m)}
                 onMouseLeave={() => setHover(null)}
                 style={{
-                  flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                  flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
                   gap: mobile ? 1 : 2, height: '100%', position: 'relative', cursor: 'default',
                   background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
                 }}
@@ -230,7 +230,7 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
                 {/* Income bar */}
                 {showInc && (
                   <div style={{
-                    width: mobile ? 8 : '48%', maxWidth: 28,
+                    width: '48%', maxWidth: 28,
                     height: Math.max(incH, 2),
                     background: isFcst ? 'var(--forecast-fill)' : 'var(--accent)',
                     border: isFcst ? '1px dashed var(--accent)' : 'none',
@@ -241,7 +241,7 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
                 )}
                 {/* Expense bar */}
                 <div style={{
-                  width: mobile ? 8 : '48%', maxWidth: 28,
+                  width: '48%', maxWidth: 28,
                   height: Math.max(expH, 2),
                   background: isFcst ? 'var(--forecast-fill)' : 'var(--warn)',
                   border: isFcst ? '1px dashed var(--warn)' : 'none',
