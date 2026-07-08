@@ -14,6 +14,21 @@ At the start of each session, read `ARCHITECTURE.md` and `ROADMAP.md` to orient 
 - App is in daily personal use — reliability and data integrity take priority over new features
 - Never expose the Anthropic API key in the browser; all AI calls route through `supabase/functions/ai-chat`
 
+> **Stale — needs a separate cleanup pass:** the "Project context" above no
+> longer matches the repo. The app has migrated to **Next.js App Router**
+> (`app/`, `next.config.mjs`, Next 16) on Vercel (see `MIGRATION_PLAN.md` /
+> `ROADMAP.md`). Treat the Next.js/Vercel state as current.
+
+## Native app (PWA → Play Store) — PLANNED
+
+Candidate to ship as an installable Android app (PWA → TWA). **Unlike the other
+two NGS apps (Immersion, Scholars — private/Internal Testing), this one may go
+public** ("Multi-tenant / public user accounts" is in ROADMAP future scope),
+which would mean a heavier Play path (content review, data-safety for financial
+data, the new-account 12-tester/14-day gate). That distribution decision is
+deferred — but the PWA groundwork is a prerequisite either way and keeps both
+doors open. Runbook: **`docs/PWA.md`**. Follows the NextGen-Immersion pilot.
+
 ---
 
 ## Agentic Loop — Goal Execution Workflow
