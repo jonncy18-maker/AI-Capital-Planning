@@ -137,20 +137,20 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange, on
                 onMouseEnter={() => setHover(mo.month)}
                 onMouseLeave={() => setHover(null)}
                 style={{
-                  flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                  flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
                   gap: mobile ? 2 : 3, height: '100%', position: 'relative', cursor: 'default',
                   background: isHover ? 'var(--hover)' : 'transparent', borderRadius: 5,
                 }}
               >
                 {/* Budget bar */}
                 <div style={{
-                  width: mobile ? 9 : '48%', maxWidth: 30, height: Math.max(budgetH, 2),
+                  width: '48%', maxWidth: 30, height: Math.max(budgetH, 2),
                   background: 'var(--bar-budget)', borderRadius: '3px 3px 0 0',
                   transition: 'opacity .15s', opacity: isHover ? 1 : 0.9,
                 }} />
                 {/* Actual / forecast bar */}
                 <div style={{
-                  width: mobile ? 9 : '48%', maxWidth: 30, height: Math.max(actualH, 2),
+                  width: '48%', maxWidth: 30, height: Math.max(actualH, 2),
                   background: showForecast ? 'var(--forecast-fill)' : STATUS_COLOR[mo.status],
                   border: showForecast ? '1px dashed var(--forecast-bd)' : 'none',
                   borderRadius: '3px 3px 0 0', transition: 'opacity .15s',
