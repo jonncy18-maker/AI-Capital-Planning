@@ -480,7 +480,7 @@ The founding architecture held. These are the notable implementation details tha
 
 **Error boundary not yet added.** A missing component definition caused a blank-page incident (June 2026). Adding a React error boundary around `<AppShell>` is the highest-priority hardening item. A missing component produces a `ReferenceError` that crashes the full React tree with no recovery path — blank page with no console access for users.
 
-**Model pinning deferred.** `resolveModel` still floats to the newest Claude model. For a financial product this is a behavior-change risk (tool-use / JSON schema can shift between model versions). Pinning deliberately and spot-checking tool calls after each bump is documented as a hardening priority.
+**Model version deliberately not pinned.** `resolveModel` (`app/api/ai-chat/route.js`) resolves each call to the newest model within a named family (`sonnet` / `haiku`), re-checked every 6 hours — the family is the pinned choice, not the version. This is intentional: the app always runs on the latest release Anthropic ships for that family, no manual upgrade step required.
 
 **Budget schedule grid matches forecast grid.** `ScheduleGrid` now mirrors `ForecastGrid` in layout: sticky column and row headers, scrollable max-height, groups expanded by default with a collapse toggle, per-category drill-down toggle (▸) that expands into individual named sub-rows (↳) at 54px indent. Sub-rows come from `budget_line_items` rows whose `label` field is populated (either from the Upload Budget xlsx parser or from commitment names).
 
@@ -490,8 +490,7 @@ The founding architecture held. These are the notable implementation details tha
 3. Strengthen CI (lint + tests, not just build)
 4. Preview-before-write for AI scenario creation
 5. Move currency math to integer cents
-6. Pin AI model version
-7. Surface errors instead of swallowing them
+6. Surface errors instead of swallowing them
 
 ---
 
