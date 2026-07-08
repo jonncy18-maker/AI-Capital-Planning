@@ -374,7 +374,7 @@ export default function AppRoot({ children }) {
 
           {/* Canvas + command bar */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-            <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: mobile ? '22px 18px 80px' : '34px 28px 80px' }}>
+            <main style={{ flex: 1, overflowY: 'auto', padding: mobile ? '22px 18px 80px' : '34px 28px 80px' }}>
               <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
                 {pendingImport ? (
                   <ImportFlow
