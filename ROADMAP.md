@@ -8,7 +8,11 @@
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-05 (Migration fully complete: merged to `main`, Vercel Production tracks `main`, GitHub Pages retired, Supabase project paused — no rollback-net pieces remain live)
+**Last updated:** 2026-07-08 (Post-migration verification pass: all remaining "visually unverified" UI features confirmed live, real Monarch CSV import confirmed end-to-end; next up is the hardening backlog, not new build work)
+
+- **Post-migration verification (2026-07-08):** user confirmed, live in the browser, the three features that had shipped audited-but-unverified: Grill Session (Budget module), the Scenario Planner's Baseline/Committed/Modeled/Ideas 4-tab layout, and the AI Adjustment Composer. Also confirmed a real Monarch CSV export imports end-to-end (parse → unmapped-category screen → dedup → dashboard). This closes out the last of the pre-migration "Recommended next session" checklist; see that section below for the current (hardening-focused) list. Also corrected a stale note: the 2026-07-04 Phase B0 "`transactions` backfill is skipped" decision was already superseded the next day by the live-verification re-upload (row gap closed to 4,977/4,980) — the ROADMAP hadn't been cleaned up to reflect that.
+
+**Previously last updated:** 2026-07-05 (Migration fully complete: merged to `main`, Vercel Production tracks `main`, GitHub Pages retired, Supabase project paused — no rollback-net pieces remain live)
 
 - **Phase C — cutover to production, complete (2026-07-05):** Promoted the migration branch to Vercel Production (dashboard action, not a `main` merge), then switched Vercel's Production environment to **Branch Tracking** on `claude/supabase-neon-migration-review-2np75c` so every push auto-deploys to `ai-capital-planning.vercel.app` with no manual promote step. Fixed a 403 on first login: Neon Auth's `trusted_origins` only had the branch-preview URL — added both production domain aliases. Full smoke test passed: login, every module's reads/writes, a scenario clone + delete, AI calls.
   - **Live testing found and fixed 6 real bugs** (beyond the earlier browser-verification pass): a numeric-alignment regression (the old Vite app's `#root { text-align: center }` baseline had no equivalent under Next.js's `<body>` root — restored on `body`); 8 AI parser modules (`accountParser`, `billParser`, `billAmountsParser`, `creditCardParser` ×2, `categoryMapper`, `suggestBuckets`, `suggestTabMatches`, `grillSession`) still calling the old Supabase edge function directly instead of `/api/ai-chat` (found by a pre-cleanup audit, fixed via a new `aiChatRaw.js` helper preserving the exact `{data,error}` contract); the grill session's opening call sending an empty `messages: []` array, which both the old and new AI routes reject — a pre-existing bug, not a migration regression, just never exercised before; an overlapping in-detail "✦ AI" button in Scenarios blocking the Confirm-delete button; and — the big one — **all 15 foreign keys in the schema had lost their `ON DELETE` rule** (`CASCADE`/`SET NULL` on Supabase → `NO ACTION` on Neon) during the original schema recreation, so deleting an account, bill, credit card, budget category, commitment, or scenario with any related data 500'd. Fixed all 6 affected DELETE routes atomically, replicating Supabase's exact original semantics. All fixes verified live on production after each push.
@@ -37,7 +41,7 @@
     - **Scenario data gap** — 2 scenarios the user added live (after the Phase B0 copy) were missing from Neon. Copied both plus their 7 adjustment rows from Supabase, preserving original ids/timestamps; also found and deleted an unrelated test-artifact scenario left over from verifying the `cloneScenario` route.
     - **Budget data drift** — saving the Budget page on the Neon-backed preview did a delete-and-reinsert that dropped 119 near-zero rows (583→464, $91,202→$91,205). Re-synced from Supabase (still the source of truth pre-cutover) via a background agent, verified row-for-row via checksum; also fixed `budget_status` (`draft`→`finalized`, matching Supabase's original finalization).
     - Also verified via checksum during this pass: forecast lines, category mappings, earn rates, and cards were all already byte-identical between Supabase and Neon — the credit-card totals discrepancy the user first flagged turned out to be a stale-tab timing issue, not a real bug.
-  - **Decision (2026-07-05): `transactions` backfill is skipped.** Neon is short of Supabase by ~1,245 rows (4,980 vs 3,735) — the CSV-import-via-preview-app path used during testing silently dropped rows via its own dedup logic rather than doing a clean 1:1 copy. Decided this doesn't block cutover; can be backfilled later via `pg_dump | psql` if it ever matters.
+  - ~~`transactions` backfill~~ — resolved same day: the live browser verification pass (below) re-uploaded a fuller Monarch export directly against Neon, closing the row gap to 4,977/4,980 (3-row gap accepted as noise). No further backfill needed.
   - **Phase C runbook drafted in `MIGRATION_PLAN.md`** — real mechanics clarified: production today is GitHub Pages (Vite + Supabase, `main` branch, no custom domain), which cannot run this branch's Next.js API routes — so cutover is a **hosting-provider switch** (GitHub Pages → Vercel), not just an env-var flip on an already-live Vercel production. Rollback is correspondingly cheap: GitHub Pages/`main`/Supabase are untouched throughout, so rollback is just "use the old `*.github.io` URL" until the migration branch is trusted as the daily driver.
 
 - **Supabase → Neon + Neon Auth + Vercel migration — Phase A′ complete (2026-07-04):**
@@ -207,7 +211,7 @@
   - `src/modules/budget/Budget.jsx` — "✦ Start Grill Session" as primary CTA in empty state; "✦ Grill Session" button in view-state header; `grilling` state routes to GrillSession before existing flow states; ModuleHeader always visible when grill session is active.
   - **Year lock notification banner** — amber banner in view state when `status === 'draft'`: "YYYY budget is not yet finalized. Aim to finalize by January 15, YYYY+1." with inline Finalize button. Hidden when finalized.
   - 2 build iterations (iteration 1 fixed: spending-by-group sign convention inverted, `item.group` → `item.budget_categories?.group`). Audit passed clean.
-  - **Visually unverified** — confirm in browser: grill session opens, AI responds on mount, phase stepper advances, Generate Draft triggers pattern analysis, year lock banner shows/hides correctly.
+  - **Browser-verified (2026-07-08)** — grill session opens, AI responds on mount, phase stepper advances, Generate Draft triggers pattern analysis, year lock banner shows/hides correctly.
 
 - **Scenario Planner restructure + Ideas tier (2026-06-24):**
   - Sidebar-first navigation replaced with 4-tab layout: Baseline · Committed · Modeled · Ideas. Sidebar removed entirely.
@@ -217,7 +221,7 @@
   - `migration 014_scenarios_idea_state.sql` — adds CHECK constraint on `scenarios.state` for `('modeled', 'committed', 'idea')`. **Must be applied in Supabase SQL Editor.**
   - `src/lib/db/scenarios.js` — `createScenario` now accepts `state` param (default `'modeled'`); added `promoteToModeled()`.
   - AiScenarioComposer remains in Modeled tab; `✦ AI` toggle button in ScenarioDetail header switches between detail and composer.
-  - 1 build iteration, audit passed clean. Visual verification pending (browser).
+  - 1 build iteration, audit passed clean. **Browser-verified (2026-07-08)** — Baseline / Committed / Modeled / Ideas tabs render correctly, Ideas tab accumulates, → Model promotes.
 
 - **AI context brief fixes (2026-06-24, merged into PR #134):**
   - Income label corrected: now explicitly states "401k and benefits are payroll deductions that never appear in bank transactions — this figure IS take-home pay"
@@ -233,7 +237,7 @@
 - **Natural language adjustments in ScenarioDetail (2026-06-24):**
   - `src/lib/ai/scenarioAgent.js` — added `ADD_ADJUSTMENT_TOOL`, `runAdjustmentAgent`, `confirmPendingAdjustments`, `cancelPendingAdjustments`. Uses same preview-before-write pattern as `create_scenario` but adds to an EXISTING scenario (takes `scenarioId`). Existing adjustments passed as context to prevent duplication.
   - `src/modules/scenarios/Scenarios.jsx` — new `AiAdjustmentComposer` component: compact chat interface inside the adjustments modal. Manual / ✦ AI tab toggle (only when scenario is not committed). AI tab shows chat history, sends to `runAdjustmentAgent`, previews proposed adjustments with Confirm/Cancel before writing. On confirm, parent's `handleAdjsRefresh` reloads adjustments from Supabase.
-  - **Visually unverified** — confirm in browser: open a modeled scenario → click Adjustments → switch to ✦ AI tab → type a natural language request → preview card appears → confirm writes rows → table refreshes.
+  - **Browser-verified (2026-07-08)** — open a modeled scenario → Adjustments → ✦ AI tab → natural language request → preview card appears → confirm writes rows → table refreshes.
 
 - **AI prompt storage restructure (2026-06-24):**
   - **5 new files** in `src/lib/ai/`:
@@ -265,35 +269,25 @@
 
 ### Recommended next session
 
-**Browser verification (do first — these are visually unverified)**
-1. **Verify Grill Session** — open Budget → "✦ Start Grill Session" → confirm AI responds on mount, phase stepper advances, Generate Draft exits to pattern analysis.
-2. **Verify Scenario 4-tab layout** — confirm Baseline / Committed / Modeled / Ideas tabs render correctly, Ideas tab accumulates, → Model promotes.
-3. **Verify AI Adjustment Composer** — open a modeled scenario → Adjustments → ✦ AI tab → type a request → confirm preview card, Confirm writes rows, table refreshes.
+*(Superseded 2026-07-08 — the migration to Neon/Vercel is fully complete, so the Supabase/PR #142-era items below no longer apply. Current state: all three previously "visually unverified" UI features and the real Monarch CSV end-to-end test are now confirmed. Remaining work is the hardening backlog.)*
 
-**Reliability**
-4. **Add React error boundary** — wrap `<AppShell>` (or `App.jsx`) so render crashes show a fallback UI instead of a blank page. One component to write and one place to add it.
-5. **Deploy + verify `ai-chat` Edge Function** — set `ANTHROPIC_API_KEY` in Supabase secrets; confirm command bar and AI briefing return real responses.
+~~**Browser verification**~~ — Grill Session, Scenario 4-tab layout, and AI Adjustment Composer all confirmed working live (2026-07-08). ✓
+~~**Real Monarch CSV end-to-end test**~~ — confirmed working live (2026-07-08). ✓
+~~**Add React error boundary**~~ — done, Phase 11. ✓
+~~**Deploy + verify `ai-chat`**~~ — superseded by the Neon/Vercel migration; `/api/ai-chat` confirmed live. ✓
 
-**Data quality**
-6. **Real Monarch CSV end-to-end test — do this on the Vercel preview**
-   (`ai-capital-planning-git-claude-supabase-neon-mi-27ec41-jonncy18.vercel.app`,
-   PR #142's Next.js build): upload an actual Monarch transaction export
-   through Settings → Data Management (or onboarding's CSV step) and confirm
-   the whole pipeline end-to-end — parse → unmapped-category screen →
-   dedup → insert → import summary (X new, Y duplicates skipped) → the
-   transactions actually show up in the Dashboard/Cash Flow/Forecast
-   widgets. This preview is still Supabase-backed (Phase A′ only changed
-   routing/hosting, not the data layer — see `MIGRATION_PLAN.md`), so this
-   also doubles as the last unverified piece of Gate A′ under real load,
-   not just the click-through smoke test already done. Closes the
-   long-standing "parser logic written but never run against a real
-   12–24 month export" gap.
-7. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars match hand-calculated take-home.
+**Reliability (current priority — see `ARCHITECTURE.md` §10 hardening backlog)**
+1. **Pin the AI model version** — `resolveModel()` (`app/api/ai-chat/route.js`) auto-adopts the newest Claude release in each family every 6 hours; pin an explicit model string and upgrade deliberately instead.
+2. **Add Vitest unit tests** for pure modeling functions — `widgetData.js`, `patternAnalyzer.js`, `schedule.js`, scenario delta math.
+3. **Move currency math to integer cents** — dollar amounts are currently JS floats throughout; no visible bug yet, but a known rounding-error risk as data volume grows.
+4. **Verify income forecast math** — enter a salary profile in Settings and confirm the IvE chart monthly bars match hand-calculated take-home.
 
 **Polish**
-8. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile.
-9. ~~**Security cleanup**~~ — `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from build workflow and `.env`; GitHub secret confirmed empty. ✓
+5. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile.
+6. **Make the repo public** — held from Phase 11, now that the AI proxy/key handling is confirmed solid post-migration.
 
+~~**Transactions backfill**~~ — resolved via the live browser-verification re-upload (2026-07-05); no gap worth closing. ✓
+~~**Security cleanup**~~ — `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from build workflow and `.env`; GitHub secret confirmed empty. ✓
 ~~**Apply outstanding DB migrations**~~ — all applied ✓  
 ~~**Preview-before-write for AI scenario mutations**~~ — implemented ✓  
 ~~**AI command bar yearTxns threading**~~ — implemented ✓
