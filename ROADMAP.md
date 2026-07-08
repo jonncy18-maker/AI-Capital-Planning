@@ -536,6 +536,30 @@
 
 ---
 
+## Native app (PWA → Play Store) — PLANNED
+
+**Status:** Planned / not started. Candidate to ship as an installable Android
+app via a PWA wrapped in a TWA. Part of the cross-repo NGS native rollout,
+which is piloted in **NextGen-Immersion** — the PWA→TWA→Play pipeline is proven
+there first.
+
+**Distinct from the other two apps:** Immersion and NextGen-Scholars are
+private (Play Internal Testing). This app **may go public** (see "Multi-tenant /
+public user accounts" in future scope above). A public production listing is a
+heavier path — content rating, data-safety declaration (financial data —
+declare honestly), privacy policy, and the new-account 12-tester / 14-day
+closed-testing gate. **Decide private-vs-public later;** the PWA groundwork is a
+prerequisite either way and keeps both options open.
+
+Runbook: `docs/PWA.md` (written; work not started). Deliverables: manifest
+(`app/manifest.js`), service worker (all data/AI API routes network-only —
+single-user, so no cross-user leak risk, but financial-data freshness still
+forbids caching), 192/512 + maskable icons rasterized from the existing
+`public/favicon.svg` / `icons.svg`. Play Store step chosen once the
+private/public decision is made.
+
+---
+
 ## Session Protocol for Claude Code
 
 Load into every Claude Code session:
