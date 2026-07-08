@@ -9,15 +9,17 @@ At the start of each session, read `ARCHITECTURE.md` and `ROADMAP.md` to orient 
 - No trailing summaries — the diff speaks for itself.
 
 ## Project context
-- React 19 + Vite frontend, Supabase PostgreSQL backend, Anthropic claude-sonnet-4-6 via Edge Function
-- Deployed to GitHub Pages (auto-deploys on push to `main`)
+- **Next.js 16 App Router** frontend (React 19), **Neon (serverless Postgres)**
+  backend via `app/api/*` route handlers, Neon Auth for sessions, Anthropic
+  claude-sonnet-4-6 via the `app/api/ai-chat` route.
+- Deployed to **Vercel** (migrated off Vite/GitHub Pages/Supabase — see
+  `MIGRATION_PLAN.md` / `ROADMAP.md`).
 - App is in daily personal use — reliability and data integrity take priority over new features
-- Never expose the Anthropic API key in the browser; all AI calls route through `supabase/functions/ai-chat`
+- Never expose the Anthropic API key in the browser; all AI calls route through the server-side `app/api/ai-chat` route.
 
-> **Stale — needs a separate cleanup pass:** the "Project context" above no
-> longer matches the repo. The app has migrated to **Next.js App Router**
-> (`app/`, `next.config.mjs`, Next 16) on Vercel (see `MIGRATION_PLAN.md` /
-> `ROADMAP.md`). Treat the Next.js/Vercel state as current.
+> **Code naming drift (harmless):** some `app/api/*` route files still contain
+> leftover `supabase`-named strings/identifiers from before the migration. The
+> live backend is Neon; these are cosmetic and safe to rename in a cleanup pass.
 
 ## Native app (PWA → Play Store) — PLANNED
 

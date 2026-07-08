@@ -5,12 +5,11 @@ installable Progressive Web App. Nothing here exists in the repo yet — no
 manifest, service worker, or icons. Forward-looking; do not read as shipped
 behavior.
 
-> **Doc-drift note:** the root `CLAUDE.md` still describes this app as
-> "React 19 + Vite + Supabase, deployed to GitHub Pages." The repo has since
-> migrated to **Next.js App Router** (`app/`, `next.config.mjs`, Next 16) on
-> Vercel (see `MIGRATION_PLAN.md` / `ROADMAP.md`). This PWA runbook is written
-> against the **actual current Next.js state**, not the stale CLAUDE.md
-> description. (Fixing CLAUDE.md's stack summary is a separate cleanup task.)
+> **Current stack:** Next.js 16 App Router (React 19) on Vercel, **Neon
+> (serverless Postgres)** backend + Neon Auth, Anthropic via `app/api/ai-chat`.
+> Migrated off the old Vite / GitHub Pages / Supabase setup — see
+> `MIGRATION_PLAN.md` / `ROADMAP.md`. This runbook is written against that
+> current state.
 
 **Context — this app is different from the other two.** NextGen-Immersion is
 the pilot for the native rollout and NextGen-Scholars follows; both are
@@ -49,9 +48,9 @@ a viewport meta (Next default covers it).
 - **Existing assets:** `public/` already has `favicon.svg` and `icons.svg` —
   reuse/extend the brand mark for the PWA icon set (you still need raster PNGs
   at 192/512 + maskable; SVG alone isn't sufficient for the manifest).
-- **Backend/AI:** AI calls route through a server function (was the Supabase
-  `ai-chat` Edge Function; confirm the current Next API route after migration).
-  The SW must treat **API routes as network-only** — never cache AI responses
+- **Backend/AI:** Neon-backed `app/api/*` route handlers; AI calls go through
+  the server-side `app/api/ai-chat` route (Anthropic key server-only). The SW
+  must treat **all `/api/**` routes as network-only** — never cache AI responses
   or authed data. Even though it's single-user, caching API responses would
   serve stale financial data, which for a planning tool is worse than a network
   round-trip.
