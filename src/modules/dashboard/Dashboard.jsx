@@ -206,75 +206,84 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
           )
         })()}
 
-        {/* Bars */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 3 : 8, height: chartH }}>
-          {chartData.map((d) => {
-            const showInc = hasActualIncome || hasForecastIncome
-            const incVal = d.isPast ? d.income : d.incForecast
-            const expVal = d.isPast ? d.expenses : d.expForecast
-            const incH = showInc ? (incVal / chartMax) * chartH : 0
-            const expH = (expVal / chartMax) * chartH
-            const isHov = hover === d.m
-            const isFcst = !d.isPast
-            return (
-              <div
-                key={d.m}
-                onMouseEnter={() => setHover(d.m)}
-                onMouseLeave={() => setHover(null)}
-                style={{
-                  flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-                  gap: mobile ? 1 : 2, height: '100%', position: 'relative', cursor: 'default',
-                  background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
-                }}
-              >
-                {/* Income bar */}
-                {showInc && (
-                  <div style={{
-                    width: '48%', maxWidth: 28,
-                    height: Math.max(incH, 2),
-                    background: isFcst ? 'var(--forecast-fill)' : 'var(--accent)',
-                    border: isFcst ? '1px dashed var(--accent)' : 'none',
-                    borderRadius: '3px 3px 0 0',
-                    opacity: isHov ? 1 : isFcst ? 0.9 : 0.88,
-                    boxSizing: 'border-box',
-                  }} />
-                )}
-                {/* Expense bar */}
-                <div style={{
-                  width: '48%', maxWidth: 28,
-                  height: Math.max(expH, 2),
-                  background: isFcst ? 'var(--forecast-fill)' : 'var(--warn)',
-                  border: isFcst ? '1px dashed var(--warn)' : 'none',
-                  borderRadius: '3px 3px 0 0',
-                  opacity: isHov ? 1 : isFcst ? 0.9 : 0.8,
-                  boxSizing: 'border-box',
-                }} />
+        {/* Bars + month labels scroll together horizontally on mobile so bars
+            stay a readable size instead of being squeezed to fit the screen. */}
+        <div style={{
+          overflowX: mobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch',
+          margin: mobile ? '0 -22px' : 0, padding: mobile ? '0 22px' : 0,
+        }}>
+          <div>
+            {/* Bars */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 6 : 8, height: chartH }}>
+              {chartData.map((d) => {
+                const showInc = hasActualIncome || hasForecastIncome
+                const incVal = d.isPast ? d.income : d.incForecast
+                const expVal = d.isPast ? d.expenses : d.expForecast
+                const incH = showInc ? (incVal / chartMax) * chartH : 0
+                const expH = (expVal / chartMax) * chartH
+                const isHov = hover === d.m
+                const isFcst = !d.isPast
+                return (
+                  <div
+                    key={d.m}
+                    onMouseEnter={() => setHover(d.m)}
+                    onMouseLeave={() => setHover(null)}
+                    style={{
+                      flex: mobile ? '0 0 42px' : 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                      gap: mobile ? 2 : 2, height: '100%', position: 'relative', cursor: 'default',
+                      background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
+                    }}
+                  >
+                    {/* Income bar */}
+                    {showInc && (
+                      <div style={{
+                        width: mobile ? 14 : '48%', maxWidth: 28,
+                        height: Math.max(incH, 2),
+                        background: isFcst ? 'var(--forecast-fill)' : 'var(--accent)',
+                        border: isFcst ? '1px dashed var(--accent)' : 'none',
+                        borderRadius: '3px 3px 0 0',
+                        opacity: isHov ? 1 : isFcst ? 0.9 : 0.88,
+                        boxSizing: 'border-box',
+                      }} />
+                    )}
+                    {/* Expense bar */}
+                    <div style={{
+                      width: mobile ? 14 : '48%', maxWidth: 28,
+                      height: Math.max(expH, 2),
+                      background: isFcst ? 'var(--forecast-fill)' : 'var(--warn)',
+                      border: isFcst ? '1px dashed var(--warn)' : 'none',
+                      borderRadius: '3px 3px 0 0',
+                      opacity: isHov ? 1 : isFcst ? 0.9 : 0.8,
+                      boxSizing: 'border-box',
+                    }} />
 
-                {/* TODAY marker */}
-                {d.m === cm && (
-                  <div style={{ position: 'absolute', right: -3, top: -14, bottom: 0, borderRight: '1px dashed var(--forecast-bd)' }}>
-                    <span style={{
-                      position: 'absolute', top: -2, right: 4, whiteSpace: 'nowrap',
-                      fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.08em', color: 'var(--tx-3)',
-                    }}>TODAY</span>
+                    {/* TODAY marker */}
+                    {d.m === cm && (
+                      <div style={{ position: 'absolute', right: -3, top: -14, bottom: 0, borderRight: '1px dashed var(--forecast-bd)' }}>
+                        <span style={{
+                          position: 'absolute', top: -2, right: 4, whiteSpace: 'nowrap',
+                          fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.08em', color: 'var(--tx-3)',
+                        }}>TODAY</span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Month labels */}
-        <div style={{ display: 'flex', gap: mobile ? 3 : 8, marginTop: 8 }}>
-          {IVE_MONTHS.map((label, m) => (
-            <div key={m} style={{
-              flex: 1, textAlign: 'center',
-              fontFamily: "'DM Mono', monospace", fontSize: mobile ? 8.5 : 10,
-              color: m === cm ? 'var(--accent)' : 'var(--tx-3)', letterSpacing: '0.02em',
-            }}>
-              {mobile ? label[0] : label}
+                )
+              })}
             </div>
-          ))}
+
+            {/* Month labels */}
+            <div style={{ display: 'flex', gap: mobile ? 6 : 8, marginTop: 8 }}>
+              {IVE_MONTHS.map((label, m) => (
+                <div key={m} style={{
+                  flex: mobile ? '0 0 42px' : 1, textAlign: 'center',
+                  fontFamily: "'DM Mono', monospace", fontSize: mobile ? 9 : 10,
+                  color: m === cm ? 'var(--accent)' : 'var(--tx-3)', letterSpacing: '0.02em',
+                }}>
+                  {mobile ? label.slice(0, 3) : label}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Legend */}

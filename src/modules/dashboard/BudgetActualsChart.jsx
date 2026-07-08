@@ -120,71 +120,80 @@ export default function BudgetActualsChart({ data, mobile, onThresholdChange, on
           )
         })()}
 
-        {/* Bars */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 4 : 10, height: chartH }}>
-          {data.months.map(mo => {
-            // Left bar is always the budget; the right bar is the actual (past
-            // months) or the forecast (current/future months, dashed). Keeping
-            // them distinct means a forecast edit moves only the forecast bar.
-            const budgetH = (mo.budget / max) * chartH
-            const rightVal = mo.actual != null ? mo.actual : (mo.forecast ?? mo.budget)
-            const actualH = (rightVal / max) * chartH
-            const isHover = hover === mo.month
-            const showForecast = mo.actual == null
-            return (
-              <div
-                key={mo.month}
-                onMouseEnter={() => setHover(mo.month)}
-                onMouseLeave={() => setHover(null)}
-                style={{
-                  flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-                  gap: mobile ? 2 : 3, height: '100%', position: 'relative', cursor: 'default',
-                  background: isHover ? 'var(--hover)' : 'transparent', borderRadius: 5,
-                }}
-              >
-                {/* Budget bar */}
-                <div style={{
-                  width: '48%', maxWidth: 30, height: Math.max(budgetH, 2),
-                  background: 'var(--bar-budget)', borderRadius: '3px 3px 0 0',
-                  transition: 'opacity .15s', opacity: isHover ? 1 : 0.9,
-                }} />
-                {/* Actual / forecast bar */}
-                <div style={{
-                  width: '48%', maxWidth: 30, height: Math.max(actualH, 2),
-                  background: showForecast ? 'var(--forecast-fill)' : STATUS_COLOR[mo.status],
-                  border: showForecast ? '1px dashed var(--forecast-bd)' : 'none',
-                  borderRadius: '3px 3px 0 0', transition: 'opacity .15s',
-                  opacity: isHover ? 1 : showForecast ? 1 : 0.92,
-                }} />
+        {/* Bars + month labels scroll together horizontally on mobile so bars
+            stay a readable size instead of being squeezed to fit the screen. */}
+        <div style={{
+          overflowX: mobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch',
+          margin: mobile ? '0 -22px' : 0, padding: mobile ? '0 22px' : 0,
+        }}>
+          <div>
+            {/* Bars */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 8 : 10, height: chartH }}>
+              {data.months.map(mo => {
+                // Left bar is always the budget; the right bar is the actual (past
+                // months) or the forecast (current/future months, dashed). Keeping
+                // them distinct means a forecast edit moves only the forecast bar.
+                const budgetH = (mo.budget / max) * chartH
+                const rightVal = mo.actual != null ? mo.actual : (mo.forecast ?? mo.budget)
+                const actualH = (rightVal / max) * chartH
+                const isHover = hover === mo.month
+                const showForecast = mo.actual == null
+                return (
+                  <div
+                    key={mo.month}
+                    onMouseEnter={() => setHover(mo.month)}
+                    onMouseLeave={() => setHover(null)}
+                    style={{
+                      flex: mobile ? '0 0 46px' : 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                      gap: mobile ? 3 : 3, height: '100%', position: 'relative', cursor: 'default',
+                      background: isHover ? 'var(--hover)' : 'transparent', borderRadius: 5,
+                    }}
+                  >
+                    {/* Budget bar */}
+                    <div style={{
+                      width: mobile ? 16 : '48%', maxWidth: 30, height: Math.max(budgetH, 2),
+                      background: 'var(--bar-budget)', borderRadius: '3px 3px 0 0',
+                      transition: 'opacity .15s', opacity: isHover ? 1 : 0.9,
+                    }} />
+                    {/* Actual / forecast bar */}
+                    <div style={{
+                      width: mobile ? 16 : '48%', maxWidth: 30, height: Math.max(actualH, 2),
+                      background: showForecast ? 'var(--forecast-fill)' : STATUS_COLOR[mo.status],
+                      border: showForecast ? '1px dashed var(--forecast-bd)' : 'none',
+                      borderRadius: '3px 3px 0 0', transition: 'opacity .15s',
+                      opacity: isHover ? 1 : showForecast ? 1 : 0.92,
+                    }} />
 
-                {/* TODAY marker — drawn on the leading edge of the current month */}
-                {mo.isCurrent && (
-                  <div style={{
-                    position: 'absolute', left: -3, top: -14, bottom: 0,
-                    borderLeft: '1px dashed var(--forecast-bd)',
-                  }}>
-                    <span style={{
-                      position: 'absolute', top: -2, left: 4, whiteSpace: 'nowrap',
-                      fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.08em',
-                      color: 'var(--tx-3)',
-                    }}>TODAY</span>
+                    {/* TODAY marker — drawn on the leading edge of the current month */}
+                    {mo.isCurrent && (
+                      <div style={{
+                        position: 'absolute', left: -3, top: -14, bottom: 0,
+                        borderLeft: '1px dashed var(--forecast-bd)',
+                      }}>
+                        <span style={{
+                          position: 'absolute', top: -2, left: 4, whiteSpace: 'nowrap',
+                          fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.08em',
+                          color: 'var(--tx-3)',
+                        }}>TODAY</span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+                )
+              })}
+            </div>
 
-        {/* Month labels */}
-        <div style={{ display: 'flex', gap: mobile ? 4 : 10, marginTop: 8 }}>
-          {data.months.map(mo => (
-            <div key={mo.month} style={{
-              flex: 1, textAlign: 'center',
-              fontFamily: "'DM Mono', monospace", fontSize: mobile ? 8.5 : 10,
-              color: mo.isCurrent ? 'var(--accent)' : 'var(--tx-3)',
-              letterSpacing: '0.02em',
-            }}>{mobile ? mo.label[0] : mo.label}</div>
-          ))}
+            {/* Month labels */}
+            <div style={{ display: 'flex', gap: mobile ? 8 : 10, marginTop: 8 }}>
+              {data.months.map(mo => (
+                <div key={mo.month} style={{
+                  flex: mobile ? '0 0 46px' : 1, textAlign: 'center',
+                  fontFamily: "'DM Mono', monospace", fontSize: mobile ? 9 : 10,
+                  color: mo.isCurrent ? 'var(--accent)' : 'var(--tx-3)',
+                  letterSpacing: '0.02em',
+                }}>{mobile ? mo.label.slice(0, 3) : mo.label}</div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </ChartCard>
