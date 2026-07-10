@@ -335,7 +335,7 @@ function CategoryLineItems({ row, cellStyle, colBg, curMonth, editable, onAddLin
 function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, layer, forecastReady, onEdit, saving, editKey, expandedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onUpdateLine, onDeleteLabel, onSetRate }) {
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1 // highlight current month
   const canEditForecast = layer === 'forecast' && forecastReady
-  const scenarioLayer = layer === 'committed' || layer === 'modeled'
+  const scenarioLayer = layer === 'modeled'
 
   // Group rows
   const grouped = {}
@@ -531,7 +531,9 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
 
 // ── Scenario multi-select dropdown ───────────────────────────────────────────
 // Anchored popover under a layer button. Lets the user pick which scenarios in
-// the active tier (committed / modeled) are folded into the forecast.
+// the modeled tier are folded into the forecast (committed scenarios are
+// materialized directly into forecast_line_items on commit, so they're
+// already part of the base forecast — no separate overlay needed).
 
 const miniBtn = {
   padding: '3px 10px', background: 'transparent', color: 'var(--tx-2)',
@@ -580,13 +582,12 @@ function ScenarioDropdown({ scenarios, selected, tier, onToggle, onAll, onNone, 
 // actualTotals[12]   — real spend per month (past months only)
 // forecastTotals[12] — forecast baseline, all 12 months
 // modeledLines       — [{name, color, values[12]}] one per selected modeled scenario
-// committedLine      — {values[12]} combined committed, or null
 //
 // Scenario lines are anchored to the last actual data point and extend to Dec.
 // They run on top of the forecast baseline until the first month with a delta,
 // then diverge visibly.
 
-function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, committedLine, combinedModeledLine }) {
+function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, combinedModeledLine }) {
   const [hoverM, setHoverM] = useState(null)
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1
 
@@ -604,14 +605,13 @@ function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, commi
     return -1
   })()
 
-  const hasAdjustment = committedLine != null || combinedModeledLine != null
+  const hasAdjustment = combinedModeledLine != null
 
   // Y scale from 0 to maxV
   const allVals = [
     ...forecastTotals,
     ...budgetTotals,
     ...actualTotals.slice(0, lastActM + 1),
-    ...(committedLine ? committedLine.values : []),
     ...(combinedModeledLine ? combinedModeledLine.values : []),
   ].filter(v => v > 0)
   const rawMax = allVals.length > 0 ? Math.max(...allVals) : 10000
@@ -690,14 +690,6 @@ function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, commi
           opacity={hasAdjustment ? 0.18 : 0.75}
         />
 
-        {/* Committed — full-year forecast-with-scenario; overlays the faint baseline,
-            diverges only where deltas exist */}
-        {committedLine && (
-          <path d={makePath(committedLine.values, 0, 11)}
-            fill="none" stroke="var(--accent)" strokeWidth={2} opacity={0.85}
-          />
-        )}
-
         {/* Modeled — full-year combined scenario line */}
         {combinedModeledLine && (
           <path d={makePath(combinedModeledLine.values, 0, 11)}
@@ -740,12 +732,6 @@ function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, commi
                 opacity={hasAdjustment ? 0.35 : 1}
               />
             )}
-            {/* Committed dot */}
-            {committedLine && (
-              <circle cx={xOf(hoverM)} cy={yOf(committedLine.values[hoverM])} r={4.5}
-                fill="var(--accent)" stroke="var(--bg-card)" strokeWidth={1.5}
-              />
-            )}
             {/* Combined modeled dot */}
             {combinedModeledLine && (
               <circle cx={xOf(hoverM)} cy={yOf(combinedModeledLine.values[hoverM])} r={4.5}
@@ -785,16 +771,6 @@ function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, commi
             value={fmtFull(forecastTotals[hoverM])}
             faint={hasAdjustment}
           />
-          {committedLine && (() => {
-            const d = committedLine.values[hoverM] - forecastTotals[hoverM]
-            return (
-              <ChartTooltipRow dot="var(--accent)" label="Forecast (committed)"
-                value={fmtFull(committedLine.values[hoverM])}
-                delta={d !== 0 ? `${d > 0 ? '+' : ''}${fmt(d)}` : null}
-                deltaColor={d > 0 ? 'var(--warn)' : 'var(--accent)'}
-              />
-            )
-          })()}
           {combinedModeledLine && (() => {
             const d = combinedModeledLine.values[hoverM] - forecastTotals[hoverM]
             return (
@@ -816,7 +792,6 @@ function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, commi
         <ChartLegend stroke="var(--tx-1)" solid label="Actuals" />
         <ChartLegend stroke="var(--accent)" label={hasAdjustment ? 'Forecast (baseline)' : 'Forecast'} faint={hasAdjustment} />
         <ChartLegend stroke="var(--bar-budget-tx)" label="Budget" />
-        {committedLine && <ChartLegend stroke="var(--accent)" label="Forecast (committed)" />}
         {combinedModeledLine && <ChartLegend stroke="#a864ff" dashed label="Modeled" />}
       </div>
     </div>
@@ -933,20 +908,17 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   const [forecastItems, setForecastItems] = useState([])
   const [forecastReady, setForecastReady] = useState(false) // forecast initialized for this year
   const [yearTxns, setYearTxns] = useState([])
-  const [committedScenarios, setCommittedScenarios] = useState([])
   const [modeledScenarios, setModeledScenarios] = useState([])
-  const [selectedCommitted, setSelectedCommitted] = useState(() => new Set())
   const [selectedModeled, setSelectedModeled] = useState(() => new Set())
-  const [openDropdown, setOpenDropdown] = useState(null) // 'committed' | 'modeled' | null
+  const [openDropdown, setOpenDropdown] = useState(null) // 'modeled' | null
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false) // initialize / reset in flight
-  const [layer, setLayer] = useState('forecast') // 'budget' | 'forecast' | 'committed' | 'modeled'
+  const [layer, setLayer] = useState('forecast') // 'budget' | 'forecast' | 'modeled'
 
   // Track which scenario ids we've seen so new scenarios default to selected
   // while preserving the user's existing picks across reloads/year changes.
-  const knownCommittedRef = useRef(new Set())
   const knownModeledRef = useRef(new Set())
 
   // Editing state: { catId, month, budgetValue, currentValue, lineId, key }
@@ -977,11 +949,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
           return { ...s, adjustments: adjs }
         })
       )
-      const [commWithAdjs, modWithAdjs] = await Promise.all([
-        withAdjs(allScenarios.filter(s => s.state === 'committed')),
-        withAdjs(allScenarios.filter(s => s.state === 'modeled')),
-      ])
-      setCommittedScenarios(commWithAdjs)
+      const modWithAdjs = await withAdjs(allScenarios.filter(s => s.state === 'modeled'))
       setModeledScenarios(modWithAdjs)
 
       // Default brand-new scenarios to selected; keep prior picks, drop removed.
@@ -992,7 +960,6 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
         knownRef.current = new Set(ids)
         return next
       }
-      setSelectedCommitted(prev => reconcile(prev, commWithAdjs, knownCommittedRef))
       setSelectedModeled(prev => reconcile(prev, modWithAdjs, knownModeledRef))
     } catch (e) {
       setError(e.message)
@@ -1056,10 +1023,9 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   // Scenarios folded into the forecast for the active tier — only those the
   // user has selected in that tier's dropdown.
   const activeScenarios = useMemo(() => {
-    if (layer === 'committed') return committedScenarios.filter(s => selectedCommitted.has(s.id))
     if (layer === 'modeled') return modeledScenarios.filter(s => selectedModeled.has(s.id))
     return []
-  }, [layer, committedScenarios, modeledScenarios, selectedCommitted, selectedModeled])
+  }, [layer, modeledScenarios, selectedModeled])
 
   // Scenario delta map: "catId::month" → net delta from the selected scenarios
   const scenarioDeltaMap = useMemo(() => {
@@ -1119,8 +1085,8 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     })
   }
 
-  const setterFor = tier => tier === 'committed' ? setSelectedCommitted : setSelectedModeled
-  const listFor = tier => tier === 'committed' ? committedScenarios : modeledScenarios
+  const setterFor = () => setSelectedModeled
+  const listFor = () => modeledScenarios
   function toggleScenario(tier, id) {
     setterFor(tier)(prev => {
       const next = new Set(prev)
@@ -1287,7 +1253,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   const variance = annualForecast - annualBudget
   const pctVariance = annualBudget > 0 ? (variance / annualBudget) * 100 : null
   const needsInit = !forecastReady && budgetItems.length > 0
-  const scenarioLayer = layer === 'committed' || layer === 'modeled'
+  const scenarioLayer = layer === 'modeled'
 
   // ── Chart data series ────────────────────────────────────────────────────────
   const chartActualTotals = useMemo(() =>
@@ -1343,21 +1309,6 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     return { values }
   }, [modeledScenarios, selectedModeled, chartForecastTotals, year])
 
-  const chartCommittedLine = useMemo(() => {
-    const sel = committedScenarios.filter(s => selectedCommitted.has(s.id))
-    if (sel.length === 0) return null
-    const netDelta = Array(12).fill(0)
-    for (const s of sel) {
-      for (const adj of (s.adjustments ?? [])) {
-        if (Number(adj.year) !== year) continue
-        const m = Number(adj.month) - 1
-        if (m >= 0 && m < 12) netDelta[m] += Number(adj.delta_amount)
-      }
-    }
-    const values = Array.from({ length: 12 }, (_, m) => chartForecastTotals[m] + netDelta[m])
-    return { values }
-  }, [committedScenarios, selectedCommitted, chartForecastTotals, year])
-
   return (
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       <ModuleHeader
@@ -1408,12 +1359,11 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               {[
                 { id: 'budget', label: 'Budget' },
                 { id: 'forecast', label: 'Forecast' },
-                { id: 'committed', label: mobile ? 'Committed' : 'Committed Scenarios', tier: 'committed' },
                 { id: 'modeled', label: 'Modeled', tier: 'modeled' },
               ].map(({ id, label, tier }, i, arr) => {
                 const active = layer === id
                 const scns = tier ? listFor(tier) : []
-                const sel = tier === 'committed' ? selectedCommitted : tier === 'modeled' ? selectedModeled : null
+                const sel = tier === 'modeled' ? selectedModeled : null
                 return (
                   <div key={id} style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
                     <button
@@ -1487,7 +1437,6 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               actualTotals={chartActualTotals}
               forecastTotals={chartForecastTotals}
               budgetTotals={chartBudgetTotals}
-              committedLine={chartCommittedLine}
               combinedModeledLine={chartCombinedModeledLine}
             />
           )}
@@ -1531,7 +1480,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               <div style={{ fontSize: 12, color: 'var(--tx-3)', alignSelf: 'center', maxWidth: 320, lineHeight: 1.5 }}>
                 {listFor(layer).length === 0
                   ? `No ${layer} scenarios yet — create one in the Scenario Planner to layer it here.`
-                  : `No ${layer} scenarios selected — pick one from the ${layer === 'committed' ? 'Committed Scenarios' : 'Modeled'} ▾ dropdown.`}
+                  : `No ${layer} scenarios selected — pick one from the Modeled ▾ dropdown.`}
               </div>
             )}
           </div>
@@ -1540,7 +1489,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
           <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 11, color: 'var(--tx-3)', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, border: '1px solid var(--bd)', background: 'var(--bg-card)' }} />
-              {layer === 'budget' ? 'Budget (read-only — edit in Budget module)' : layer === 'forecast' ? 'Forecast — click a cell to edit, a category to manage lines' : layer === 'committed' ? 'Forecast + selected committed scenarios' : 'Forecast + selected modeled scenarios'}
+              {layer === 'budget' ? 'Budget (read-only — edit in Budget module)' : layer === 'forecast' ? 'Forecast — click a cell to edit, a category to manage lines' : 'Forecast + selected modeled scenarios'}
             </span>
             {scenarioLayer && (
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

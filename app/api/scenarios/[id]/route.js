@@ -81,17 +81,49 @@ export async function PATCH(request, context) {
       }
     }
 
-    const [row] = await sql`
-      UPDATE scenarios
-      SET
-        name = ${merged.name},
-        description = ${merged.description},
-        state = ${merged.state},
-        parent_baseline = ${merged.parent_baseline},
-        committed_at = ${committedAt}
-      WHERE id = ${id} AND user_id = ${userId}
-      RETURNING *
-    `
+    // Committing a scenario writes its adjustments into forecast_line_items
+    // (tagged with source_scenario_id) so Forecast and, downstream, Bill
+    // Planner reflect it without a separate step. Leaving 'committed' removes
+    // those tagged rows again, reverting the forecast cleanly.
+    const enteringCommitted = merged.state === 'committed' && existing.state !== 'committed'
+    const leavingCommitted = existing.state === 'committed' && merged.state !== 'committed'
+
+    const statements = [
+      sql`
+        UPDATE scenarios
+        SET
+          name = ${merged.name},
+          description = ${merged.description},
+          state = ${merged.state},
+          parent_baseline = ${merged.parent_baseline},
+          committed_at = ${committedAt}
+        WHERE id = ${id} AND user_id = ${userId}
+        RETURNING *
+      `,
+    ]
+
+    if (leavingCommitted) {
+      statements.push(
+        sql`DELETE FROM forecast_line_items WHERE source_scenario_id = ${id} AND user_id = ${userId}`
+      )
+    }
+    if (enteringCommitted) {
+      statements.push(sql`
+        INSERT INTO forecast_line_items
+          (user_id, budget_year, category_id, month, amount, label, note, source, source_scenario_id)
+        SELECT
+          ${userId}, sa.year, sa.category_id, sa.month, sa.delta_amount,
+          CASE WHEN COALESCE(sa.label, '') <> '' THEN ${existing.name} || ' — ' || sa.label ELSE ${existing.name} END,
+          'Committed scenario: ' || ${existing.name},
+          'scenario',
+          ${id}
+        FROM scenario_adjustments sa
+        WHERE sa.scenario_id = ${id} AND sa.user_id = ${userId}
+      `)
+    }
+
+    const results = await sql.transaction(statements)
+    const [row] = results[0]
 
     if (!row) {
       return Response.json({ error: 'Scenario not found.' }, { status: 404 })
@@ -119,9 +151,12 @@ export async function DELETE(request, context) {
     // both dropped during the Phase B0 schema recreation), so deleting a
     // scenario that still has adjustments, or that another scenario clones
     // from as its parent_baseline, would raise a foreign-key violation.
-    // Replicate both atomically. WHERE user_id = ${userId} throughout is the
-    // authorization check: a user can never touch rows they don't own.
-    const [, , rows] = await sql.transaction([
+    // Replicate both atomically, plus clean up any forecast_line_items this
+    // scenario materialized while committed. WHERE user_id = ${userId}
+    // throughout is the authorization check: a user can never touch rows
+    // they don't own.
+    const [, , , rows] = await sql.transaction([
+      sql`DELETE FROM forecast_line_items WHERE source_scenario_id = ${id} AND user_id = ${userId}`,
       sql`DELETE FROM scenario_adjustments WHERE scenario_id = ${id} AND user_id = ${userId}`,
       sql`UPDATE scenarios SET parent_baseline = NULL WHERE parent_baseline = ${id} AND user_id = ${userId}`,
       sql`DELETE FROM scenarios WHERE id = ${id} AND user_id = ${userId} RETURNING id`,
