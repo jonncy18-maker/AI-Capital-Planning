@@ -6,6 +6,10 @@
 
 ---
 
+## Next Up
+
+Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration is complete and live on `main`, and the scenario-commit → Forecast → Bill Planner write-through shipped 2026-07-10. The standout open gap is test coverage — there is still no automated test suite for the app's ~53 routes. Work has shifted from feature/migration delivery into the hardening backlog.
+
 ## Current Status — Session Log
 
 **Last updated:** 2026-07-10 (Scenario commit now writes through to Forecast and Bill Planner)
