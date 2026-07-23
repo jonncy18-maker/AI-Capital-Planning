@@ -1,9 +1,46 @@
 # PWA Foundation — Installable App Groundwork
 
-**Status: PLANNED (not yet built).** Runbook for turning this app into an
-installable Progressive Web App. Nothing here exists in the repo yet — no
-manifest, service worker, or icons. Forward-looking; do not read as shipped
-behavior.
+**Status: BUILT (2026-07-23).** The app is now an installable PWA. Manifest,
+service worker (Serwist), and icons are in the repo and pass `next build`.
+Runtime install/offline behavior is **visually unverified** — confirm in a
+browser against a deployed HTTPS build (see the checklist). The sections below
+are the original runbook, annotated with what actually shipped.
+
+## What shipped (2026-07-23)
+
+- **`app/manifest.js`** → `/manifest.webmanifest`. `name` "AI Capital Planning",
+  `short_name` "Capital", `start_url: "/"` (Dashboard), `display: standalone`,
+  `theme_color`/`background_color` `#0C0F12` (the app's `--bg-app` dark chrome,
+  so the splash/status bar match the app's default dark theme).
+- **`app/sw.js`** — Serwist service worker. **All `/api/**` routes are
+  `NetworkOnly`** (registered before `defaultCache` so it wins over Serwist's
+  default NetworkFirst `/api` handler) — financial/AI data is never cached.
+  Static shell + assets use Serwist's tuned Next.js `defaultCache`
+  (navigations StaleWhileRevalidate, images/fonts/icons CacheFirst).
+- **`public/icons/`** — `icon-192.png`, `icon-512.png`, `maskable-512.png`,
+  rasterized from `public/favicon.svg` on the `#0C0F12` ground (maskable carries
+  a generous safe margin). Regenerate with `scratchpad/gen-icons.mjs` pattern
+  (Playwright/Chromium → PNG) if the brand mark changes.
+- **`app/layout.jsx`** — added `metadata` (`manifest`, `appleWebApp`,
+  apple-touch icon) and `viewport.themeColor`.
+- **`next.config.mjs`** — wrapped with `withSerwistInit` (`swSrc: app/sw.js`,
+  `swDest: public/sw.js`, `disable` in development). The generated
+  `public/sw.js` (+ `swe-worker-*.js`, `sw.js.map`) is gitignored — it's build
+  output.
+
+### ⚠️ Build gotcha — must build with webpack, not Turbopack
+
+Next 16 defaults to **Turbopack**, but `@serwist/next` v9 bundles the SW via a
+**webpack** plugin. Under Turbopack the plugin never runs and the SW is silently
+**not** produced (and Next errors on the webpack-config-with-no-turbopack-config
+guard). Therefore:
+
+- **`package.json` `build` script is `next build --webpack`** — required, or the
+  PWA breaks in production.
+- `next dev` stays on Turbopack (SW is `disable`d in dev anyway); an empty
+  `turbopack: {}` in `next.config.mjs` silences the config-conflict guard.
+- If you ever migrate to Turbopack builds, switch to `@serwist/turbopack` or
+  Serwist configurator mode first.
 
 > **Current stack:** Next.js 16 App Router (React 19) on Vercel, **Neon
 > (serverless Postgres)** backend + Neon Auth, Anthropic via `app/api/ai-chat`.
@@ -114,7 +151,14 @@ perfectly adequate for a single-user app with modest offline needs.
 
 ## Verification checklist
 
-- [ ] `npm run build && npm run start`, open in Chrome.
+Build-time (done 2026-07-23):
+- [x] `npm run build` (uses `--webpack`) compiles clean; `✓ (serwist) Bundling
+      the service worker script`; `/manifest.webmanifest` in the route table.
+- [x] `public/sw.js` emitted; contains the `/api/` NetworkOnly rule.
+- [x] Manifest JSON correct (name, colors, 192/512/maskable icons).
+
+Runtime (still **visually unverified** — needs a deployed HTTPS build; can't run
+in the CI sandbox, which lacks `NEON_AUTH_COOKIE_SECRET` and outbound access):
 - [ ] DevTools → Manifest: no errors, icons + maskable OK.
 - [ ] Service worker registered, activated, controlling the page.
 - [ ] Lighthouse / "Installability": installable, no PWA errors.

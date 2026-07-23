@@ -33,3 +33,8 @@ dist-ssr
 *.sln
 *.sw?
 .next/
+
+# Serwist build output (generated from app/sw.js on every build)
+/public/sw.js
+/public/sw.js.map
+/public/swe-worker-*.js
