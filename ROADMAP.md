@@ -12,7 +12,36 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-10 (Scenario commit now writes through to Forecast and Bill Planner)
+**Last updated:** 2026-07-23 (PWA wrapper — app is now installable)
+
+- **PWA wrapper shipped (2026-07-23):** the app is now an installable Progressive
+  Web App (Phase 1 approval → build → audit per the Agentic Loop; audit passed
+  clean, no iterations). Runbook `docs/PWA.md` updated from PLANNED to BUILT.
+  - `app/manifest.js` → `/manifest.webmanifest` (`start_url: "/"` → Dashboard,
+    `display: standalone`, `theme_color`/`background_color` `#0C0F12` = the app's
+    real `--bg-app` dark chrome, pulled from `src/styles/tokens.css`).
+  - `app/sw.js` — Serwist (`@serwist/next` 9.5.12) service worker. **All
+    `/api/**` (data + AI) are `NetworkOnly`** (registered ahead of `defaultCache`
+    so it beats Serwist's default NetworkFirst `/api` handler) — never cache
+    financials or AI answers; static shell/assets use Serwist's Next.js defaults.
+  - `public/icons/{icon-192,icon-512,maskable-512}.png` — rasterized from the
+    existing `public/favicon.svg` brand mark via Playwright/Chromium (no
+    sharp/imagemagick in the env); maskable carries a safe margin.
+  - `app/layout.jsx` — `metadata` (manifest, appleWebApp, apple-touch icon) +
+    `viewport.themeColor`, added without disturbing the existing server-component
+    `<head>`/theme-init logic.
+  - **Build-system change:** Next 16 defaults to Turbopack, but `@serwist/next`
+    bundles the SW via a webpack plugin (silently skipped under Turbopack). The
+    `build` script is now **`next build --webpack`** (required); `next dev` stays
+    on Turbopack (SW `disable`d in dev) via an empty `turbopack: {}`. Generated
+    `public/sw.js` is gitignored.
+  - Verified: `npm run build` compiles clean (53 routes), `✓ (serwist) Bundling
+    the service worker script`, `/manifest.webmanifest` static-rendered, SW
+    contains the `/api/` NetworkOnly rule, lint clean. **Runtime install/offline
+    behavior is visually unverified** — needs a browser against the Vercel HTTPS
+    deploy (the CI sandbox lacks `NEON_AUTH_COOKIE_SECRET` + outbound access).
+  - Distribution (Play Store, TWA vs. public listing) remains a deliberately
+    deferred decision — see `docs/PWA.md`; the PWA keeps both doors open.
 
 - **Scenario commit → Forecast → Bill Planner pipeline (2026-07-10):** Previously, committing a scenario only flipped its status chip — the Forecast module showed committed deltas solely as an optional, unsaved "Committed Scenarios ▾" overlay, and Bill Planner had no scenario awareness at all. Built the missing write-through:
   - `db/migrations/020_forecast_line_items_scenario_source.sql` — adds nullable `forecast_line_items.source_scenario_id` (FK to `scenarios`), applied directly to the live `dev` branch (the branch the app actually runs against — confirmed `main` has no tables, despite being marked `default`/`primary` in the Neon project).

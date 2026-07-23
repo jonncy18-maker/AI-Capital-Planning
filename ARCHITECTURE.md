@@ -68,6 +68,14 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
 - **Deployment:** Vercel (production + branch previews); `main` merged and set as Vercel's Production-tracked branch (2026-07-05) — auto-deploys on every push
 - **GitHub Pages — retired (2026-07-05):** `.github/workflows/deploy.yml` (the old Vite+Supabase static build/deploy pipeline) has been deleted now that `main` is fully on the Neon/Vercel stack. The last successful Pages build stays published as a frozen snapshot (deleting the workflow doesn't take down existing Pages content), but nothing will deploy there again. GitHub itself remains the source-control repo throughout — only the old static-hosting pipeline is gone.
 - **Remaining fallback:** the Supabase project itself is still live (not paused/deleted) as a final, deliberately temporary safety net — see `MIGRATION_PLAN.md` Phase D.
+- **Installable PWA (added 2026-07-23):** `app/manifest.js`
+  (`/manifest.webmanifest`, `display: standalone`, `start_url: /`) + a Serwist
+  service worker (`app/sw.js`) make the app installable to a home screen and
+  launchable full-screen. All `/api/**` (data + AI) are `NetworkOnly` — no
+  financial or AI response is ever cached; only the static shell + assets are.
+  Because `@serwist/next` bundles the SW with a webpack plugin, production builds
+  run `next build --webpack` (Next 16's Turbopack default would silently skip
+  the SW). See `docs/PWA.md`.
 - **Future:** React Native native app (planned migration, not V1 scope)
 
 ---

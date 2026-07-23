@@ -18,6 +18,27 @@ import AppRoot from './AppRoot.jsx'
 // to dark on refresh. Must stay in sync with useTheme.js's STORAGE_KEY.
 const themeInitScript = `(function(){try{var t=localStorage.getItem('acp-theme')||'dark';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','dark')}})()`
 
+// PWA metadata. Next injects the manifest link, apple-touch icons, and
+// apple-mobile-web-app tags so the installed app launches full-screen.
+export const metadata = {
+  applicationName: 'AI Capital Planning',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Capital',
+  },
+  icons: {
+    apple: '/icons/icon-192.png',
+  },
+}
+
+// Matches the app's default dark chrome (--bg-app) so iOS/Android tint the
+// status bar and splash to the app instead of a mismatched color.
+export const viewport = {
+  themeColor: '#0C0F12',
+}
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
