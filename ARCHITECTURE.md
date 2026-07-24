@@ -136,6 +136,23 @@ The core decision engine. Where the user goes to answer "what happens if" questi
 
 **Deduplication:** Scenarios are versioned. Promoting a scenario to committed creates an audit record of the prior baseline state.
 
+**Income scenarios** *(added 2026-07-24)*: the Scenario Planner also has an
+**Income** tab for the revenue side. Income scenarios are ordinary `scenarios`
+rows tagged `kind = 'income'` (expense scenarios are `kind = 'expense'`, the
+default). Their per-month deltas live in a separate table,
+`scenario_income_adjustments`, because income has no `budget_category` to key
+on — each row stores a signed monthly `gross_amount` (display/audit) and
+`net_amount` (post-tax, the value that integrates). Four input types
+(salary/raise, bonus, recurring, one-time windfall); the user enters gross and
+net is derived with the same effective tax rate + 401k % the income forecast
+uses (`src/lib/income/incomeScenarioMath.js`). Unlike expense scenarios,
+committing an income scenario does **not** write `forecast_line_items` (income
+isn't there); instead `contextLoader` sums committed income `net_amount` per
+month into `ctx.incomeScenarioNetByMonth`, and `incomeVsExpenses()` folds that
+into the monthly income forecast — so the dashboard net/savings and the AI brief
+reflect it. Wealth Trajectory uses a manual contribution slider today, so it is
+not yet income-scenario-aware (a deliberate follow-up).
+
 ### 4.4 Annual Budget Builder (Multi-Year)
 Replaces the manual spreadsheet process. AI-guided session that generates the month-by-month cash flow schedule from historical transaction data and user-confirmed commitments.
 

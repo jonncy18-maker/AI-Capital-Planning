@@ -2,6 +2,8 @@ import { getRecentTransactions } from '../db/transactions.js'
 import { getBudgetCategories } from '../db/budgetCategories.js'
 import { getCommitments } from '../db/commitments.js'
 import { getScenarios, getAdjustments } from '../db/scenarios.js'
+import { getIncomeAdjustments } from '../db/incomeScenarios.js'
+import { netByMonthForYear } from '../income/incomeScenarioMath.js'
 import { getLatestWealthSnapshot } from '../db/wealthSnapshots.js'
 import { getBudgetLineItems, getBudgetYears } from '../db/budgetLineItems.js'
 import { getForecastOverrides } from '../db/forecastOverrides.js'
@@ -55,18 +57,39 @@ export async function loadAIContext(userId) {
     }).catch(() => null)
   }
 
-  const [budgetLineItems, forecastOverrides, forecastLineItems, scenariosWithAdjs] = await Promise.all([
+  // Split expense vs income scenarios up front: they use different adjustment
+  // tables and integrate differently (expense → forecast_line_items; income →
+  // folded into the income forecast below). kind is absent on legacy rows, which
+  // correctly fall through as expense.
+  const expenseScenarios = scenarios.filter(s => s.kind !== 'income')
+  const incomeScenarios = scenarios.filter(s => s.kind === 'income')
+
+  const [budgetLineItems, forecastOverrides, forecastLineItems, scenariosWithAdjs, incomeScenariosWithAdjs] = await Promise.all([
     getBudgetLineItems(userId, { year: thisYear }).catch(() => []),
     getForecastOverrides(userId, thisYear).catch(() => []),
     getForecastLineItems(userId, thisYear).catch(() => []),
-    // Load adjustments for all open scenarios (modeled + committed)
+    // Load adjustments for all open expense scenarios (modeled + committed)
     Promise.all(
-      scenarios.map(async s => {
+      expenseScenarios.map(async s => {
         const adjustments = await getAdjustments(userId, s.id).catch(() => [])
         return { ...s, adjustments }
       })
     ),
+    Promise.all(
+      incomeScenarios.map(async s => {
+        const incomeAdjustments = await getIncomeAdjustments(userId, s.id).catch(() => [])
+        return { ...s, incomeAdjustments }
+      })
+    ),
   ])
+
+  // Net (post-tax) income delta per month for the current year, summed across
+  // COMMITTED income scenarios only. incomeVsExpenses folds this into the income
+  // forecast so the dashboard net/savings and the AI brief reflect it.
+  const committedIncomeRows = incomeScenariosWithAdjs
+    .filter(s => s.state === 'committed')
+    .flatMap(s => s.incomeAdjustments || [])
+  const incomeScenarioNetByMonth = netByMonthForYear(committedIncomeRows, thisYear)
 
   // Drop transfers / credit-card payments so spend and income aren't overstated.
   const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
@@ -80,6 +103,8 @@ export async function loadAIContext(userId) {
     commitments,
     wealth,
     scenarios: scenariosWithAdjs,
+    incomeScenarios: incomeScenariosWithAdjs,
+    incomeScenarioNetByMonth,
     budgetLineItems,
     forecastOverrides,
     forecastLineItems,
@@ -250,6 +275,26 @@ export function buildContextBrief(ctx, yearTxns) {
       for (const s of modeled) {
         const total = (s.adjustments ?? []).reduce((sum, a) => sum + Number(a.delta_amount), 0)
         lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — ${s.adjustments?.length ?? 0} adjustments, net delta $${Math.round(total).toLocaleString()}`)
+      }
+    }
+  }
+
+  const incomeScenarios = ctx?.incomeScenarios ?? []
+  if (incomeScenarios.length) {
+    const committedInc = incomeScenarios.filter(s => s.state === 'committed')
+    const modeledInc = incomeScenarios.filter(s => s.state !== 'committed')
+    const netOf = s => (s.incomeAdjustments ?? []).reduce((sum, a) => sum + Number(a.net_amount || 0), 0)
+    if (committedInc.length) {
+      lines.push(`\n## Committed Income Scenarios (${committedInc.length})`)
+      lines.push('  (post-tax income changes already folded into the Current year projection above)')
+      for (const s of committedInc) {
+        lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — net income impact ${netOf(s) >= 0 ? '+' : ''}$${Math.round(netOf(s)).toLocaleString()} (post-tax, this year)`)
+      }
+    }
+    if (modeledInc.length) {
+      lines.push(`\n## Modeled Income Scenarios (${modeledInc.length}, not yet in projection)`)
+      for (const s of modeledInc) {
+        lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — net income impact ${netOf(s) >= 0 ? '+' : ''}$${Math.round(netOf(s)).toLocaleString()} (post-tax, this year)`)
       }
     }
   }

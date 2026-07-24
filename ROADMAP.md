@@ -12,7 +12,41 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-24 (Fixed AI Scenario Composer silent stall on large scenarios)
+**Last updated:** 2026-07-24 (Income side added to the Scenario Planner)
+
+- **Scenario Planner — Income tab (2026-07-24):** the planner was expense-only
+  (each `scenario_adjustments` row is a delta on a budget category). Added an
+  **Income** tab to model the revenue side — raises, bonus changes, new recurring
+  income, and one-time windfalls (Phase 1 approval → build; **not yet
+  live-verified**).
+  - **Schema (`db/migrations/021_income_scenarios.sql`):** `scenarios.kind`
+    ('expense' default | 'income') + new `scenario_income_adjustments` table
+    (per-month signed `gross_amount` for display and `net_amount` post-tax for
+    integration; `income_type`, `taxable`). **Additive/safe, but NOT yet applied
+    to the Neon dev branch** — the user declined the live apply mid-session.
+    Must be applied before the feature works; the scenarios POST route falls back
+    to a kind-less insert if the column is absent, so expense scenario creation
+    never breaks if code ships ahead of the migration.
+  - **Net math (`src/lib/income/incomeScenarioMath.js`):** user enters gross; net
+    is derived with the same effective tax rate + 401k % the dashboard income
+    forecast uses. Verified against the plan's worked example (a $132k→$150k raise
+    from Aug nets +$4,800 for the year: $7,500 gross − $2,100 tax − $600 401k).
+  - **Integration:** `contextLoader` sums committed income `net_amount` per month
+    into `ctx.incomeScenarioNetByMonth`; `incomeVsExpenses()` folds it into the
+    monthly income forecast so dashboard net/savings and the AI brief reflect it.
+    Committing an income scenario skips the `forecast_line_items` write (income
+    isn't there). Expense tabs filter to `kind='expense'`; the AI brief gains
+    committed/modeled income-scenario sections.
+  - **UI (`src/modules/scenarios/Scenarios.jsx`):** new Income tab with a 4-type
+    form, live post-tax impact preview (gross → tax → 401k → net), preview →
+    Commit / Keep-modeled, and a list of income scenarios with commit/revert/
+    delete + per-month detail.
+  - **API:** `app/api/scenarios/[id]/income-adjustments/` (GET/POST) and
+    `.../[adjId]` (DELETE); scenarios POST accepts `kind`; PATCH commit branches
+    on kind. Build clean (`next build`, 54 pages incl. the new routes).
+  - **Deferred:** AI natural-language income scenarios (manual-first per the
+    plan); Wealth Trajectory income-awareness (it uses a manual contribution
+    slider today).
 
 - **AI Scenario Composer silent-stall fix (2026-07-24):** building a realistic
   multi-part scenario (reported live: a Tesla Model 3 lease correction — new

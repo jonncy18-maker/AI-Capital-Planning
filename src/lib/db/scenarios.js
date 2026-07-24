@@ -16,12 +16,12 @@ export async function getScenarios(_userId) {
   return parseJsonOrThrow(res)
 }
 
-export async function createScenario(_userId, { name, description = '', state = 'modeled' }) {
+export async function createScenario(_userId, { name, description = '', state = 'modeled', kind = 'expense' }) {
   const res = await fetch('/api/scenarios', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name, description, state }),
+    body: JSON.stringify({ name, description, state, kind }),
   })
   return parseJsonOrThrow(res)
 }
