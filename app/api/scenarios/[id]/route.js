@@ -85,8 +85,13 @@ export async function PATCH(request, context) {
     // (tagged with source_scenario_id) so Forecast and, downstream, Bill
     // Planner reflect it without a separate step. Leaving 'committed' removes
     // those tagged rows again, reverting the forecast cleanly.
-    const enteringCommitted = merged.state === 'committed' && existing.state !== 'committed'
-    const leavingCommitted = existing.state === 'committed' && merged.state !== 'committed'
+    // Income scenarios never materialize forecast_line_items rows (income has no
+    // budget_category to key on); their committed impact is folded into the
+    // income forecast by the context loader instead. Only expense scenarios
+    // write/revert forecast rows here.
+    const isExpense = existing.kind !== 'income'
+    const enteringCommitted = isExpense && merged.state === 'committed' && existing.state !== 'committed'
+    const leavingCommitted = isExpense && existing.state === 'committed' && merged.state !== 'committed'
 
     const statements = [
       sql`

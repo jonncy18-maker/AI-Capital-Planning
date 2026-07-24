@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import {
   getScenarios,
   createScenario,
@@ -11,6 +11,8 @@ import {
   cloneScenario,
 } from '../../lib/db/scenarios.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import { getIncomeAdjustments, addIncomeAdjustment } from '../../lib/db/incomeScenarios.js'
+import { computeIncomeScenarioRows } from '../../lib/income/incomeScenarioMath.js'
 import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario, runAdjustmentAgent, confirmPendingAdjustments, cancelPendingAdjustments } from '../../lib/ai/scenarioAgent.js'
 import { headerStyles } from '../common/headerStyles.js'
 import Markdown from '../common/Markdown.jsx'
@@ -2276,12 +2278,329 @@ function ActualPlanView({ scenarios, adjustments, adjLoading, onViewScenario, on
   )
 }
 
+// ── Income tab ───────────────────────────────────────────────────────────────
+// Model income-side changes (raise, bonus, recurring income, one-time windfall).
+// You enter GROSS figures; net is derived using the same effective tax rate and
+// 401k % the dashboard income forecast uses. Committing folds the post-tax net
+// into that forecast (dashboard net/savings + AI brief).
+
+const INC_GREEN = '#35c98a'
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const INCOME_TYPES = [
+  { key: 'salary', label: 'Salary / raise' },
+  { key: 'bonus', label: 'Bonus' },
+  { key: 'recurring', label: 'Recurring' },
+  { key: 'windfall', label: 'One-time' },
+]
+
+const money = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(Number(n) || 0)).toLocaleString()}`
+
+function IncomePanel({ userId, context, incomeScenarios, onChanged, mobile }) {
+  const CUR_YEAR = new Date().getFullYear()
+  const taxCtx = useMemo(() => ({
+    effectiveRate: Number(context?.incomeEstimate?.effectiveRate) || 0,
+    four01kPct: Number(context?.profile?.four01k_pct) || 0,
+  }), [context])
+  const hasTaxRate = taxCtx.effectiveRate > 0
+
+  const [type, setType] = useState('salary')
+  const [name, setName] = useState('')
+  const [f, setF] = useState({
+    newAnnualGross: '', oldAnnualGross: '', grossAmount: '', monthlyGross: '',
+    startMonth: 1, endMonth: 12, month: 1, year: CUR_YEAR,
+    applies401k: !!context?.profile?.four01k_on_bonus, taxable: type === 'windfall' ? false : true,
+  })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const [adjMap, setAdjMap] = useState({}) // { scenarioId: rows[] }
+  const [expandedId, setExpandedId] = useState(null)
+
+  const setField = (k, v) => setF(prev => ({ ...prev, [k]: v }))
+
+  // Load income adjustments for each income scenario (for net-impact display).
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const entries = await Promise.all(
+        (incomeScenarios || []).map(async s => {
+          const rows = await getIncomeAdjustments(userId, s.id).catch(() => [])
+          return [s.id, rows]
+        })
+      )
+      if (alive) setAdjMap(Object.fromEntries(entries))
+    })()
+    return () => { alive = false }
+  }, [userId, incomeScenarios])
+
+  // Build the math input from the form.
+  const buildInput = () => {
+    const base = { type, year: Number(f.year) || CUR_YEAR, label: name.trim() }
+    if (type === 'salary') return { ...base, startMonth: Number(f.startMonth), newAnnualGross: Number(f.newAnnualGross), oldAnnualGross: Number(f.oldAnnualGross) }
+    if (type === 'bonus') return { ...base, month: Number(f.month), grossAmount: Number(f.grossAmount), applies401k: !!f.applies401k }
+    if (type === 'recurring') return { ...base, startMonth: Number(f.startMonth), endMonth: Number(f.endMonth), monthlyGross: Number(f.monthlyGross), taxable: !!f.taxable }
+    return { ...base, month: Number(f.month), grossAmount: Number(f.grossAmount), taxable: !!f.taxable } // windfall
+  }
+
+  const preview = useMemo(() => {
+    try {
+      const { rows, summary } = computeIncomeScenarioRows(buildInput(), taxCtx)
+      return rows.length ? { rows, summary } : null
+    } catch { return null }
+  }, [type, f, name, taxCtx]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function save(state) {
+    if (!preview) { setErr('Enter amounts to model first.'); return }
+    if (!name.trim()) { setErr('Give this scenario a name.'); return }
+    setBusy(true); setErr(null)
+    try {
+      const scenario = await createScenario(userId, {
+        name: name.trim(),
+        description: previewDescription(type, f, preview.summary),
+        kind: 'income',
+        state: 'modeled',
+      })
+      for (const row of preview.rows) {
+        await addIncomeAdjustment(userId, scenario.id, row)
+      }
+      if (state === 'committed') {
+        await promoteToCommitted(userId, scenario.id)
+      }
+      // reset form
+      setName('')
+      setF(prev => ({ ...prev, newAnnualGross: '', oldAnnualGross: '', grossAmount: '', monthlyGross: '' }))
+      await onChanged?.()
+    } catch (e) {
+      setErr(e.message || 'Could not save.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function toggleCommit(s) {
+    setBusy(true); setErr(null)
+    try {
+      if (s.state === 'committed') await promoteToModeled(userId, s.id)
+      else await promoteToCommitted(userId, s.id)
+      await onChanged?.()
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  async function remove(s) {
+    if (!window.confirm(`Delete income scenario "${s.name}"?`)) return
+    setBusy(true); setErr(null)
+    try {
+      await deleteScenario(userId, s.id)
+      await onChanged?.()
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  const netOf = (s) => (adjMap[s.id] ?? []).reduce((sum, a) => sum + Number(a.net_amount || 0), 0)
+  const committedInc = incomeScenarios.filter(s => s.state === 'committed')
+  const modeledInc = incomeScenarios.filter(s => s.state !== 'committed')
+
+  const input = { width: '100%', padding: '8px 10px', background: 'var(--field)', border: '1px solid var(--bd)', borderRadius: 6, color: 'var(--tx-1)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
+  const lbl = { display: 'block', fontSize: 11, color: 'var(--tx-3)', marginBottom: 4 }
+  const monthSel = (val, on) => (
+    <select value={val} onChange={e => on(Number(e.target.value))} style={input}>
+      {MONTHS_SHORT.map((m, i) => <option key={m} value={i + 1}>{m} {f.year}</option>)}
+    </select>
+  )
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto', padding: mobile ? 16 : '20px 26px' }}>
+      <div style={{ maxWidth: 860, margin: '0 auto', display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 18, alignItems: 'start' }}>
+
+        {/* ── Model form ── */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 11, padding: 16 }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--tx-3)', fontWeight: 700, marginBottom: 12 }}>Model an income change</div>
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {INCOME_TYPES.map(t => {
+              const on = type === t.key
+              return (
+                <button key={t.key} onClick={() => { setType(t.key); setField('taxable', t.key === 'windfall' ? false : true) }}
+                  style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 999, cursor: 'pointer',
+                    background: on ? 'rgba(53,201,138,0.14)' : 'transparent',
+                    border: `1px solid ${on ? INC_GREEN : 'var(--bd)'}`,
+                    color: on ? INC_GREEN : 'var(--tx-2)', fontWeight: on ? 650 : 500 }}>
+                  {t.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <div style={{ marginBottom: 11 }}>
+            <label style={lbl}>Scenario name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={type === 'salary' ? 'e.g. Promotion raise' : type === 'bonus' ? 'e.g. Q4 bonus' : type === 'recurring' ? 'e.g. Consulting side income' : 'e.g. RSU vest'} style={input} />
+          </div>
+
+          {type === 'salary' && (<>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 1, marginBottom: 11 }}><label style={lbl}>New gross salary ($/yr)</label>
+                <input type="number" value={f.newAnnualGross} onChange={e => setField('newAnnualGross', e.target.value)} placeholder="150000" style={input} /></div>
+              <div style={{ flex: 1, marginBottom: 11 }}><label style={lbl}>Current gross ($/yr)</label>
+                <input type="number" value={f.oldAnnualGross} onChange={e => setField('oldAnnualGross', e.target.value)} placeholder="132000" style={input} /></div>
+            </div>
+            <div style={{ marginBottom: 11 }}><label style={lbl}>Starts</label>{monthSel(f.startMonth, v => setField('startMonth', v))}</div>
+          </>)}
+
+          {type === 'bonus' && (<>
+            <div style={{ marginBottom: 11 }}><label style={lbl}>Gross bonus ($)</label>
+              <input type="number" value={f.grossAmount} onChange={e => setField('grossAmount', e.target.value)} placeholder="30000" style={input} /></div>
+            <div style={{ marginBottom: 11 }}><label style={lbl}>Month</label>{monthSel(f.month, v => setField('month', v))}</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--tx-2)', marginBottom: 4, cursor: 'pointer' }}>
+              <input type="checkbox" checked={f.applies401k} onChange={e => setField('applies401k', e.target.checked)} /> 401k contributed on this bonus
+            </label>
+          </>)}
+
+          {type === 'recurring' && (<>
+            <div style={{ marginBottom: 11 }}><label style={lbl}>Amount ($/mo, gross)</label>
+              <input type="number" value={f.monthlyGross} onChange={e => setField('monthlyGross', e.target.value)} placeholder="1500" style={input} /></div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 1, marginBottom: 11 }}><label style={lbl}>From</label>{monthSel(f.startMonth, v => setField('startMonth', v))}</div>
+              <div style={{ flex: 1, marginBottom: 11 }}><label style={lbl}>Through</label>{monthSel(f.endMonth, v => setField('endMonth', v))}</div>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--tx-2)', marginBottom: 4, cursor: 'pointer' }}>
+              <input type="checkbox" checked={f.taxable} onChange={e => setField('taxable', e.target.checked)} /> Taxable income
+            </label>
+          </>)}
+
+          {type === 'windfall' && (<>
+            <div style={{ marginBottom: 11 }}><label style={lbl}>Amount ($)</label>
+              <input type="number" value={f.grossAmount} onChange={e => setField('grossAmount', e.target.value)} placeholder="8000" style={input} /></div>
+            <div style={{ marginBottom: 11 }}><label style={lbl}>Month</label>{monthSel(f.month, v => setField('month', v))}</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--tx-2)', marginBottom: 4, cursor: 'pointer' }}>
+              <input type="checkbox" checked={f.taxable} onChange={e => setField('taxable', e.target.checked)} /> Taxable (e.g. RSU vest — off for a refund/gift)
+            </label>
+          </>)}
+
+          {!hasTaxRate && (
+            <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 8, lineHeight: 1.5 }}>
+              No salary profile set — net equals gross (no tax applied). Set your salary in Settings for an after-tax estimate.
+            </div>
+          )}
+        </div>
+
+        {/* ── Preview + actions ── */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 11, padding: 16 }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--tx-3)', fontWeight: 700, marginBottom: 12 }}>Post-tax impact · {f.year}</div>
+          {preview ? (<>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              <Row k={`Gross (${preview.summary.monthsAffected} mo)`} v={money(preview.summary.grossTotal)} />
+              {preview.summary.taxTotal > 0 && <Row k={`− est. tax @ ${preview.summary.effectiveRatePct}%`} v={`−${money(preview.summary.taxTotal).replace('−','')}`} muted />}
+              {preview.summary.k401Total > 0 && <Row k={`− 401k @ ${preview.summary.four01kPct}%`} v={`−${money(preview.summary.k401Total).replace('−','')}`} muted />}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, paddingTop: 9, borderTop: '1px dashed var(--bd)' }}>
+                <span style={{ color: 'var(--tx-2)' }}>Net income change</span>
+                <span style={{ fontWeight: 700, color: INC_GREEN, fontFamily: "'DM Mono', monospace" }}>{money(preview.summary.netTotal)}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 9, marginTop: 15 }}>
+              <button disabled={busy} onClick={() => save('committed')} style={{ padding: '8px 15px', borderRadius: 7, fontSize: 12.5, fontWeight: 650, border: 'none', cursor: busy ? 'default' : 'pointer', background: INC_GREEN, color: '#04140d', opacity: busy ? 0.6 : 1 }}>Commit to plan</button>
+              <button disabled={busy} onClick={() => save('modeled')} style={{ padding: '8px 15px', borderRadius: 7, fontSize: 12.5, fontWeight: 600, cursor: busy ? 'default' : 'pointer', background: 'transparent', border: '1px solid var(--bd)', color: 'var(--tx-2)' }}>Keep as modeled</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 10, lineHeight: 1.5 }}>
+              Committing folds this into your Income vs Expenses forecast, net, and savings rate. Modeled scenarios stay exploratory.
+            </div>
+          </>) : (
+            <div style={{ fontSize: 12.5, color: 'var(--tx-3)', lineHeight: 1.6 }}>Enter amounts on the left to see the post-tax impact.</div>
+          )}
+          {err && <div style={{ fontSize: 12, color: 'var(--red, #e53935)', marginTop: 10 }}>{err}</div>}
+        </div>
+      </div>
+
+      {/* ── Existing income scenarios ── */}
+      <div style={{ maxWidth: 860, margin: '22px auto 0' }}>
+        {incomeScenarios.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '18px', fontSize: 12.5, color: 'var(--tx-3)' }}>
+            No income scenarios yet. Model one above.
+          </div>
+        ) : (
+          <>
+            {committedInc.length > 0 && <SectionLabel>In your plan (committed)</SectionLabel>}
+            {committedInc.map(s => <IncomeCard key={s.id} s={s} rows={adjMap[s.id]} net={netOf(s)} expanded={expandedId === s.id} onExpand={() => setExpandedId(expandedId === s.id ? null : s.id)} onToggleCommit={() => toggleCommit(s)} onRemove={() => remove(s)} busy={busy} />)}
+            {modeledInc.length > 0 && <SectionLabel>Modeled (not in plan)</SectionLabel>}
+            {modeledInc.map(s => <IncomeCard key={s.id} s={s} rows={adjMap[s.id]} net={netOf(s)} expanded={expandedId === s.id} onExpand={() => setExpandedId(expandedId === s.id ? null : s.id)} onToggleCommit={() => toggleCommit(s)} onRemove={() => remove(s)} busy={busy} />)}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function previewDescription(type, f, summary) {
+  const t = INCOME_TYPES.find(x => x.key === type)?.label || type
+  return `${t} · net ${money(summary.netTotal)} (${summary.monthsAffected} mo, ${f.year})`
+}
+
+function Row({ k, v, muted }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+      <span style={{ color: muted ? 'var(--tx-3)' : 'var(--tx-2)' }}>{k}</span>
+      <span style={{ fontWeight: 600, color: muted ? 'var(--tx-3)' : 'var(--tx-1)', fontFamily: "'DM Mono', monospace" }}>{v}</span>
+    </div>
+  )
+}
+
+function SectionLabel({ children }) {
+  return <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '14px 0 8px' }}>{children}</div>
+}
+
+function IncomeCard({ s, rows, net, expanded, onExpand, onToggleCommit, onRemove, busy }) {
+  const committed = s.state === 'committed'
+  return (
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--tx-1)' }}>{s.name}</span>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 7px', borderRadius: 999, background: committed ? 'rgba(53,201,138,0.16)' : 'var(--hover)', color: committed ? INC_GREEN : 'var(--tx-3)' }}>
+              {committed ? 'COMMITTED' : 'MODELED'}
+            </span>
+          </div>
+          {s.description && <div style={{ fontSize: 11.5, color: 'var(--tx-3)', marginTop: 2 }}>{s.description}</div>}
+        </div>
+        <span style={{ fontSize: 14, fontWeight: 700, color: INC_GREEN, fontFamily: "'DM Mono', monospace" }}>{money(net)}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+        <button disabled={busy} onClick={onToggleCommit} style={{ fontSize: 11.5, padding: '4px 11px', borderRadius: 6, cursor: busy ? 'default' : 'pointer', border: committed ? '1px solid var(--bd)' : 'none', background: committed ? 'transparent' : INC_GREEN, color: committed ? 'var(--tx-2)' : '#04140d', fontWeight: 600 }}>
+          {committed ? 'Revert to modeled' : '✓ Commit'}
+        </button>
+        <button onClick={onExpand} style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx-3)' }}>
+          {expanded ? 'Hide' : 'Details'}
+        </button>
+        <button disabled={busy} onClick={onRemove} style={{ marginLeft: 'auto', fontSize: 11.5, padding: '4px 9px', borderRadius: 6, cursor: busy ? 'default' : 'pointer', border: 'none', background: 'transparent', color: 'var(--tx-4)' }}>Delete</button>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 10, borderTop: '1px solid var(--bd)', paddingTop: 8 }}>
+          {(rows ?? []).length === 0 ? (
+            <div style={{ fontSize: 11.5, color: 'var(--tx-3)' }}>No monthly rows.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 11.5, fontFamily: "'DM Mono', monospace" }}>
+              <span style={{ color: 'var(--tx-4)' }}>Month</span>
+              <span style={{ color: 'var(--tx-4)', textAlign: 'right' }}>Gross</span>
+              <span style={{ color: 'var(--tx-4)', textAlign: 'right' }}>Net</span>
+              {(rows ?? []).map(r => (
+                <Fragment key={r.id}>
+                  <span style={{ color: 'var(--tx-2)' }}>{MONTHS_SHORT[(Number(r.month) || 1) - 1]} {r.year}</span>
+                  <span style={{ color: 'var(--tx-3)', textAlign: 'right' }}>{money(r.gross_amount)}</span>
+                  <span style={{ color: INC_GREEN, textAlign: 'right' }}>{money(r.net_amount)}</span>
+                </Fragment>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main module ──────────────────────────────────────────────────────────────
 
 const TAB_META = {
   baseline:  { label: 'Baseline',   color: 'var(--text-secondary, var(--tx-2))' },
   committed: { label: 'Committed',  color: 'var(--accent, #38bdf8)' },
   modeled:   { label: 'Modeled',    color: '#8b5cf6' },
+  income:    { label: 'Income',     color: '#35c98a' },
   idea:      { label: 'Ideas',      color: '#f59e0b' },
 }
 
@@ -2304,9 +2623,13 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
   const [ideaSaving, setIdeaSaving] = useState(false)
 
   const selected = scenarios.find(s => s.id === selectedId) ?? null
-  const modeled = scenarios.filter(s => s.state === 'modeled')
-  const committed = scenarios.filter(s => s.state === 'committed')
-  const ideas = scenarios.filter(s => s.state === 'idea')
+  // Expense tabs never show income-kind scenarios (they use a different
+  // adjustment table and integrate via the income forecast, not forecast_line_items).
+  const expenseScenarios = scenarios.filter(s => s.kind !== 'income')
+  const incomeScenarios = scenarios.filter(s => s.kind === 'income')
+  const modeled = expenseScenarios.filter(s => s.state === 'modeled')
+  const committed = expenseScenarios.filter(s => s.state === 'committed')
+  const ideas = expenseScenarios.filter(s => s.state === 'idea')
 
   const loadScenarios = useCallback(async () => {
     if (!userId) return
@@ -2399,6 +2722,15 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     onDataChange?.()
   }
 
+  // Income scenarios live in the same scenarios table (kind='income'); after any
+  // income change, re-fetch the list and signal the shell so the dashboard
+  // income forecast reloads.
+  async function handleIncomeChanged() {
+    const list = await getScenarios(userId).catch(() => null)
+    if (list) setScenarios(list)
+    onDataChange?.()
+  }
+
   async function handleAddAdj(data) {
     const adj = await addAdjustment(userId, selectedId, data)
     setAdjustments(prev => ({ ...prev, [selectedId]: [...(prev[selectedId] ?? []), adj] }))
@@ -2472,7 +2804,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     return <div style={{ padding: 32, color: 'var(--red)', fontSize: 14 }}>Error loading scenarios: {error}</div>
   }
 
-  const counts = { committed: committed.length, modeled: modeled.length, idea: ideas.length }
+  const counts = { committed: committed.length, modeled: modeled.length, income: incomeScenarios.length, idea: ideas.length }
 
   const tabStyle = (key) => {
     const active = activeTab === key
@@ -2522,7 +2854,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
 
       {/* Tab bar */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--bd)', paddingLeft: mobile ? 8 : 16, flexShrink: 0 }}>
-        {['baseline', 'committed', 'modeled', 'idea'].map(key => (
+        {['baseline', 'committed', 'modeled', 'income', 'idea'].map(key => (
           <button key={key} onClick={() => setActiveTab(key)} style={tabStyle(key)}>
             {TAB_META[key].label}
             {counts[key] != null && key !== 'baseline' && (
@@ -2652,6 +2984,17 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
               </div>
             )}
           </div>
+        )}
+
+        {/* ── Income tab ── */}
+        {activeTab === 'income' && (
+          <IncomePanel
+            userId={userId}
+            context={context}
+            incomeScenarios={incomeScenarios}
+            onChanged={handleIncomeChanged}
+            mobile={mobile}
+          />
         )}
 
         {/* ── Ideas tab ── */}

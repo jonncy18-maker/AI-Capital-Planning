@@ -422,6 +422,17 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     })
   }
 
+  // Fold committed income scenarios (post-tax net delta per month) into the
+  // forecast so net, savings rate, and the chart's forecast bars reflect them.
+  // Past months use bank actuals, so adding to forecast months only affects the
+  // forward projection — no double-count with realized deposits.
+  const incomeScenarioNet = ctx?.incomeScenarioNetByMonth
+  if (monthlyIncomeForecast && Array.isArray(incomeScenarioNet)) {
+    monthlyIncomeForecast = monthlyIncomeForecast.map(
+      (v, m) => Math.max(0, v + (Number(incomeScenarioNet[m]) || 0))
+    )
+  }
+
   // ── Full-year income: actuals for elapsed months, forecast for the rest ──────
   let fullYearIncome = 0
   if (monthlyIncomeForecast) {
