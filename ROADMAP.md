@@ -12,7 +12,36 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-23 (PWA wrapper — app is now installable)
+**Last updated:** 2026-07-24 (Fixed AI Scenario Composer silent stall on large scenarios)
+
+- **AI Scenario Composer silent-stall fix (2026-07-24):** building a realistic
+  multi-part scenario (reported live: a Tesla Model 3 lease correction — new
+  $479/mo payment + 2-month overlap with the old lease + FSD $99/mo + $2,022
+  delivery fee + down payment, spanning a multi-year lease) produced a **blank
+  AI bubble with no preview and no error**, and every retry repeated it.
+  - **Root cause:** `runScenarioAgent`/`continueFromMessages` capped model output
+    at `maxTokens: 1500` (and `runAdjustmentAgent` at 1024). A large
+    `create_scenario` tool call serialized past that limit, so Anthropic
+    truncated it with `stop_reason: 'max_tokens'`. The agent only branched on
+    `'tool_use'`; the truncated call fell through to `return { text: res.text }`
+    with `res.text` empty (the whole response was the cut-off tool call) →
+    silent blank.
+  - **Fix (`src/lib/ai/scenarioAgent.js`):** raised the ceiling for tool-bearing
+    calls to `AGENT_MAX_TOKENS = 8000` so realistic multi-month/multi-year
+    scenarios fit; added explicit `stop_reason === 'max_tokens'` handling that
+    returns a clear "too large — split it into smaller pieces" message instead of
+    a blank; and made the non-tool path fall back to a rephrase prompt when the
+    model returns empty text. Applied to both the create-scenario and
+    add-adjustment agents. Build verified clean (`next build`, 54 pages).
+    **Live-verification pending** — re-run the Tesla correction in the composer.
+
+- **PWA icons → Orbit brand mark (2026-07-24):** replaced the placeholder bolt
+  PWA icons with the final "Orbit" app icon (gradient "C" + gold trajectory pin
+  on orbital rings). `icon-192`/`icon-512` are the full tile; `maskable-512` is
+  inset ~84% for Android's circle crop. Master kept at
+  `assets/orbit-icon-master.png` (outside the web-served `public/` path). Merged
+  in #156. (A stale home-screen icon after install is a device/browser cache
+  artifact — remove and reinstall to refresh; the served assets are correct.)
 
 - **PWA wrapper shipped (2026-07-23):** the app is now an installable Progressive
   Web App (Phase 1 approval → build → audit per the Agentic Loop; audit passed

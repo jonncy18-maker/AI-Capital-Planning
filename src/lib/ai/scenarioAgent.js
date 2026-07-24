@@ -16,6 +16,21 @@ import { createScenario, addAdjustment } from '../db/scenarios.js'
 import { getBudgetCategories, upsertCategory } from '../db/budgetCategories.js'
 import { buildScenarioSystemExtra, buildAdjustmentSystemExtra } from './scenarioAgent.prompts.js'
 
+// A single create_scenario / add_adjustment tool call can legitimately span many
+// category-months (e.g. a multi-year lease correction: new payment + old-lease
+// overlap + FSD + one-time fees across several months and years). Emitted as
+// tool JSON that easily exceeds 1.5k tokens, so the ceiling must be generous or
+// Anthropic truncates the tool call (stop_reason 'max_tokens'), which previously
+// surfaced as a silent blank bubble. Kept well under Sonnet's output limit.
+const AGENT_MAX_TOKENS = 8000
+
+// Shown when a tool call is truncated despite the raised ceiling — a real,
+// explainable outcome instead of an empty message.
+const TRUNCATION_MSG =
+  'That scenario was too large to build in one step. Try splitting it into ' +
+  'smaller pieces — for example model the new lease payment first, then add the ' +
+  'FSD subscription and the one-time delivery/down-payment costs as a follow-up.'
+
 export const CREATE_SCENARIO_TOOL = {
   name: 'create_scenario',
   description:
@@ -141,13 +156,17 @@ function buildPreview(input) {
 async function continueFromMessages({ messages, context, yearTxns, systemExtra, userId, created, onStatus }) {
   let msgs = messages
   for (let step = 0; step < 4; step++) {
-    const res = await invokeAIChat({ messages: msgs, tools: [CREATE_SCENARIO_TOOL], context, yearTxns, systemExtra, maxTokens: 1500 })
+    const res = await invokeAIChat({ messages: msgs, tools: [CREATE_SCENARIO_TOOL], context, yearTxns, systemExtra, maxTokens: AGENT_MAX_TOKENS })
     if (res.status !== 'ok') return { status: res.status, text: res.text, created }
+
+    if (res.stop_reason === 'max_tokens') {
+      return { status: 'error', text: TRUNCATION_MSG, created }
+    }
 
     msgs = [...msgs, { role: 'assistant', content: res.content }]
 
     if (res.stop_reason !== 'tool_use') {
-      return { status: 'ok', text: res.text, created }
+      return { status: 'ok', text: res.text || 'Done.', created }
     }
 
     const toolResults = []
@@ -186,13 +205,19 @@ export async function runScenarioAgent({ userId, history = [], prompt, context, 
     { role: 'user', content: prompt },
   ]
 
-  const res = await invokeAIChat({ messages, tools: [CREATE_SCENARIO_TOOL], context, yearTxns, systemExtra, maxTokens: 1500 })
+  const res = await invokeAIChat({ messages, tools: [CREATE_SCENARIO_TOOL], context, yearTxns, systemExtra, maxTokens: AGENT_MAX_TOKENS })
   if (res.status !== 'ok') return { status: res.status, text: res.text, created: [] }
+
+  // A truncated tool call comes back as 'max_tokens' with no text — surface the
+  // reason instead of an empty bubble.
+  if (res.stop_reason === 'max_tokens') {
+    return { status: 'error', text: TRUNCATION_MSG, created: [] }
+  }
 
   const messagesWithAI = [...messages, { role: 'assistant', content: res.content }]
 
   if (res.stop_reason !== 'tool_use') {
-    return { status: 'ok', text: res.text, created: [] }
+    return { status: 'ok', text: res.text || "I couldn't produce a concrete change for that — could you rephrase or add a bit more detail?", created: [] }
   }
 
   const createBlock = res.content.find(b => b.type === 'tool_use' && b.name === 'create_scenario')
@@ -371,13 +396,17 @@ export async function runAdjustmentAgent({
     { role: 'user', content: prompt },
   ]
 
-  const res = await invokeAIChat({ messages, tools: [ADD_ADJUSTMENT_TOOL], context, systemExtra, maxTokens: 1024 })
+  const res = await invokeAIChat({ messages, tools: [ADD_ADJUSTMENT_TOOL], context, systemExtra, maxTokens: AGENT_MAX_TOKENS })
   if (res.status !== 'ok') return { status: res.status, text: res.text, added: [] }
+
+  if (res.stop_reason === 'max_tokens') {
+    return { status: 'error', text: TRUNCATION_MSG, added: [] }
+  }
 
   const messagesWithAI = [...messages, { role: 'assistant', content: res.content }]
 
   if (res.stop_reason !== 'tool_use') {
-    return { status: 'ok', text: res.text, added: [] }
+    return { status: 'ok', text: res.text || "I couldn't produce a concrete adjustment for that — could you rephrase or add a bit more detail?", added: [] }
   }
 
   const addBlock = res.content.find(b => b.type === 'tool_use' && b.name === 'add_adjustment')
