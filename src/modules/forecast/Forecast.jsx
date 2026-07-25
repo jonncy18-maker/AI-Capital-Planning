@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { getBudgetLineItems, getBudgetYears } from '../../lib/db/budgetLineItems.js'
+import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import {
   getForecastLineItems,
   insertForecastLineItem,
@@ -333,7 +334,7 @@ function CategoryLineItems({ row, cellStyle, colBg, curMonth, editable, onAddLin
 
 // ── Forecast grid ────────────────────────────────────────────────────────────
 
-function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, layer, forecastReady, onEdit, saving, editKey, expandedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onUpdateLine, onDeleteLabel, onSetRate }) {
+function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, layer, forecastReady, onEdit, saving, editKey, expandedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onUpdateLine, onDeleteLabel, onSetRate, kind = 'expense' }) {
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1 // highlight current month
   const canEditForecast = layer === 'forecast' && forecastReady
   const scenarioLayer = layer === 'modeled'
@@ -358,6 +359,7 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
   }
 
   const cellStyle = { textAlign: 'right', fontSize: 12, padding: '8px 10px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', position: 'relative' }
+  const totalColor = kind === 'income' ? 'var(--good)' : 'var(--accent)'
   const colBg = m => (m === curMonth ? 'var(--accent-bg)' : 'transparent')
   const STICKY = 168
 
@@ -519,10 +521,10 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
         <tfoot>
           <tr style={{ background: 'var(--bg-card)' }}>
             <td style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--tx-1)', padding: '11px 14px', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', borderTop: '2px solid var(--bd)' }}>
-              {layer === 'budget' ? 'Budget Total' : scenarioLayer ? 'With Scenarios' : 'Forecast Total'}
+              {kind === 'income' ? 'Income Total' : layer === 'budget' ? 'Budget Total' : scenarioLayer ? 'With Scenarios' : 'Forecast Total'}
             </td>
-            {forecastTotals.map((v, m) => <td key={m} style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', background: colBg(m), borderTop: '2px solid var(--bd)' }}>{fmt(v)}</td>)}
-            <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--accent)', borderTop: '2px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(forecastTotals.reduce((a, b) => a + b, 0))}</td>
+            {forecastTotals.map((v, m) => <td key={m} style={{ ...cellStyle, fontWeight: 700, color: totalColor, background: colBg(m), borderTop: '2px solid var(--bd)' }}>{fmt(v)}</td>)}
+            <td style={{ ...cellStyle, fontWeight: 700, color: totalColor, borderTop: '2px solid var(--bd)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(forecastTotals.reduce((a, b) => a + b, 0))}</td>
           </tr>
         </tfoot>
       </table>
@@ -908,6 +910,9 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   const [budgetItems, setBudgetItems] = useState([])
   const [forecastItems, setForecastItems] = useState([])
   const [forecastReady, setForecastReady] = useState(false) // forecast initialized for this year
+  const [categories, setCategories] = useState([])
+  const [incomeOpen, setIncomeOpen] = useState(true)
+  const [seedingIncome, setSeedingIncome] = useState(false)
   const [yearTxns, setYearTxns] = useState([])
   const [modeledScenarios, setModeledScenarios] = useState([])
   const [selectedModeled, setSelectedModeled] = useState(() => new Set())
@@ -932,13 +937,15 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     setLoading(true)
     setError(null)
     try {
-      const [items, fItems, txns, budgetYears, allScenarios] = await Promise.all([
+      const [items, fItems, txns, budgetYears, allScenarios, cats] = await Promise.all([
         getBudgetLineItems(userId, { year: yr }),
         getForecastLineItems(userId, yr),
         getTransactionsForYear(userId, yr),
         getBudgetYears(userId),
         getScenarios(userId).catch(() => []),
+        getBudgetCategories(userId).catch(() => []),
       ])
+      setCategories(cats)
       setBudgetItems(items)
       setForecastItems(fItems)
       setForecastReady(fItems.length > 0)
@@ -1011,6 +1018,23 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   }, [budgetItems, forecastItems])
 
   // Actuals: category name → [12 months of spend]
+  // Income actuals — positive amounts, minus anything flagged out of totals
+  // (transfers, card payments) so the section reflects real earnings.
+  const incomeActualMap = useMemo(() => {
+    const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
+    const m = {}
+    for (const t of yearTxns) {
+      const amt = Number(t.amount) || 0
+      if (amt <= 0) continue
+      const cat = t.category || 'Uncategorized'
+      if (excluded.has(cat)) continue
+      if (!m[cat]) m[cat] = Array(12).fill(0)
+      const d = new Date(t.date)
+      if (!isNaN(d.getTime())) m[cat][d.getMonth()] += amt
+    }
+    return m
+  }, [yearTxns, categories])
+
   const actualMap = useMemo(() => {
     const m = {}
     for (const t of yearTxns) {
@@ -1023,6 +1047,86 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     }
     return m
   }, [yearTxns])
+
+  // Income rows come from the category table, not from line items: income has
+  // no budget lines to derive from. Only categories with real activity this year
+  // are listed, so the section doesn't fill up with unused income buckets.
+  const incomeRows = useMemo(() => {
+    const incomeCats = categories.filter(c =>
+      ((c.group || '') + '').trim().toLowerCase() === 'income' && !c.exclude_from_totals
+    )
+    const byCat = {}
+    for (const c of incomeCats) {
+      byCat[c.category] = {
+        catId: c.id,
+        name: c.category,
+        group: 'Income',
+        type: c.type || 'Flexible',
+        isIncome: true,
+        budget: Array(12).fill(0),
+        forecast: Array(12).fill(0),
+        items: [],
+      }
+    }
+    for (const li of budgetItems) {
+      const name = li.budget_categories?.category
+      if (!name || !byCat[name]) continue
+      const m = (li.month ?? 1) - 1
+      if (m >= 0 && m < 12) byCat[name].budget[m] += Number(li.amount) || 0
+    }
+    for (const fi of forecastItems) {
+      const name = fi.budget_categories?.category
+      if (!name || !byCat[name]) continue
+      const m = (fi.month ?? 1) - 1
+      if (m >= 0 && m < 12) byCat[name].forecast[m] += Number(fi.amount) || 0
+      byCat[name].items.push({ id: fi.id, label: fi.label, month: fi.month ?? 1, amount: Number(fi.amount) || 0 })
+    }
+    return Object.values(byCat)
+      .filter(r => (incomeActualMap[r.name] ?? []).some(v => v > 0)
+        || r.forecast.some(v => v !== 0) || r.budget.some(v => v !== 0))
+      .sort((a, b) => {
+        const ta = (incomeActualMap[a.name] ?? []).reduce((x, y) => x + y, 0)
+        const tb = (incomeActualMap[b.name] ?? []).reduce((x, y) => x + y, 0)
+        return tb - ta || a.name.localeCompare(b.name)
+      })
+  }, [categories, budgetItems, forecastItems, incomeActualMap])
+
+  // Full-year income: actuals for months already banked, forecast beyond.
+  const { annualIncome, lastIncomeActualM } = useMemo(() => {
+    let lastM = -1
+    for (const r of incomeRows) {
+      const a = incomeActualMap[r.name] ?? []
+      for (let m = 0; m < 12; m++) if (a[m] > 0 && m > lastM) lastM = m
+    }
+    let total = 0
+    for (let m = 0; m < 12; m++) {
+      for (const r of incomeRows) {
+        total += m <= lastM ? (incomeActualMap[r.name]?.[m] ?? 0) : (r.forecast[m] ?? 0)
+      }
+    }
+    return { annualIncome: total, lastIncomeActualM: lastM }
+  }, [incomeRows, incomeActualMap])
+
+  // A category counts as recurring if it landed in at least 3 of the last 4
+  // banked months. Paychecks qualify; a lumpy bonus or a stray reimbursement
+  // does not, and seeding those would be inventing income.
+  const incomeSeedPlan = useMemo(() => {
+    if (lastIncomeActualM < 0) return []
+    const plan = []
+    for (const r of incomeRows) {
+      const a = incomeActualMap[r.name] ?? []
+      let hits = 0, latest = 0
+      for (let m = Math.max(0, lastIncomeActualM - 3); m <= lastIncomeActualM; m++) {
+        if (a[m] > 0) { hits++; latest = a[m] }
+      }
+      if (hits < 3 || latest <= 0) continue
+      const months = []
+      for (let m = lastIncomeActualM + 1; m < 12; m++) if (!(r.forecast[m] > 0)) months.push(m + 1)
+      if (months.length) plan.push({ catId: r.catId, name: r.name, amount: latest, months })
+    }
+    return plan
+  }, [incomeRows, incomeActualMap, lastIncomeActualM])
+
 
   // Scenarios folded into the forecast for the active tier — only those the
   // user has selected in that tier's dropdown.
@@ -1113,6 +1217,30 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
       if (i >= 0) { const n = [...prev]; n[i] = row; return n }
       return [...prev, row]
     })
+  }
+
+  // Writes real forecast_line_items so every downstream consumer — the dashboard
+  // income projection especially — sees the same numbers.
+  async function handleSeedIncome() {
+    if (!incomeSeedPlan.length) return
+    setSeedingIncome(true)
+    setError(null)
+    try {
+      for (const row of incomeSeedPlan) {
+        for (const month of row.months) {
+          await insertForecastLineItem(userId, {
+            year, categoryId: row.catId, month, amount: row.amount,
+            label: `${row.name} — carried from ${MONTHS[lastIncomeActualM]}`,
+          })
+        }
+      }
+      setForecastItems(await getForecastLineItems(userId, year))
+      onDataChange?.()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSeedingIncome(false)
+    }
   }
 
   async function handleInitialize() {
@@ -1464,6 +1592,13 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
 
           {/* Summary strip */}
           <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
+            {incomeRows.length > 0 && (
+              <SummaryStat
+                label={`${year} income`}
+                value={fmtFull(annualIncome)}
+                note="actual + forecast"
+              />
+            )}
             <SummaryStat label={`${year} budget`} value={fmtFull(annualBudget)} />
             <SummaryStat
               label={`${year} forecast`}
@@ -1472,6 +1607,15 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               note={forecastReady && pctVariance != null && Math.abs(pctVariance) >= 0.5 ? `${variance >= 0 ? '+' : ''}${Math.round(pctVariance)}% vs budget` : null}
               noteColor={variance > 0 ? 'var(--warn)' : 'var(--accent)'}
             />
+            {incomeRows.length > 0 && layer !== 'budget' && (
+              <SummaryStat
+                label={`${year} net`}
+                value={(annualIncome - annualForecast >= 0 ? '+' : '−') + fmtFull(Math.abs(annualIncome - annualForecast)).replace('$', '$')}
+                accent
+                note={annualIncome > 0 ? `${Math.round(((annualIncome - annualForecast) / annualIncome) * 100)}% savings rate` : null}
+                noteColor={annualIncome - annualForecast >= 0 ? 'var(--good)' : 'var(--bad)'}
+              />
+            )}
             {scenarioLayer && activeScenarios.length > 0 && (
               <SummaryStat
                 label={`with ${activeScenarios.length} ${layer} scenario${activeScenarios.length > 1 ? 's' : ''}`}
@@ -1509,6 +1653,51 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               Actual (past months)
             </span>
           </div>
+
+          {/* Income section — separate grid so the spend plan stays untouched */}
+          {incomeRows.length > 0 && (
+            <div style={{ marginBottom: 26 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--good)' }} />
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--tx-1)' }}>Income</span>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: 'var(--tx-3)' }}>
+                    {lastIncomeActualM >= 0
+                      ? `actuals through ${MONTHS[lastIncomeActualM]} · forecast after`
+                      : 'no income recorded this year'}
+                  </span>
+                </div>
+                {incomeSeedPlan.length > 0 && layer === 'forecast' && (
+                  <button onClick={handleSeedIncome} disabled={seedingIncome} style={{ ...ghostBtn, opacity: seedingIncome ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                    {seedingIncome
+                      ? 'Seeding…'
+                      : `Carry ${incomeSeedPlan.map(r => r.name).join(', ')} forward`}
+                  </button>
+                )}
+              </div>
+              <ForecastGrid
+                kind="income"
+                catRows={incomeRows}
+                scenarioDeltaMap={{}}
+                actualMap={incomeActualMap}
+                year={year}
+                mobile={mobile}
+                layer={layer}
+                forecastReady={forecastReady}
+                onEdit={handleEdit}
+                saving={saving}
+                editKey={editCell?.key ?? null}
+                expandedGroups={incomeOpen ? new Set(['Income']) : new Set()}
+                onToggleGroup={() => setIncomeOpen(o => !o)}
+                expandedCats={expandedCats}
+                onToggleCat={toggleCat}
+                onAddLine={handleAddCell}
+                onUpdateLine={handleUpdateLine}
+                onDeleteLabel={handleDeleteLabel}
+                onSetRate={handleSetRate}
+              />
+            </div>
+          )}
 
           {/* Grid with cell editor overlay */}
           <div style={{ position: 'relative' }}>
