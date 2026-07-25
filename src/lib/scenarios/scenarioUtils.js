@@ -6,6 +6,21 @@ function parsePeriodLabel(year, month) {
   return `${MONTHS[month - 1]} ${year}`
 }
 
+// `delta_amount` is always stored relative to its own category line: +$500 on
+// Auto Lease is $500 more spending, +$500 on Income is $500 more income. Those
+// are opposite cash effects, so anything that aggregates or colours a delta has
+// to flip the sign for spending categories first — otherwise a bonus reads as a
+// bill.
+export function isIncomeAdjustment(a) {
+  return (a?.budget_categories?.group || '').trim().toLowerCase() === 'income'
+}
+
+// Signed effect on cash: positive = better off, negative = worse off.
+export function cashEffect(a) {
+  const delta = Number(a?.delta_amount) || 0
+  return isIncomeAdjustment(a) ? delta : -delta
+}
+
 // Average monthly income from the trailing 12 months of context transactions.
 function monthlyIncomeRunRate(ctx) {
   const incomeYear = (ctx?.transactions ?? [])
@@ -21,6 +36,7 @@ export function computeImpactSummary(adjustments, ctx) {
   if (!adjustments.length) {
     return {
       netTotal: 0, monthCount: 0, monthlyAvg: 0, annualized: 0, horizon: '—',
+      cashTotal: 0, cashMonthlyAvg: 0, cashAnnualized: 0, isOneTime: false,
       incomeRunRate: monthlyIncomeRunRate(ctx),
       pctOfIncome: null,
       budgetPlanned: lineItems.reduce((s, li) => s + Number(li.amount || 0), 0),
@@ -37,6 +53,15 @@ export function computeImpactSummary(adjustments, ctx) {
   const monthlyAvg = monthCount > 0 ? netTotal / monthCount : 0
   const annualized = monthlyAvg * 12
 
+  // Cash-effect view: income adds, spending subtracts, so a scenario mixing the
+  // two nets out correctly and the sign always means better/worse off.
+  const cashTotal = adjustments.reduce((s, a) => s + cashEffect(a), 0)
+  const cashMonthlyAvg = monthCount > 0 ? cashTotal / monthCount : 0
+  // Extrapolating a single month to a year turns a one-off bonus into a salary,
+  // so callers get the flag and show the total instead.
+  const isOneTime = monthCount === 1
+  const cashAnnualized = cashMonthlyAvg * 12
+
   // Horizon string
   const sortedPeriods = [...periodSet].sort()
   const first = sortedPeriods[0].split('-')
@@ -47,7 +72,7 @@ export function computeImpactSummary(adjustments, ctx) {
 
   // Income affordability
   const incomeRunRate = monthlyIncomeRunRate(ctx)
-  const pctOfIncome = incomeRunRate > 0 ? (Math.abs(monthlyAvg) / incomeRunRate) * 100 : null
+  const pctOfIncome = incomeRunRate > 0 ? (Math.abs(cashMonthlyAvg) / incomeRunRate) * 100 : null
 
   // Budget: sum only the categories that appear in this scenario's adjustments
   const adjCategoryNames = new Set(
@@ -63,6 +88,10 @@ export function computeImpactSummary(adjustments, ctx) {
     monthCount,
     monthlyAvg,
     annualized,
+    cashTotal,
+    cashMonthlyAvg,
+    cashAnnualized,
+    isOneTime,
     horizon,
     incomeRunRate,
     pctOfIncome,
@@ -119,6 +148,8 @@ export function buildComparisonRows(adjustments, ctx) {
       label: a.label || '',
       baseline,
       delta,
+      isIncome: isIncomeAdjustment(a),
+      cashDelta: cashEffect(a),
       scenario: baseline != null ? baseline + delta : null,
     })
   }
@@ -127,6 +158,7 @@ export function buildComparisonRows(adjustments, ctx) {
     .sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
     .map(p => {
       const periodDelta = p.rows.reduce((s, r) => s + r.delta, 0)
+      const periodCashDelta = p.rows.reduce((s, r) => s + r.cashDelta, 0)
       const baselineRows = p.rows.filter(r => r.baseline != null)
       const periodBaseline = baselineRows.length > 0 ? baselineRows.reduce((s, r) => s + r.baseline, 0) : null
       const periodScenario = periodBaseline != null ? periodBaseline + periodDelta : null
@@ -134,6 +166,7 @@ export function buildComparisonRows(adjustments, ctx) {
         ...p,
         periodLabel: parsePeriodLabel(p.year, p.month),
         periodDelta,
+        periodCashDelta,
         periodBaseline,
         periodScenario,
       }
@@ -147,7 +180,7 @@ export function buildCumulativeTimeline(adjustments) {
   const byPeriod = {}
   for (const a of adjustments) {
     const key = `${a.year}-${String(a.month).padStart(2, '0')}`
-    byPeriod[key] = (byPeriod[key] || 0) + Number(a.delta_amount)
+    byPeriod[key] = (byPeriod[key] || 0) + cashEffect(a)
   }
 
   const sorted = Object.entries(byPeriod).sort(([a], [b]) => (a < b ? -1 : 1))

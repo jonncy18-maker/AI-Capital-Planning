@@ -12,7 +12,36 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-25 ("Instrument" visual pass — elevation, signal + domain palettes)
+**Last updated:** 2026-07-25 (Income scenarios were being counted as spending)
+
+- **Income scenario sign bug (2026-07-25):** a committed "Quarterly Bonus — July
+  2026" (+$3,582 on the Income category) displayed as a **cost**: red, and
+  "Annualized +$43.0k" for what was a single one-off payment.
+  - **Root cause:** `delta_amount` is stored relative to its own category line,
+    so +$500 on Auto Lease means $500 more spending while +$500 on Income means
+    $500 more income — opposite cash effects. Every aggregate and colour rule
+    assumed the spending case (`delta > 0 ? red : green`), so income adjustments
+    were inverted. The stored data was correct throughout; this was purely
+    aggregation and presentation. A second defect sat in the same card:
+    `annualized = monthlyAvg × 12` extrapolated a one-month event into a phantom
+    recurring one ($3,582 → $43.0k).
+  - **Fix:** `scenarioUtils.js` gained `isIncomeAdjustment()` and `cashEffect()`
+    (income `+delta`, everything else `−delta`), plus `cashTotal` /
+    `cashMonthlyAvg` / `cashAnnualized` / `isOneTime` on `computeImpactSummary`,
+    `isIncome` + `cashDelta` on comparison rows and `periodCashDelta` per period.
+    Row amounts still display relative to their own category line — only
+    aggregates and colours moved to cash terms, where positive always means
+    better off. One-month scenarios now report "One-time / Total impact" instead
+    of annualising. `% of monthly income` no longer flags a large *gain* as a
+    warning.
+  - **Also corrected the same inversion in two non-obvious places:** the
+    dashboard's committed-scenario net (`widgetData.scenarioImpact`) and the AI
+    context brief (`contextLoader`), which had been telling the model a bonus was
+    a net delta of +$3,582 of spending.
+  - **Visually unverified** — logic verified against the three shapes (one-time
+    income, 36-month expense, mixed), but not confirmed in the browser.
+
+- **Visual redesign — "Instrument + domain hues" (2026-07-25):** the UI read flat.
 
 - **Visual redesign — "Instrument + domain hues" (2026-07-25):** the UI read flat.
   Diagnosed at token level and fixed there, so every module inherits the change

@@ -2,6 +2,7 @@
 // widgets render deterministically from database data with zero AI token cost.
 
 import { aggregateCommitmentsForYear, commitmentMonthlyDemand } from '../commitments/schedule.js'
+import { cashEffect } from '../scenarios/scenarioUtils.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -312,9 +313,11 @@ export function scenarioImpact(ctx) {
   const committed = scenarios.filter(s => s.state === 'committed')
   const modeled = scenarios.filter(s => s.state === 'modeled')
 
+  // cashEffect, not the raw delta: an adjustment on an Income category improves
+  // the position, every other category worsens it.
   const committedSummaries = committed.map(s => {
     const adjs = s.adjustments ?? []
-    const netTotal = adjs.reduce((sum, a) => sum + Number(a.delta_amount), 0)
+    const netTotal = adjs.reduce((sum, a) => sum + cashEffect(a), 0)
     const monthCount = new Set(adjs.map(a => `${a.year}-${a.month}`)).size
     const monthlyAvg = monthCount > 0 ? netTotal / monthCount : 0
     return { name: s.name, netTotal, monthlyAvg }
@@ -322,7 +325,7 @@ export function scenarioImpact(ctx) {
 
   const modeledSummaries = modeled.map(s => {
     const adjs = s.adjustments ?? []
-    const netTotal = adjs.reduce((sum, a) => sum + Number(a.delta_amount), 0)
+    const netTotal = adjs.reduce((sum, a) => sum + cashEffect(a), 0)
     return { name: s.name, netTotal }
   })
 
