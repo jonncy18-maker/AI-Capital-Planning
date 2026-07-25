@@ -104,3 +104,7 @@ body {
 .command-bar input::placeholder {
   color: #475569;
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

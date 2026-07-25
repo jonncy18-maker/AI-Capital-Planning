@@ -1,4 +1,5 @@
 import { MODULES, SECTION_LABELS } from '../registry.js'
+import RefreshButton from './RefreshButton.jsx'
 
 // Persistent left sidebar (web). Collapses to an icon rail. Also rendered inside
 // the mobile drawer (always expanded there).
@@ -153,6 +154,7 @@ export default function Sidebar({
         flexDirection: 'column',
         gap: '2px',
       }}>
+        <RefreshButton variant="row" collapsed={collapsed} />
         <div
           onClick={onToggleTheme}
           title="Toggle theme"

@@ -18,6 +18,7 @@ import Onboarding from '../src/modules/onboarding/Onboarding.jsx'
 import Sidebar from '../src/modules/shell/Sidebar.jsx'
 import CommandBar from '../src/modules/shell/CommandBar.jsx'
 import AIPrefsButton from '../src/modules/shell/AIPrefsButton.jsx'
+import RefreshButton from '../src/modules/shell/RefreshButton.jsx'
 import ImportFlow from '../src/modules/import/ImportFlow.jsx'
 import { ShellContext } from './shellContext.js'
 
@@ -338,7 +339,7 @@ export default function AppRoot({ children }) {
             }}>
               {current.short}
             </div>
-            <div style={{ width: '20px' }} />
+            <RefreshButton />
           </div>
         )}
 
