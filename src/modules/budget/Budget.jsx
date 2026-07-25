@@ -1005,6 +1005,7 @@ export default function Budget({ userId, mobile }) {
       />
       {/* Header */}
       <ModuleHeader
+        moduleId="budget"
         mobile={mobile}
         icon="▦"
         title={grilling ? 'Budget Interview' : reviewing ? 'Match Detail Tabs' : editing ? 'Edit Budget' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}

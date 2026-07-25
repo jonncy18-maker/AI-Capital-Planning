@@ -13,6 +13,7 @@ import {
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario, runAdjustmentAgent, confirmPendingAdjustments, cancelPendingAdjustments } from '../../lib/ai/scenarioAgent.js'
 import { headerStyles } from '../common/headerStyles.js'
+import { moduleHue } from '../registry.js'
 import Markdown from '../common/Markdown.jsx'
 import { computeImpactSummary, buildComparisonRows } from '../../lib/scenarios/scenarioUtils.js'
 
@@ -2515,7 +2516,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
       {/* Module header */}
       <div style={{ padding: mobile ? '12px 18px 10px' : '14px 24px 12px', borderBottom: 'none', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={headerStyles.icon}>◑</span>
+          <span style={headerStyles.icon(moduleHue('scenarios'))}>◑</span>
           <h1 style={headerStyles.title(mobile)}>Scenario Planner</h1>
         </div>
       </div>

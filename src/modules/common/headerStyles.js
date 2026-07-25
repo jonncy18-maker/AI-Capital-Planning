@@ -4,7 +4,8 @@
 // exact same fonts.
 
 export const headerStyles = {
-  icon: { fontSize: 20, color: 'var(--accent)', lineHeight: 1, flexShrink: 0 },
+  // The glyph carries the module's domain hue — identity, not state.
+  icon: (hue = 'var(--accent)') => ({ fontSize: 20, color: hue, lineHeight: 1, flexShrink: 0 }),
   title: (mobile) => ({
     fontFamily: "'DM Serif Display', serif",
     fontSize: mobile ? 22 : 26,

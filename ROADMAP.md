@@ -12,7 +12,37 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-24 (Fixed AI Scenario Composer silent stall on large scenarios)
+**Last updated:** 2026-07-25 ("Instrument" visual pass — elevation, signal + domain palettes)
+
+- **Visual redesign — "Instrument + domain hues" (2026-07-25):** the UI read flat.
+  Diagnosed at token level and fixed there, so every module inherits the change
+  without being restyled individually. Four directions were mocked and reviewed
+  before any code was written; John picked Instrument (dark, precision-instrument
+  surfaces) merged with Cockpit's colour-as-wayfinding.
+  - **Root cause of the flatness:** `--bg-card` (`#0A0D10`) was *darker* than
+    `--bg-app` (`#0C0F12`) — a 1.01 luminance ratio, so cards sank into the page
+    instead of lifting off it. Compounded by one accent doing five jobs, 9px mono
+    labels at `--tx-3` (`#3A4A5A`, 2.14:1 contrast), identical 14px-radius cards
+    for every widget regardless of importance, and no semantic scale, so
+    over-budget and under-budget looked alike until you parsed the digits.
+  - **Two palettes, strictly separated slots** (documented in `tokens.css`):
+    domain hues (`--dom-*`) answer *what is this about* and appear only as small
+    marks — nav glyph, module-header icon, widget dot, chart series. Signal
+    colours (`--good`/`--warn`/`--bad`) answer *should I care* and appear only in
+    delta chips, variance figures and threshold bars. `--accent` teal is the
+    brand *and* the "good" signal, so no module claims teal — Wealth took rose.
+  - **Changes:** `tokens.css` — elevation ramp (`--bg-card` above `--bg-app`,
+    `--card-hi`, `--elev-1`), `--tx-3` raised to 4.41:1, signal + 8 domain hues,
+    both themes. `registry.js` — `hue` per module + `moduleHue()`. `Sidebar.jsx`
+    and `ModuleHeader.jsx`/`headerStyles.js` — glyphs and the active row take the
+    domain hue (all 10 modules pass `moduleId`). `Dashboard.jsx` — figures moved
+    from DM Serif 34px to tabular-num sans 27px, new `Delta` signal chip and
+    `HueDot`, elevation on the card wrappers.
+  - Every domain hue clears 4.5:1 on its card ground in both themes. Serif is
+    retained for module titles only. The v5 dashboard layout, ordering and
+    collapse behaviour are untouched.
+  - **Visually unverified** — rendered mockups were approved, but the running app
+    has not been confirmed in a browser.
 
 - **AI Scenario Composer silent-stall fix (2026-07-24):** building a realistic
   multi-part scenario (reported live: a Tesla Model 3 lease correction — new

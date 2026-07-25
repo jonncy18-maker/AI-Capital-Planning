@@ -115,6 +115,7 @@ export default function Mapping({ userId, mobile }) {
   return (
     <div style={{ maxWidth: '720px', padding: '8px 0 96px' }}>
       <ModuleHeader
+        moduleId="mapping"
         mobile={mobile}
         icon="⊹"
         title="Category Mapping"

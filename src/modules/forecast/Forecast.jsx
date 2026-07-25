@@ -1312,6 +1312,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   return (
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       <ModuleHeader
+        moduleId="forecast"
         mobile={mobile}
         icon="⬡"
         title="Forecast"

@@ -225,6 +225,7 @@ export default function Wealth({ userId, mobile }) {
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       {/* Header */}
       <ModuleHeader
+        moduleId="wealth"
         mobile={mobile}
         icon="↗"
         title="Wealth Trajectory"

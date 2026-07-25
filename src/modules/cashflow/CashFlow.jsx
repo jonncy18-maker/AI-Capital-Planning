@@ -742,6 +742,7 @@ function PageHeader({ view, switchView, thresholdInput, setThresholdInput, handl
   return (
     <div style={{ marginBottom: '28px' }}>
       <ModuleHeader
+        moduleId="payperiods"
         mobile={mobile}
         icon="◷"
         title="Cash Flow Timing"

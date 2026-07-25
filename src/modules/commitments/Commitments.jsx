@@ -408,6 +408,7 @@ export default function Commitments({ userId, mobile }) {
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       {/* Header */}
       <ModuleHeader
+        moduleId="commitments"
         mobile={mobile}
         icon="◈"
         title="Long-Term Commitments"
