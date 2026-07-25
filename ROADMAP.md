@@ -14,6 +14,32 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 **Last updated:** 2026-07-25 (Income scenarios were being counted as spending)
 
+- **Income plan lines counted as expenses (2026-07-25, follow-up):** the first
+  pass fixed the scenario *reporting* surfaces but the dashboard savings rate was
+  still wrong — committing the July bonus dropped the full-year forecast from 6%
+  to 2%, and stayed there.
+  - **Root cause (confirmed against the live DB):** committing a scenario writes
+    real plan rows, and this one produced a single `forecast_line_items` row —
+    month 7, group `Income`, `+3582`. `monthlyBudgetVsActual` sums *every*
+    forecast/budget line into the expense plan with no group filter, so the bonus
+    became $3,582 of forecast spending. July has no transactions yet, so that
+    month falls to the forecast branch in `incomeVsExpenses` and the phantom
+    expense counted. $3,582 against ~$106k income ≈ the 4pp drop observed.
+  - **Fix (`widgetData.js`):** income-group lines are now split out of the
+    expense plan in `monthlyBudgetVsActual` (`forecastIncome` /
+    `scenarioIncomeDeltas` returned alongside), excluded from
+    `spendByGroupYear`'s bars and from `budgetVsActual`'s planned total, and
+    added to the income projection in `incomeVsExpenses` for forecast months
+    only — months with actuals already carry income through transaction totals,
+    so nothing double counts. Committed income adjustments route to the income
+    deltas rather than the spend deltas.
+  - Net effect on the reported case: expenses −$3,582 and income +$3,582, so the
+    full-year rate moves from 2% to roughly 9% rather than back to the old 6% —
+    the bonus is real income and should improve the rate.
+  - Worth noting for later: with no salary profile set, the fallback income
+    projection skips the current month entirely (`11 - currentMonth` future
+    months after YTD), which understates full-year income. Not addressed here.
+
 - **Income scenario sign bug (2026-07-25):** a committed "Quarterly Bonus — July
   2026" (+$3,582 on the Income category) displayed as a **cost**: red, and
   "Annualized +$43.0k" for what was a single one-off payment.

@@ -2,7 +2,12 @@
 // widgets render deterministically from database data with zero AI token cost.
 
 import { aggregateCommitmentsForYear, commitmentMonthlyDemand } from '../commitments/schedule.js'
-import { cashEffect } from '../scenarios/scenarioUtils.js'
+import { cashEffect, isIncomeAdjustment } from '../scenarios/scenarioUtils.js'
+
+// Budget and forecast line items exist for income categories too (a committed
+// income scenario writes one). Every "spend" aggregate below sums line items,
+// so income lines have to be filtered out or a bonus lands as an expense.
+const isIncomeGroup = (g) => (g || '').trim().toLowerCase() === 'income'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -32,6 +37,7 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
   const budgetByGroupMonth = {}
   for (const li of lineItems) {
     const g = li.budget_categories?.group || 'Uncategorized'
+    if (isIncomeGroup(g)) continue
     const m = (li.month ?? 1) - 1
     if (m < 0 || m > 11) continue
     if (!budgetByGroupMonth[g]) budgetByGroupMonth[g] = Array(12).fill(0)
@@ -47,6 +53,7 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
       const m = (fi.month ?? 1) - 1
       if (m < 0 || m > 11) continue
       const g = fi.budget_categories?.group || catGroup[fi.category_id] || 'Uncategorized'
+      if (isIncomeGroup(g)) continue
       if (!forecastByGroupMonth[g]) forecastByGroupMonth[g] = Array(12).fill(0)
       forecastByGroupMonth[g][m] += Number(fi.amount || 0)
     }
@@ -120,7 +127,9 @@ export function yearProjection(ctx, yearTxns = []) {
 // (actuals-to-date + forecast-for-the-rest).
 export function budgetVsActual(ctx, yearTxns = []) {
   const lineItems = ctx?.budgetLineItems ?? []
-  const planned = lineItems.reduce((s, li) => s + Number(li.amount || 0), 0)
+  const planned = lineItems
+    .filter(li => !isIncomeGroup(li.budget_categories?.group))
+    .reduce((s, li) => s + Number(li.amount || 0), 0)
   const { projectedTotal } = yearProjection(ctx, yearTxns)
   const variance = projectedTotal - planned
   const pct = planned > 0 ? (projectedTotal / planned) * 100 : null
@@ -176,10 +185,15 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
   )
 
+  // Income-category lines are tracked separately: they belong to the income
+  // projection, never to the expense plan.
   const budget = Array(12).fill(0)
+  const budgetIncome = Array(12).fill(0)
   for (const li of lineItems) {
     const m = (li.month ?? 1) - 1
-    if (m >= 0 && m < 12) budget[m] += Number(li.amount || 0)
+    if (m < 0 || m >= 12) continue
+    const target = isIncomeGroup(li.budget_categories?.group) ? budgetIncome : budget
+    target[m] += Number(li.amount || 0)
   }
 
   // Forecast is its own independent dataset (forecast_line_items), seeded from
@@ -187,11 +201,14 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
   // otherwise we fall back to the budget so the chart still reads as a plan.
   const forecastInitialized = forecastLines.length > 0
   const forecast = [...budget]
+  const forecastIncome = [...budgetIncome]
   if (forecastInitialized) {
-    for (let m = 0; m < 12; m++) forecast[m] = 0
+    for (let m = 0; m < 12; m++) { forecast[m] = 0; forecastIncome[m] = 0 }
     for (const fi of forecastLines) {
       const m = (fi.month ?? 1) - 1
-      if (m >= 0 && m < 12) forecast[m] += Number(fi.amount || 0)
+      if (m < 0 || m >= 12) continue
+      const target = isIncomeGroup(fi.budget_categories?.group) ? forecastIncome : forecast
+      target[m] += Number(fi.amount || 0)
     }
   }
 
@@ -214,6 +231,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
   // Committed scenario deltas for future months only.
   // scenarioFilter: 'all' = apply all committed, 'baseline' = none, id string = only that one.
   const scenarioDeltas = Array(12).fill(0)
+  const scenarioIncomeDeltas = Array(12).fill(0)
   let committedScenarioCount = 0
   for (const s of (ctx?.scenarios ?? [])) {
     if (s.state !== 'committed') continue
@@ -223,7 +241,9 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
     for (const adj of (s.adjustments ?? [])) {
       if (Number(adj.year) !== year) continue
       const m = (adj.month ?? 1) - 1
-      if (m >= 0 && m < 12 && m > currentMonth) scenarioDeltas[m] += Number(adj.delta_amount) || 0
+      if (m < 0 || m >= 12 || m <= currentMonth) continue
+      const target = isIncomeAdjustment(adj) ? scenarioIncomeDeltas : scenarioDeltas
+      target[m] += Number(adj.delta_amount) || 0
     }
   }
 
@@ -289,6 +309,10 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
     committedScenarioCount,
     hasCommittedScenarios: committedScenarioCount > 0,
     varThreshold,
+    // Income-category plan lines, kept out of the expense series above so the
+    // income projection can pick them up instead.
+    forecastIncome,
+    scenarioIncomeDeltas,
   }
 }
 
@@ -367,13 +391,18 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const currentMonth = mbva.currentMonth
   let fullYearActualExpenses = 0
   let fullYearForecastExpenses = 0
-  for (const mo of mbva.months) {
+  // Planned income for the same months the expense side is forecasting — months
+  // with actuals already carry their income through the transaction totals, so
+  // only forecast months contribute here and nothing is double counted.
+  let forecastIncomeLines = 0
+  mbva.months.forEach((mo, m) => {
     if (mo.actual != null) {
       fullYearActualExpenses += mo.actual
     } else {
       fullYearForecastExpenses += (mo.forecast ?? 0)
+      forecastIncomeLines += (mbva.forecastIncome?.[m] ?? 0) + (mbva.scenarioIncomeDeltas?.[m] ?? 0)
     }
-  }
+  })
   const fullYearExpenses = fullYearActualExpenses + fullYearForecastExpenses
 
   // Month-by-month actuals from transactions
@@ -439,6 +468,8 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
       : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
     fullYearIncome = ytdIncome + avgMonthlyIncome * Math.max(11 - currentMonth, 0)
   }
+
+  fullYearIncome += forecastIncomeLines
 
   const fullYearNet = fullYearIncome - fullYearExpenses
   const fullYearSavingsRate = fullYearIncome > 0 ? (fullYearNet / fullYearIncome) * 100 : null
