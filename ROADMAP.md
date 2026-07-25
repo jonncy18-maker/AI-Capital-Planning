@@ -12,7 +12,37 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-25 (Income scenarios were being counted as spending)
+**Last updated:** 2026-07-25 (Forecast gained an income side)
+
+- **Forecast income section (2026-07-25):** Forecast modelled only money going
+  out. Added an Income section above the spend grid, plus year income/net stats.
+  Approved from a mockup built against real 2026 numbers before any code.
+  - **Why income couldn't reuse the expense path:** the expense forecast seeds by
+    copying `budget_line_items`, but there are **zero** Income rows in that table
+    — "Initialize from budget" would have produced an empty section. Income rows
+    are therefore built from `budget_categories` (group `Income`, not
+    `exclude_from_totals`), filtered to categories with real activity this year,
+    so the section lists the 4 that matter rather than all 14 income buckets.
+  - **Seeding rule (John's call):** carry the **latest banked month** forward,
+    not a trailing average — Paychecks stepped 7,625 → 7,920 across Jan–Jun, and
+    averaging would have understated the rest of the year by ~$1,000. A category
+    seeds only if it landed in ≥3 of the last 4 banked months, so Paychecks
+    qualify while Bonus (April only), Other Income and Reimbursements are left
+    empty for manual entry. Verified against live data: seeds Paychecks $7,920 ×
+    6 months, annual income $115,804.
+  - Seeding writes real `forecast_line_items`, so the dashboard income projection
+    (wired earlier today) picks it up rather than diverging.
+  - **Decisions taken:** Net kept as a summary stat rather than a per-month row
+    (it's a bonus, not the driver); no income-vs-budget comparison (John will set
+    income targets in the Budget module later); variability handled by editable
+    cells, no low/expected/high range model.
+  - Implementation reuses `ForecastGrid` via a `kind` prop rather than
+    restructuring the table — income renders as its own grid above the expense
+    one, so the spend plan is untouched. `catRows` still means expenses, so every
+    existing consumer (chart totals, scenario overlays, annual stats) is
+    unchanged.
+  - **Visually unverified** — seed logic verified against live data, not
+    confirmed in the browser.
 
 - **Income-scenario downstream audit (2026-07-25, follow-up 2):** swept every
   consumer of `delta_amount` and income-group plan lines beyond the two earlier
