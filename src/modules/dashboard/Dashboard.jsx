@@ -762,7 +762,8 @@ function ScenarioPlanWidget({ si }) {
   }
 
   const sign = (n) => (n >= 0 ? '+' : '−') + fmtK(Math.abs(n))
-  const deltaColor = (n) => n > 0 ? 'var(--warn)' : n < 0 ? 'var(--accent)' : 'var(--tx-2)'
+  // Cash terms: positive = better off.
+  const deltaColor = (n) => n > 0 ? 'var(--good)' : n < 0 ? 'var(--bad)' : 'var(--tx-2)'
 
   if (!si.hasCommitted) {
     return (
@@ -780,7 +781,7 @@ function ScenarioPlanWidget({ si }) {
 
   return (
     <>
-      <Stat value={sign(si.committedAnnualNet)} label="COMMITTED ANNUAL NET" accent={si.committedAnnualNet <= 0} />
+      <Stat value={sign(si.committedAnnualNet)} label={`COMMITTED NET · ${new Date().getFullYear()}`} accent={si.committedAnnualNet >= 0} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 12 }}>
         {displayCommitted.map((c, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>

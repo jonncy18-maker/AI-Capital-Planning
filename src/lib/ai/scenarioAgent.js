@@ -123,7 +123,7 @@ async function executeCreateScenario(userId, input) {
       category_id: categoryId, month, year, delta_amount: delta, label: a.label || input.name || '',
     })
     written += 1
-    netDelta += delta
+    netDelta += isIncomeCategoryName(cats, a.category) ? delta : -delta
   }
 
   return { scenarioId: scenario.id, name: scenario.name, adjustmentCount: written, netDelta }
@@ -131,7 +131,15 @@ async function executeCreateScenario(userId, input) {
 
 // Build a human-readable preview of what create_scenario would do, without
 // touching the DB. Used to populate the confirmation card in the chat.
-function buildPreview(input) {
+// Category-name → income lookup for preview/net math. Mirrors
+// isIncomeAdjustment in scenarioUtils, but previews only carry the name.
+function isIncomeCategoryName(categories, name) {
+  const n = (name || '').trim().toLowerCase()
+  const cat = (categories ?? []).find(c => (c.category || '').trim().toLowerCase() === n)
+  return ((cat?.group || '') + '').trim().toLowerCase() === 'income'
+}
+
+function buildPreview(input, categories) {
   const thisYear = new Date().getFullYear()
   const adjustments = (input?.adjustments ?? []).map(a => ({
     category: a.category || '',
@@ -139,8 +147,10 @@ function buildPreview(input) {
     month: Math.min(12, Math.max(1, Math.round(Number(a.month) || 1))),
     delta_amount: Number(a.delta_amount) || 0,
     label: a.label || '',
+    isIncome: isIncomeCategoryName(categories, a.category),
   }))
-  const netDelta = adjustments.reduce((sum, a) => sum + a.delta_amount, 0)
+  // Net in cash terms: income adds, spending subtracts.
+  const netDelta = adjustments.reduce((sum, a) => sum + (a.isIncome ? a.delta_amount : -a.delta_amount), 0)
   return {
     name: input?.name || 'New scenario',
     description: input?.description || '',
@@ -231,7 +241,7 @@ export async function runScenarioAgent({ userId, history = [], prompt, context, 
       pending: {
         messagesWithAI,
         allToolBlocks: res.content.filter(b => b.type === 'tool_use'),
-        preview: buildPreview(createBlock.input),
+        preview: buildPreview(createBlock.input, context?.categories),
         systemExtra,
       },
     }
@@ -365,12 +375,12 @@ async function executeAddAdjustments(userId, scenarioId, input) {
       category_id: categoryId, month, year, delta_amount: delta, label: a.label || '',
     })
     written += 1
-    netDelta += delta
+    netDelta += isIncomeCategoryName(cats, a.category) ? delta : -delta
   }
   return { adjustmentCount: written, netDelta }
 }
 
-function buildAdjPreview(input) {
+function buildAdjPreview(input, categories) {
   const thisYear = new Date().getFullYear()
   const adjustments = (input?.adjustments ?? []).map(a => ({
     category: a.category || '',
@@ -378,8 +388,10 @@ function buildAdjPreview(input) {
     month: Math.min(12, Math.max(1, Math.round(Number(a.month) || 1))),
     delta_amount: Number(a.delta_amount) || 0,
     label: a.label || '',
+    isIncome: isIncomeCategoryName(categories, a.category),
   }))
-  const netDelta = adjustments.reduce((sum, a) => sum + a.delta_amount, 0)
+  // Net in cash terms: income adds, spending subtracts.
+  const netDelta = adjustments.reduce((sum, a) => sum + (a.isIncome ? a.delta_amount : -a.delta_amount), 0)
   return { adjustments, adjustmentCount: adjustments.length, netDelta }
 }
 
@@ -418,7 +430,7 @@ export async function runAdjustmentAgent({
       pending: {
         messagesWithAI,
         allToolBlocks: res.content.filter(b => b.type === 'tool_use'),
-        preview: buildAdjPreview(addBlock.input),
+        preview: buildAdjPreview(addBlock.input, context?.categories),
         systemExtra,
         scenarioId,
       },

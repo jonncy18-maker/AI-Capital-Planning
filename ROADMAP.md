@@ -14,6 +14,23 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 **Last updated:** 2026-07-25 (Income scenarios were being counted as spending)
 
+- **Income-scenario downstream audit (2026-07-25, follow-up 2):** swept every
+  consumer of `delta_amount` and income-group plan lines beyond the two earlier
+  fixes. Six more affected sites, all fixed to the same convention (aggregates
+  and colours in cash terms; per-line amounts stay category-relative):
+  scenario list-card net badge and category-breakdown waterfall (Scenarios),
+  AI preview cards' net + per-row colours (scenarioAgent `buildPreview`/
+  `buildAdjPreview` now tag `isIncome`; CommandBar colours by cash effect),
+  Forecast module (income lines excluded from the spend grid/totals/chart —
+  note: the committed bonus's forecast row no longer appears there — and income
+  adjustments excluded from modeled-scenario spend overlays), and the
+  dashboard Scenario Plan widget (was `monthlyAvg × 12` — the one-time bonus
+  showed as +$43k/yr committed net; now sums the current year's actual cash
+  effects, label "COMMITTED NET · <year>"). Verified: bonus +3,582 · 36-month
+  lease −17,244 · 2026 committed net −2,166. Clean sites confirmed unaffected:
+  commit/clone SQL, Wealth (commitments only), cashflow/payperiods
+  (transaction-based), CSV import.
+
 - **Income plan lines counted as expenses (2026-07-25, follow-up):** the first
   pass fixed the scenario *reporting* surfaces but the dashboard savings rate was
   still wrong — committing the July bonus dropped the full-year forecast from 6%

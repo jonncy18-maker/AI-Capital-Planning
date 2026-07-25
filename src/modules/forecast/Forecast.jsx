@@ -14,6 +14,7 @@ import { getTransactionsForYear } from '../../lib/db/transactions.js'
 import { getScenarios, getAdjustments } from '../../lib/db/scenarios.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
+import { isIncomeAdjustment } from '../../lib/scenarios/scenarioUtils.js'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const CUR_YEAR = new Date().getFullYear()
@@ -990,14 +991,17 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
         byId[id].group = cats.group || byId[id].group
       }
     }
+    // Income-category lines (e.g. a committed income scenario's forecast row)
+    // belong to the income projection, not this spend grid.
+    const isIncomeLine = (x) => ((x.budget_categories?.group || '') + '').trim().toLowerCase() === 'income'
     for (const li of budgetItems) {
-      if (!li.category_id) continue
+      if (!li.category_id || isIncomeLine(li)) continue
       ensure(li.category_id, li.budget_categories)
       const m = (li.month ?? 1) - 1
       if (m >= 0 && m < 12) byId[li.category_id].budget[m] += Number(li.amount) || 0
     }
     for (const fi of forecastItems) {
-      if (!fi.category_id) continue
+      if (!fi.category_id || isIncomeLine(fi)) continue
       ensure(fi.category_id, fi.budget_categories)
       const m = (fi.month ?? 1) - 1
       if (m >= 0 && m < 12) byId[fi.category_id].forecast[m] += Number(fi.amount) || 0
@@ -1033,6 +1037,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     for (const s of activeScenarios) {
       for (const adj of (s.adjustments ?? [])) {
         if (Number(adj.year) !== year) continue
+        if (isIncomeAdjustment(adj)) continue // income never moves the spend line
         const key = `${adj.category_id}::${adj.month}`
         m[key] = (m[key] || 0) + Number(adj.delta_amount)
       }
@@ -1301,6 +1306,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     for (const s of sel) {
       for (const adj of (s.adjustments ?? [])) {
         if (Number(adj.year) !== year) continue
+        if (isIncomeAdjustment(adj)) continue // income never moves the spend line
         const m = Number(adj.month) - 1
         if (m >= 0 && m < 12) netDelta[m] += Number(adj.delta_amount)
       }

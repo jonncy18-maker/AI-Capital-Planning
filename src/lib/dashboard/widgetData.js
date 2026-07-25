@@ -355,12 +355,20 @@ export function scenarioImpact(ctx) {
 
   const committedMonthlyNet = committedSummaries.reduce((s, c) => s + c.monthlyAvg, 0)
 
+  // Annual figure = this year's actual cash effects, not monthlyAvg × 12 —
+  // extrapolation would turn a one-off bonus into a phantom recurring salary.
+  const thisYear = ctx?.thisYear ?? new Date().getFullYear()
+  const committedAnnualNet = committed.reduce((s, sc) =>
+    s + (sc.adjustments ?? [])
+      .filter(a => Number(a.year) === thisYear)
+      .reduce((t, a) => t + cashEffect(a), 0), 0)
+
   return {
     hasData: true,
     committed: committedSummaries,
     modeled: modeledSummaries,
     committedMonthlyNet,
-    committedAnnualNet: committedMonthlyNet * 12,
+    committedAnnualNet,
     hasCommitted: committed.length > 0,
   }
 }

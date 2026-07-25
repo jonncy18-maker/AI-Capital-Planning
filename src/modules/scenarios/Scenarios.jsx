@@ -168,7 +168,8 @@ function StateBadge({ state }) {
 
 function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
   const adjs = adjustments ?? []
-  const netDelta = adjs.reduce((s, a) => s + Number(a.delta_amount), 0)
+  // Cash terms: positive = better off, so income scenarios read green.
+  const netDelta = adjs.reduce((s, a) => s + cashEffect(a), 0)
   const hasData = adjs.length > 0
 
   let span = null
@@ -201,9 +202,9 @@ function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
           <span style={{
             display: 'inline-block', padding: '2px 7px', borderRadius: 10,
             fontSize: 10.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
-            background: netDelta < 0 ? 'rgba(46,204,113,0.1)' : netDelta > 0 ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
-            color: netDelta < 0 ? 'var(--green)' : netDelta > 0 ? 'var(--red)' : 'var(--tx-3)',
-            border: `1px solid ${netDelta < 0 ? 'rgba(46,204,113,0.2)' : netDelta > 0 ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
+            background: netDelta > 0 ? 'rgba(46,204,113,0.1)' : netDelta < 0 ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
+            color: netDelta > 0 ? 'var(--green)' : netDelta < 0 ? 'var(--red)' : 'var(--tx-3)',
+            border: `1px solid ${netDelta > 0 ? 'rgba(46,204,113,0.2)' : netDelta < 0 ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
           }}>
             {netDelta === 0 ? '$0' : (netDelta < 0 ? '−' : '+') + fmtAbs(netDelta)}
           </span>
@@ -1577,7 +1578,7 @@ function WaterfallChart({ adjustments }) {
       groups[key] = { key, display: lbl ? `${cat} · ${lbl}` : cat, delta: 0, count: 0 }
       groupOrder.push(key)
     }
-    groups[key].delta += Number(adj.delta_amount)
+    groups[key].delta += cashEffect(adj)
     groups[key].count++
   }
 
@@ -1653,7 +1654,7 @@ function WaterfallChart({ adjustments }) {
               const bY = Math.min(y1, y2)
               const bH = Math.max(3, Math.abs(y1 - y2))
               const bX = barLeft(i)
-              const fill = item.delta < 0 ? '#2ecc71' : '#e05252'
+              const fill = item.delta > 0 ? '#2ecc71' : '#e05252'
 
               if (i > 0) {
                 els.push(
@@ -1739,7 +1740,7 @@ function WaterfallChart({ adjustments }) {
             <div style={{ fontWeight: 700, color: 'var(--tx-1)', marginBottom: 6 }}>{tooltip.item.display}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
               <span style={{ color: 'var(--tx-3)' }}>Total delta</span>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: tooltip.item.delta < 0 ? 'var(--green)' : 'var(--red)' }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: tooltip.item.delta > 0 ? 'var(--green)' : 'var(--red)' }}>
                 {tooltip.item.delta < 0 ? '−' : '+'}{fmtAbs(tooltip.item.delta)}
               </span>
             </div>
