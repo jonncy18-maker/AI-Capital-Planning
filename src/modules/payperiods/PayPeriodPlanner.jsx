@@ -1468,6 +1468,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   return (
     <div>
       <ModuleHeader
+        moduleId="payperiods"
         icon="◫"
         title="Pay Period Planner"
         subtitle="Track bills by pay period and know exactly how much to transfer before each one hits."

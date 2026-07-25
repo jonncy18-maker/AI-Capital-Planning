@@ -4,59 +4,112 @@ html, body { margin: 0; padding: 0; height: 100%; }
 
 ::selection { background: var(--accent-bg); }
 
+/* Two colour systems run side by side and must never occupy the same slot:
+   — domain hues (--dom-*) answer "what is this about". Small marks only: a nav
+     dot, a module-header icon, a chart series, a legend swatch. Never a figure.
+   — signal colours (--good/--warn/--bad) answer "should I care". Delta chips,
+     variance figures and threshold bars only. Never a module's identity.
+   --accent is the brand teal and doubles as the "good" signal, which is why no
+   other module is allowed to claim teal. */
+
 :root {
-  --bg-app: #0C0F12;
-  --bg-card: #0A0D10;
-  --bd: #1E2530;
-  --bd-light: #141820;
-  --tx-1: #E2E8F0;
-  --tx-2: #8A9AAA;
-  --tx-3: #3A4A5A;
-  --tx-4: #2A3540;
-  --accent: #00C2A8;
-  --accent-bg: rgba(0, 194, 168, 0.1);
-  --accent-bd: rgba(0, 194, 168, 0.25);
-  --accent-tx-on: #06231F;
-  --warn: #E8A020;
-  --warn-bg: rgba(232, 160, 32, 0.1);
-  --green: #2ECC71;
-  --red: #E53935;
-  --ghost-bd: #2E3742;
-  --ghost-txt: #8A9AAA;
-  --field: #0E1318;
-  --hover: rgba(255, 255, 255, 0.03);
-  --bar-budget: rgba(56, 132, 220, 0.45);
-  --bar-budget-tx: #5B9BE8;
-  --forecast-fill: rgba(130, 80, 210, 0.15);
-  --forecast-bd: rgba(150, 100, 230, 0.55);
-  --teal: #00C2A8;
+  /* Surfaces — the card sits ABOVE the page ground, not below it. */
+  --bg-app: #080B0D;
+  --bg-card: #131A1E;
+  --bg-card-2: #182126;
+  --bd: #1F2A2F;
+  --bd-light: #182126;
+  --card-hi: rgba(255, 255, 255, 0.045);
+  --elev-1: inset 0 1px 0 var(--card-hi), 0 10px 22px -14px rgba(0, 0, 0, 0.9);
+
+  --tx-1: #EAF2F4;
+  --tx-2: #93A7AE;
+  --tx-3: #6C838C;
+  --tx-4: #4E636C;
+
+  --accent: #22D3BB;
+  --accent-bg: rgba(34, 211, 187, 0.12);
+  --accent-bd: rgba(34, 211, 187, 0.28);
+  --accent-tx-on: #04211D;
+
+  /* Signal — state, never identity */
+  --good: #22D3BB;
+  --good-bg: rgba(34, 211, 187, 0.13);
+  --warn: #F0B429;
+  --warn-bg: rgba(240, 180, 41, 0.13);
+  --bad: #FF6B5A;
+  --bad-bg: rgba(255, 107, 90, 0.13);
+  --green: #3DD68C;
+  --red: #FF6B5A;
+
+  /* Domain — identity, never state */
+  --dom-dashboard: #22D3BB;
+  --dom-payperiods: #38BDF8;
+  --dom-forecast: #4F9CF0;
+  --dom-budget: #7B8CFA;
+  --dom-scenarios: #A87CF6;
+  --dom-creditcards: #CE7BE6;
+  --dom-wealth: #F0728F;
+  --dom-commitments: #E9B872;
+  --dom-system: #8A9AAA;
+
+  --ghost-bd: #2B3A42;
+  --ghost-txt: #93A7AE;
+  --field: #10171B;
+  --hover: rgba(255, 255, 255, 0.045);
+  --bar-budget: #2C4A5C;
+  --bar-budget-tx: #6FA8C9;
+  --forecast-fill: rgba(130, 80, 210, 0.18);
+  --forecast-bd: rgba(168, 124, 246, 0.6);
+  --teal: #22D3BB;
 }
 
 [data-theme="light"] {
-  --bg-app: #F0F4F8;
+  --bg-app: #EDF1F4;
   --bg-card: #FFFFFF;
-  --bd: #CBD5E0;
-  --bd-light: #E2E8F0;
+  --bg-card-2: #F6F9FA;
+  --bd: #D3DCE1;
+  --bd-light: #E6ECEF;
+  --card-hi: rgba(255, 255, 255, 0.9);
+  --elev-1: 0 1px 2px rgba(15, 26, 30, 0.05), 0 8px 20px -14px rgba(15, 26, 30, 0.35);
+
   --tx-1: #0D1520;
   --tx-2: #4A5A6A;
-  --tx-3: #8A9AAA;
-  --tx-4: #A0B0C0;
+  --tx-3: #6B7C88;
+  --tx-4: #93A3AE;
+
   --accent: #0A7A6A;
   --accent-bg: rgba(10, 122, 106, 0.08);
   --accent-bd: rgba(10, 122, 106, 0.2);
   --accent-tx-on: #FFFFFF;
-  --warn: #B07010;
-  --warn-bg: rgba(176, 112, 16, 0.08);
+
+  --good: #0A7A6A;
+  --good-bg: rgba(10, 122, 106, 0.1);
+  --warn: #A9740B;
+  --warn-bg: rgba(169, 116, 11, 0.1);
+  --bad: #C4483A;
+  --bad-bg: rgba(196, 72, 58, 0.1);
   --green: #1A8A40;
-  --red: #C62828;
+  --red: #C4483A;
+
+  --dom-dashboard: #0A7A6A;
+  --dom-payperiods: #0C74B8;
+  --dom-forecast: #1E62C4;
+  --dom-budget: #4B57C9;
+  --dom-scenarios: #7A45C4;
+  --dom-creditcards: #A03FB8;
+  --dom-wealth: #C43A63;
+  --dom-commitments: #8F6310;
+  --dom-system: #5F7280;
+
   --ghost-bd: #8A9AAA;
   --ghost-txt: #4A5A6A;
-  --field: #F7FAFC;
-  --hover: rgba(0, 0, 0, 0.025);
-  --bar-budget: rgba(40, 110, 200, 0.38);
+  --field: #F5F8FA;
+  --hover: rgba(0, 0, 0, 0.03);
+  --bar-budget: #A8C4DC;
   --bar-budget-tx: #2C6FC8;
-  --forecast-fill: rgba(130, 80, 210, 0.12);
-  --forecast-bd: rgba(120, 80, 200, 0.55);
+  --forecast-fill: rgba(122, 69, 196, 0.12);
+  --forecast-bd: rgba(122, 69, 196, 0.55);
   --teal: #0A7A6A;
 }
 

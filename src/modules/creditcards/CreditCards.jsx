@@ -1631,7 +1631,7 @@ export default function CreditCards({ userId, mobile }) {
   if (loading) {
     return (
       <div style={{ padding: mobile ? '20px 16px' : '32px 28px', maxWidth: 1100 }}>
-        <ModuleHeader icon="▬" title="Credit Cards" />
+        <ModuleHeader moduleId="creditcards" icon="▬" title="Credit Cards" />
         <div style={{ color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace", fontSize: 12 }}>Loading…</div>
       </div>
     )
@@ -1640,7 +1640,7 @@ export default function CreditCards({ userId, mobile }) {
   if (error) {
     return (
       <div style={{ padding: mobile ? '20px 16px' : '32px 28px', maxWidth: 1100 }}>
-        <ModuleHeader icon="▬" title="Credit Cards" />
+        <ModuleHeader moduleId="creditcards" icon="▬" title="Credit Cards" />
         <div style={{ color: 'var(--warn)', fontFamily: "'DM Mono', monospace", fontSize: 12 }}>{error}</div>
       </div>
     )
@@ -1649,6 +1649,7 @@ export default function CreditCards({ userId, mobile }) {
   return (
     <div style={{ padding: mobile ? '20px 16px' : '32px 28px', maxWidth: 1100 }}>
       <ModuleHeader
+        moduleId="creditcards"
         icon="▬"
         title="Credit Cards"
         subtitle="Points tracking · spend optimization · bill pay timing"

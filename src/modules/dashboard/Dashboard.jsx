@@ -45,6 +45,28 @@ const DEFAULT_LAYOUT = {
   collapsed: ['spendGroup', 'monthlyChart'],
 }
 
+// Each widget wears the domain hue of the module it drills into, so colour
+// reads as wayfinding rather than status.
+const BLOCK_HUE = {
+  incomeExpenses: 'var(--dom-dashboard)',
+  cashFlow: 'var(--dom-payperiods)',
+  spendGroup: 'var(--dom-budget)',
+  budget: 'var(--dom-budget)',
+  monthlyChart: 'var(--dom-budget)',
+  runrate: 'var(--dom-budget)',
+  scenarioPlan: 'var(--dom-scenarios)',
+  wealth: 'var(--dom-wealth)',
+  commitments: 'var(--dom-commitments)',
+  creditPoints: 'var(--dom-creditcards)',
+  spikes: 'var(--dom-payperiods)',
+  activity: 'var(--dom-system)',
+}
+
+function HueDot({ hue }) {
+  if (!hue) return null
+  return <span style={{ width: 6, height: 6, borderRadius: '50%', background: hue, flexShrink: 0 }} />
+}
+
 function fmtMoney(n) { return '$' + Math.round(n || 0).toLocaleString() }
 function fmtK(n) {
   const abs = Math.abs(n)
@@ -61,18 +83,48 @@ function fmtK1(n) {
 
 // ── widget primitives ────────────────────────────────────────────────────────
 
-function Stat({ value, label, accent = true }) {
+// Figures are set in the sans at tabular widths so columns of numbers line up
+// and stay legible; the serif is reserved for module titles.
+const figureStyle = {
+  fontFamily: 'Inter, sans-serif',
+  fontWeight: 500,
+  letterSpacing: '-0.025em',
+  fontVariantNumeric: 'tabular-nums',
+  lineHeight: 1,
+}
+
+// Signal chip — state only (good / drifting / over). Never carries a domain hue.
+function Delta({ tone = 'flat', children }) {
+  const tones = {
+    up: { color: 'var(--good)', background: 'var(--good-bg)' },
+    down: { color: 'var(--bad)', background: 'var(--bad-bg)' },
+    flat: { color: 'var(--warn)', background: 'var(--warn-bg)' },
+  }
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 9,
+      padding: '2px 7px', borderRadius: 4,
+      fontFamily: "'DM Mono', monospace", fontSize: 10.5, lineHeight: 1.5,
+      ...tones[tone] ?? tones.flat,
+    }}>
+      {children}
+    </span>
+  )
+}
+
+function Stat({ value, label, accent = true, delta, deltaTone }) {
   return (
     <div>
-      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, color: accent ? 'var(--accent)' : 'var(--tx-1)', lineHeight: 1 }}>{value}</div>
+      <div style={{ ...figureStyle, fontSize: 27, color: accent ? 'var(--accent)' : 'var(--tx-1)' }}>{value}</div>
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 8 }}>{label}</div>
+      {delta && <Delta tone={deltaTone}>{delta}</Delta>}
     </div>
   )
 }
 function MiniStat({ value, label }) {
   return (
     <div>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, color: 'var(--tx-1)' }}>{value}</div>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: 'var(--tx-3)', letterSpacing: '0.05em', marginTop: 3 }}>{label.toUpperCase()}</div>
     </div>
   )
@@ -83,11 +135,12 @@ function Empty({ text }) {
 
 // ── Shared full-width card wrapper ───────────────────────────────────────────
 
-function WideCard({ title, subtitle, children, onCollapse, isCollapsed }) {
+function WideCard({ title, subtitle, children, onCollapse, isCollapsed, hue }) {
   return (
-    <div style={{ border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)', padding: isCollapsed ? '13px 22px' : '20px 22px' }}>
+    <div style={{ border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)', boxShadow: 'var(--elev-1)', padding: isCollapsed ? '13px 22px' : '20px 22px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: isCollapsed ? 0 : 18, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <HueDot hue={hue} />
           <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-1)' }}>{title}</span>
           {subtitle && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: 'var(--tx-3)' }}>{subtitle}</span>}
         </div>
@@ -155,7 +208,7 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
 
   if (!ive.hasData && !hasForecastIncome) {
     return (
-      <WideCard title="Income vs. Expenses" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+      <WideCard hue={BLOCK_HUE.incomeExpenses} title="Income vs. Expenses" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
         <Empty text="Import transactions or set annual income in Settings to see your income vs. expense breakdown." />
       </WideCard>
     )
@@ -169,7 +222,7 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
       : 'On pace to break even this year'
 
   return (
-    <WideCard title="Income vs. Expenses" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+    <WideCard hue={BLOCK_HUE.incomeExpenses} title="Income vs. Expenses" subtitle="Full year · actuals + forecast" onCollapse={onCollapse} isCollapsed={isCollapsed}>
       {/* ── Chart ── */}
       <div style={{ position: 'relative', marginTop: 4 }}>
         {/* Tooltip */}
@@ -307,7 +360,7 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
           <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
             FULL YEAR SAVINGS RATE
           </div>
-          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, color: ive.fullYearSavingsRate != null ? (ive.fullYearSavingsRate >= 0 ? 'var(--accent)' : 'var(--warn)') : 'var(--tx-3)', lineHeight: 1 }}>
+          <div style={{ ...figureStyle, fontSize: 24, color: ive.fullYearSavingsRate != null ? (ive.fullYearSavingsRate >= 0 ? 'var(--good)' : 'var(--warn)') : 'var(--tx-3)' }}>
             {ive.fullYearSavingsRate != null ? Math.round(ive.fullYearSavingsRate) + '%' : '—'}
           </div>
           {ive.priorYearSavingsRate != null && ive.fullYearSavingsRate != null && (() => {
@@ -421,7 +474,7 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns, mobile, onColla
 
   if (!sgy.rows.length) {
     return (
-      <WideCard title="Spend by Group" subtitle="Full-year actual + forecast vs. budget" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+      <WideCard hue={BLOCK_HUE.spendGroup} title="Spend by Group" subtitle="Full-year actual + forecast vs. budget" onCollapse={onCollapse} isCollapsed={isCollapsed}>
         <Empty text="No budget or spending data for this year yet." />
       </WideCard>
     )
@@ -430,7 +483,7 @@ function SpendByGroupWidget({ sgy, ctx, yearTxns, priorYearTxns, mobile, onColla
   const varRatio = (ctx?.varianceThreshold ?? 10) / 100
   const max = sgy.max
   return (
-    <WideCard title="Spend by Group" subtitle="Full-year actual + forecast vs. budget" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+    <WideCard hue={BLOCK_HUE.spendGroup} title="Spend by Group" subtitle="Full-year actual + forecast vs. budget" onCollapse={onCollapse} isCollapsed={isCollapsed}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {sgy.rows.map(r => {
           const over    = r.budget > 0 && r.projected > r.budget * (1 + varRatio)
@@ -598,7 +651,7 @@ function BvaWidget({ bva, rr, varThreshold = 10 }) {
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
         OF ANNUAL BUDGET
       </div>
-      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, color: mainColor, lineHeight: 1 }}>
+      <div style={{ ...figureStyle, fontSize: 27, color: mainColor }}>
         {pct != null ? Math.round(pct) + '%' : '—'}
       </div>
       {pct != null && (
@@ -669,7 +722,7 @@ function YearEndWidget({ rr }) {
       <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 8 }}>
         FULL YEAR · ACT+FCST
       </div>
-      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, color: 'var(--accent)', lineHeight: 1 }}>
+      <div style={{ ...figureStyle, fontSize: 27, color: 'var(--accent)' }}>
         {fmtK(rr.projectedTotal)}
       </div>
 
@@ -829,7 +882,7 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
 
   if (!cf.hasData) {
     return (
-      <WideCard title="Cash Flow" subtitle="Full year · net (income − expenses)" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+      <WideCard hue={BLOCK_HUE.cashFlow} title="Cash Flow" subtitle="Full year · net (income − expenses)" onCollapse={onCollapse} isCollapsed={isCollapsed}>
         <Empty text="Import transactions or set annual income in Settings to see net cash flow." />
       </WideCard>
     )
@@ -839,7 +892,7 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
   const forecastStartLabel = cf.todayIdx < 12 ? IVE_MONTHS[cf.todayIdx] : null
 
   return (
-    <WideCard title="Cash Flow" subtitle="Full year · net (income − expenses)" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+    <WideCard hue={BLOCK_HUE.cashFlow} title="Cash Flow" subtitle="Full year · net (income − expenses)" onCollapse={onCollapse} isCollapsed={isCollapsed}>
       <div style={{ position: 'relative', marginTop: 4 }}>
         {/* Tooltip */}
         {hover !== null && cf.data[hover] && (() => {
@@ -1256,6 +1309,7 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
   return (
     <div style={{ maxWidth: CONTENT_MAX, width: '100%', margin: '0 auto' }}>
       <ModuleHeader
+        moduleId="dashboard"
         mobile={mobile}
         icon="◉"
         title="Dashboard"
@@ -1342,7 +1396,7 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
 
       {/* Add Reports panel */}
       {addReports && (
-        <div style={{ border: '1px solid var(--bd)', borderRadius: 12, padding: '14px 18px', marginBottom: 18, background: 'var(--bg-card)' }}>
+        <div style={{ border: '1px solid var(--bd)', borderRadius: 12, padding: '14px 18px', marginBottom: 18, background: 'var(--bg-card)', boxShadow: 'var(--elev-1)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>Optional Reports</div>
             <button onClick={() => setAddReports(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', fontSize: 14 }}>✕</button>
@@ -1419,7 +1473,7 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
               {...dragProps}
               style={{
                 border: dragId === b.id ? '1px solid var(--accent)' : '1px solid var(--bd)',
-                borderRadius: 13, background: 'var(--bg-card)',
+                borderRadius: 13, background: 'var(--bg-card)', boxShadow: 'var(--elev-1)',
                 padding: isCollapsed ? '13px 20px' : 20,
                 minHeight: isCollapsed ? 0 : 128,
                 cursor: configure ? 'grab' : 'default',
@@ -1429,8 +1483,11 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: isCollapsed ? 0 : 14 }}>
                 <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>{b.title}</div>
-                  {!isCollapsed && b.subtitle && <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 2, lineHeight: 1.4 }}>{b.subtitle}</div>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <HueDot hue={BLOCK_HUE[b.id]} />
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-1)' }}>{b.title}</div>
+                  </div>
+                  {!isCollapsed && b.subtitle && <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 2, marginLeft: 14, lineHeight: 1.4 }}>{b.subtitle}</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0, marginLeft: 8 }}>
                   {configure && (

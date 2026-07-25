@@ -6,8 +6,10 @@
 // header (e.g. Scenarios' sticky layout) stay pixel-consistent.
 
 import { headerStyles } from './headerStyles.js'
+import { moduleHue } from '../registry.js'
 
-export default function ModuleHeader({ icon, title, subtitle, actions, mobile }) {
+export default function ModuleHeader({ icon, title, subtitle, actions, mobile, moduleId }) {
+  const hue = moduleId ? moduleHue(moduleId) : 'var(--accent)'
   return (
     <div style={{ marginBottom: 24 }}>
       <div style={{
@@ -19,7 +21,7 @@ export default function ModuleHeader({ icon, title, subtitle, actions, mobile })
       }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {icon && <span style={headerStyles.icon}>{icon}</span>}
+            {icon && <span style={headerStyles.icon(hue)}>{icon}</span>}
             <h1 style={headerStyles.title(mobile)}>{title}</h1>
           </div>
           {subtitle && (

@@ -427,6 +427,7 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
 
       {/* Page heading */}
       <ModuleHeader
+        moduleId="settings"
         icon="⚙"
         title="Settings"
         subtitle="Preferences, data management, and account connections."

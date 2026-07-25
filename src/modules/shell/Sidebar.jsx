@@ -90,6 +90,9 @@ export default function Sidebar({
             )}
             {section.items.map(m => {
               const active = m.id === activeModule
+              // The module's domain hue tints the active row and always colours
+              // its glyph, so colour reads as "where am I", not "is this ok".
+              const hue = m.hue ?? 'var(--accent)'
               return (
                 <div
                   key={m.id}
@@ -104,15 +107,18 @@ export default function Sidebar({
                     marginBottom: '2px',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    background: active ? 'var(--accent-bg)' : 'transparent',
-                    border: active ? '1px solid var(--accent-bd)' : '1px solid transparent',
-                    color: active ? 'var(--accent)' : 'var(--tx-2)',
+                    background: active ? `color-mix(in srgb, ${hue} 13%, transparent)` : 'transparent',
+                    border: `1px solid ${active ? `color-mix(in srgb, ${hue} 30%, transparent)` : 'transparent'}`,
+                    color: active ? 'var(--tx-1)' : 'var(--tx-2)',
                     transition: 'background .12s, color .12s',
                   }}
                   onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--hover)' }}
                   onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
                 >
-                  <span style={{ fontSize: '15px', flexShrink: 0, width: '18px', textAlign: 'center' }}>
+                  <span style={{
+                    fontSize: '15px', flexShrink: 0, width: '18px', textAlign: 'center',
+                    color: hue, opacity: active ? 1 : 0.55,
+                  }}>
                     {m.icon}
                   </span>
                   {!collapsed && (
