@@ -15,7 +15,7 @@ import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario, runAdj
 import { headerStyles } from '../common/headerStyles.js'
 import { moduleHue } from '../registry.js'
 import Markdown from '../common/Markdown.jsx'
-import { computeImpactSummary, buildComparisonRows } from '../../lib/scenarios/scenarioUtils.js'
+import { computeImpactSummary, buildComparisonRows, cashEffect } from '../../lib/scenarios/scenarioUtils.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CUR_YEAR = new Date().getFullYear()
@@ -95,15 +95,28 @@ function ImpactSummaryStrip({ summary }) {
     color,
   })
 
-  const deltaColor = (n) => n < 0 ? 'var(--green)' : n > 0 ? 'var(--red)' : 'var(--tx-2)'
+  // These read in cash terms — positive means better off — so income scenarios
+  // and spending scenarios can share one colour rule.
+  const cashColor = (n) => n > 0 ? 'var(--green)' : n < 0 ? 'var(--red)' : 'var(--tx-2)'
+  const gainsCash = summary.cashMonthlyAvg > 0
 
   const segments = [
-    { label: 'Monthly avg', value: signedFmt(summary.monthlyAvg), color: deltaColor(summary.monthlyAvg) },
-    { label: 'Annualized', value: signedFmt(summary.annualized), color: deltaColor(summary.annualized) },
+    {
+      label: summary.isOneTime ? 'One-time' : 'Monthly avg',
+      value: signedFmt(summary.cashMonthlyAvg),
+      color: cashColor(summary.cashMonthlyAvg),
+    },
+    // Annualising a single month turns a one-off bonus into a phantom salary,
+    // so a one-month scenario reports its total instead.
+    summary.isOneTime
+      ? { label: 'Total impact', value: signedFmt(summary.cashTotal), color: cashColor(summary.cashTotal) }
+      : { label: 'Annualized', value: signedFmt(summary.cashAnnualized), color: cashColor(summary.cashAnnualized) },
     ...(summary.hasIncome && summary.pctOfIncome != null ? [{
-      label: 'Of monthly income',
+      label: gainsCash ? 'Adds to monthly income' : 'Of monthly income',
       value: Math.round(summary.pctOfIncome) + '%',
-      color: summary.pctOfIncome > 20 ? 'var(--red)' : summary.pctOfIncome > 10 ? 'var(--warn)' : 'var(--tx-1)',
+      color: gainsCash
+        ? 'var(--good)'
+        : summary.pctOfIncome > 20 ? 'var(--red)' : summary.pctOfIncome > 10 ? 'var(--warn)' : 'var(--tx-1)',
       sub: `~${signedFmt(summary.incomeRunRate)}/mo income`,
     }] : []),
     { label: 'Horizon', value: summary.horizon, color: 'var(--tx-2)', isText: true },
@@ -155,7 +168,8 @@ function StateBadge({ state }) {
 
 function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
   const adjs = adjustments ?? []
-  const netDelta = adjs.reduce((s, a) => s + Number(a.delta_amount), 0)
+  // Cash terms: positive = better off, so income scenarios read green.
+  const netDelta = adjs.reduce((s, a) => s + cashEffect(a), 0)
   const hasData = adjs.length > 0
 
   let span = null
@@ -188,9 +202,9 @@ function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
           <span style={{
             display: 'inline-block', padding: '2px 7px', borderRadius: 10,
             fontSize: 10.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
-            background: netDelta < 0 ? 'rgba(46,204,113,0.1)' : netDelta > 0 ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
-            color: netDelta < 0 ? 'var(--green)' : netDelta > 0 ? 'var(--red)' : 'var(--tx-3)',
-            border: `1px solid ${netDelta < 0 ? 'rgba(46,204,113,0.2)' : netDelta > 0 ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
+            background: netDelta > 0 ? 'rgba(46,204,113,0.1)' : netDelta < 0 ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
+            color: netDelta > 0 ? 'var(--green)' : netDelta < 0 ? 'var(--red)' : 'var(--tx-3)',
+            border: `1px solid ${netDelta > 0 ? 'rgba(46,204,113,0.2)' : netDelta < 0 ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
           }}>
             {netDelta === 0 ? '$0' : (netDelta < 0 ? '−' : '+') + fmtAbs(netDelta)}
           </span>
@@ -368,7 +382,9 @@ function AdjustmentsTable({ adjustments, onDelete, readOnly }) {
     )
   }
 
-  const totalDelta = adjustments.reduce((s, a) => s + Number(a.delta_amount), 0)
+  // Row amounts stay relative to their own category line; only the colour and
+  // the net figure switch to cash terms, so income reads as a gain.
+  const totalCash = adjustments.reduce((s, a) => s + cashEffect(a), 0)
 
   // Group by period (year-month)
   const byPeriod = {}
@@ -401,6 +417,7 @@ function AdjustmentsTable({ adjustments, onDelete, readOnly }) {
         const [yr, mo] = periodKey.split('-')
         const periodLabel = `${MONTHS[parseInt(mo) - 1]} ${yr}`
         const periodTotal = rows.reduce((s, a) => s + Number(a.delta_amount), 0)
+        const periodCash = rows.reduce((s, a) => s + cashEffect(a), 0)
 
         return (
           <div key={periodKey}>
@@ -419,7 +436,7 @@ function AdjustmentsTable({ adjustments, onDelete, readOnly }) {
               </span>
               {rows.length > 1 && (
                 <span style={{
-                  fontSize: 10, color: periodTotal < 0 ? 'var(--green)' : 'var(--red)',
+                  fontSize: 10, color: periodCash > 0 ? 'var(--green)' : 'var(--red)',
                   fontFamily: "'DM Mono', monospace", fontWeight: 600,
                 }}>
                   {periodTotal < 0 ? '−' : '+'}${Math.abs(Math.round(periodTotal)).toLocaleString()} total
@@ -430,6 +447,7 @@ function AdjustmentsTable({ adjustments, onDelete, readOnly }) {
             {/* Adjustment rows for this period */}
             {rows.map((adj) => {
               const delta = Number(adj.delta_amount)
+              const rowCash = cashEffect(adj)
               const cat = adj.budget_categories?.category ?? '—'
               const isHovered = hovered === adj.id
 
@@ -459,9 +477,9 @@ function AdjustmentsTable({ adjustments, onDelete, readOnly }) {
                     <span style={{
                       display: 'inline-block', padding: '4px 10px', borderRadius: 20,
                       fontSize: 12, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
-                      background: delta < 0 ? 'rgba(46,204,113,0.1)' : 'rgba(229,57,53,0.1)',
-                      color: delta < 0 ? 'var(--green)' : 'var(--red)',
-                      border: `1px solid ${delta < 0 ? 'rgba(46,204,113,0.25)' : 'rgba(229,57,53,0.25)'}`,
+                      background: rowCash > 0 ? 'rgba(46,204,113,0.1)' : 'rgba(229,57,53,0.1)',
+                      color: rowCash > 0 ? 'var(--green)' : 'var(--red)',
+                      border: `1px solid ${rowCash > 0 ? 'rgba(46,204,113,0.25)' : 'rgba(229,57,53,0.25)'}`,
                     }}>
                       {delta < 0 ? '−' : '+'}{fmtAbs(delta)}
                     </span>
@@ -496,10 +514,10 @@ function AdjustmentsTable({ adjustments, onDelete, readOnly }) {
           <span style={{
             display: 'inline-block', padding: '4px 12px', borderRadius: 20,
             fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
-            background: totalDelta < 0 ? 'rgba(46,204,113,0.12)' : totalDelta > 0 ? 'rgba(229,57,53,0.12)' : 'var(--hover)',
-            color: totalDelta < 0 ? 'var(--green)' : totalDelta > 0 ? 'var(--red)' : 'var(--tx-2)',
+            background: totalCash > 0 ? 'rgba(46,204,113,0.12)' : totalCash < 0 ? 'rgba(229,57,53,0.12)' : 'var(--hover)',
+            color: totalCash > 0 ? 'var(--green)' : totalCash < 0 ? 'var(--red)' : 'var(--tx-2)',
           }}>
-            {totalDelta === 0 ? '$0' : (totalDelta < 0 ? '−' : '+') + fmtAbs(totalDelta)}
+            {totalCash === 0 ? '$0' : (totalCash < 0 ? '−' : '+') + fmtAbs(totalCash)}
           </span>
         </div>
         {!readOnly && <span />}
@@ -687,7 +705,7 @@ function ComparisonChart({ adjustments, ctx }) {
                 <span style={{ color: 'var(--tx-3)' }}>Delta</span>
                 <span style={{
                   fontFamily: "'DM Mono', monospace", fontWeight: 700,
-                  color: tooltip.period.periodDelta < 0 ? 'var(--green)' : 'var(--red)',
+                  color: tooltip.period.periodCashDelta > 0 ? 'var(--green)' : 'var(--red)',
                 }}>
                   {tooltip.period.periodDelta < 0 ? '−' : '+'}${Math.abs(Math.round(tooltip.period.periodDelta)).toLocaleString()}
                 </span>
@@ -700,7 +718,7 @@ function ComparisonChart({ adjustments, ctx }) {
                     <span style={{ color: 'var(--tx-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>
                       {r.category}{r.label ? ` · ${r.label}` : ''}
                     </span>
-                    <span style={{ fontFamily: "'DM Mono', monospace", color: r.delta < 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600, flexShrink: 0 }}>
+                    <span style={{ fontFamily: "'DM Mono', monospace", color: r.cashDelta > 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600, flexShrink: 0 }}>
                       {r.delta < 0 ? '−' : '+'}${Math.abs(Math.round(r.delta)).toLocaleString()}
                     </span>
                   </div>
@@ -721,7 +739,7 @@ function ComparisonChart({ adjustments, ctx }) {
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {periods.map((p, i) => {
-                running += p.periodDelta
+                running += p.periodCashDelta
                 const snap = running
                 return (
                   <div key={i} style={{ textAlign: 'center', minWidth: 70 }}>
@@ -730,7 +748,7 @@ function ComparisonChart({ adjustments, ctx }) {
                     </div>
                     <div style={{
                       fontSize: 11.5, fontWeight: 700, fontFamily: "'DM Mono', monospace",
-                      color: snap < 0 ? 'var(--green)' : snap > 0 ? 'var(--red)' : 'var(--tx-3)',
+                      color: snap > 0 ? 'var(--green)' : snap < 0 ? 'var(--red)' : 'var(--tx-3)',
                     }}>
                       {snap === 0 ? '$0' : (snap < 0 ? '−' : '+') + fmtAbs(snap)}
                     </div>
@@ -777,19 +795,25 @@ function ForecastImpactChart({ adjustments, ctx }) {
     if (m >= 0 && m < 12) baseline[m] += Number(item.amount) || 0
   }
 
-  // Apply scenario adjustments for displayYear
+  // Apply scenario adjustments for displayYear. The bars track each category's
+  // own line, but the deltas we report alongside them are in cash terms so an
+  // income scenario reads as a gain rather than a cost.
   const withScenario = [...baseline]
+  const cashByMonth = Array(12).fill(0)
   for (const adj of adjustments) {
     if (Number(adj.year) === displayYear) {
       const m = (adj.month ?? 1) - 1
-      if (m >= 0 && m < 12) withScenario[m] += Number(adj.delta_amount) || 0
+      if (m >= 0 && m < 12) {
+        withScenario[m] += Number(adj.delta_amount) || 0
+        cashByMonth[m] += cashEffect(adj)
+      }
     }
   }
+  const annualCashDelta = cashByMonth.reduce((a, b) => a + b, 0)
 
   const hasImpact = baseline.some((v, i) => Math.abs(v - withScenario[i]) > 0.5)
   const annualBase = baseline.reduce((a, b) => a + b, 0)
   const annualWith = withScenario.reduce((a, b) => a + b, 0)
-  const annualDelta = annualWith - annualBase
 
   // Chart dims
   const W = 700, H = 200
@@ -866,7 +890,7 @@ function ForecastImpactChart({ adjustments, ctx }) {
 
             return (
               <g key={m}
-                onMouseEnter={e => setTooltip({ m, baseline: baseline[m], with: withScenario[m], delta, clientX: e.clientX, clientY: e.clientY })}
+                onMouseEnter={e => setTooltip({ m, baseline: baseline[m], with: withScenario[m], delta, cashDelta: cashByMonth[m], clientX: e.clientX, clientY: e.clientY })}
                 onMouseLeave={() => setTooltip(null)}
                 style={{ cursor: 'pointer' }}
               >
@@ -932,8 +956,8 @@ function ForecastImpactChart({ adjustments, ctx }) {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, paddingTop: 5, borderTop: '1px solid var(--bd-light)', marginTop: 2 }}>
                     <span style={{ color: 'var(--tx-3)' }}>Change</span>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: tooltip.delta < 0 ? 'var(--green)' : 'var(--red)' }}>
-                      {tooltip.delta < 0 ? '−' : '+'}${Math.abs(Math.round(tooltip.delta)).toLocaleString()}
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: tooltip.cashDelta > 0 ? 'var(--green)' : 'var(--red)' }}>
+                      {tooltip.cashDelta < 0 ? '−' : '+'}${Math.abs(Math.round(tooltip.cashDelta)).toLocaleString()}
                     </span>
                   </div>
                 </>
@@ -953,8 +977,8 @@ function ForecastImpactChart({ adjustments, ctx }) {
           { label: 'With Scenario', value: '$' + Math.round(annualWith).toLocaleString(), color: 'var(--accent)' },
           {
             label: 'Annual Delta',
-            value: (annualDelta === 0 ? '$0' : (annualDelta < 0 ? '−' : '+') + '$' + Math.abs(Math.round(annualDelta)).toLocaleString()),
-            color: annualDelta < 0 ? 'var(--green)' : annualDelta > 0 ? 'var(--red)' : 'var(--tx-2)',
+            value: (annualCashDelta === 0 ? '$0' : (annualCashDelta < 0 ? '−' : '+') + '$' + Math.abs(Math.round(annualCashDelta)).toLocaleString()),
+            color: annualCashDelta > 0 ? 'var(--green)' : annualCashDelta < 0 ? 'var(--red)' : 'var(--tx-2)',
           },
         ].map((stat, i) => (
           <div key={i} style={{ padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 8 }}>
@@ -1554,7 +1578,7 @@ function WaterfallChart({ adjustments }) {
       groups[key] = { key, display: lbl ? `${cat} · ${lbl}` : cat, delta: 0, count: 0 }
       groupOrder.push(key)
     }
-    groups[key].delta += Number(adj.delta_amount)
+    groups[key].delta += cashEffect(adj)
     groups[key].count++
   }
 
@@ -1630,7 +1654,7 @@ function WaterfallChart({ adjustments }) {
               const bY = Math.min(y1, y2)
               const bH = Math.max(3, Math.abs(y1 - y2))
               const bX = barLeft(i)
-              const fill = item.delta < 0 ? '#2ecc71' : '#e05252'
+              const fill = item.delta > 0 ? '#2ecc71' : '#e05252'
 
               if (i > 0) {
                 els.push(
@@ -1716,7 +1740,7 @@ function WaterfallChart({ adjustments }) {
             <div style={{ fontWeight: 700, color: 'var(--tx-1)', marginBottom: 6 }}>{tooltip.item.display}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
               <span style={{ color: 'var(--tx-3)' }}>Total delta</span>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: tooltip.item.delta < 0 ? 'var(--green)' : 'var(--red)' }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: tooltip.item.delta > 0 ? 'var(--green)' : 'var(--red)' }}>
                 {tooltip.item.delta < 0 ? '−' : '+'}{fmtAbs(tooltip.item.delta)}
               </span>
             </div>

@@ -29,7 +29,8 @@ function PendingScenarioCard({ preview, onConfirm, onCancel }) {
             <span style={{
               fontFamily: "'DM Mono', monospace",
               fontWeight: 600,
-              color: a.delta_amount >= 0 ? '#f87171' : '#4ade80',
+              // Cash terms: more income is green, more spending is red.
+              color: (a.isIncome ? a.delta_amount : -a.delta_amount) >= 0 ? '#4ade80' : '#f87171',
             }}>
               {a.delta_amount >= 0 ? '+' : '−'}${Math.abs(Math.round(a.delta_amount)).toLocaleString()}
             </span>

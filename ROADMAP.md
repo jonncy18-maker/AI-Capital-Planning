@@ -12,7 +12,79 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-25 ("Instrument" visual pass — elevation, signal + domain palettes)
+**Last updated:** 2026-07-25 (Income scenarios were being counted as spending)
+
+- **Income-scenario downstream audit (2026-07-25, follow-up 2):** swept every
+  consumer of `delta_amount` and income-group plan lines beyond the two earlier
+  fixes. Six more affected sites, all fixed to the same convention (aggregates
+  and colours in cash terms; per-line amounts stay category-relative):
+  scenario list-card net badge and category-breakdown waterfall (Scenarios),
+  AI preview cards' net + per-row colours (scenarioAgent `buildPreview`/
+  `buildAdjPreview` now tag `isIncome`; CommandBar colours by cash effect),
+  Forecast module (income lines excluded from the spend grid/totals/chart —
+  note: the committed bonus's forecast row no longer appears there — and income
+  adjustments excluded from modeled-scenario spend overlays), and the
+  dashboard Scenario Plan widget (was `monthlyAvg × 12` — the one-time bonus
+  showed as +$43k/yr committed net; now sums the current year's actual cash
+  effects, label "COMMITTED NET · <year>"). Verified: bonus +3,582 · 36-month
+  lease −17,244 · 2026 committed net −2,166. Clean sites confirmed unaffected:
+  commit/clone SQL, Wealth (commitments only), cashflow/payperiods
+  (transaction-based), CSV import.
+
+- **Income plan lines counted as expenses (2026-07-25, follow-up):** the first
+  pass fixed the scenario *reporting* surfaces but the dashboard savings rate was
+  still wrong — committing the July bonus dropped the full-year forecast from 6%
+  to 2%, and stayed there.
+  - **Root cause (confirmed against the live DB):** committing a scenario writes
+    real plan rows, and this one produced a single `forecast_line_items` row —
+    month 7, group `Income`, `+3582`. `monthlyBudgetVsActual` sums *every*
+    forecast/budget line into the expense plan with no group filter, so the bonus
+    became $3,582 of forecast spending. July has no transactions yet, so that
+    month falls to the forecast branch in `incomeVsExpenses` and the phantom
+    expense counted. $3,582 against ~$106k income ≈ the 4pp drop observed.
+  - **Fix (`widgetData.js`):** income-group lines are now split out of the
+    expense plan in `monthlyBudgetVsActual` (`forecastIncome` /
+    `scenarioIncomeDeltas` returned alongside), excluded from
+    `spendByGroupYear`'s bars and from `budgetVsActual`'s planned total, and
+    added to the income projection in `incomeVsExpenses` for forecast months
+    only — months with actuals already carry income through transaction totals,
+    so nothing double counts. Committed income adjustments route to the income
+    deltas rather than the spend deltas.
+  - Net effect on the reported case: expenses −$3,582 and income +$3,582, so the
+    full-year rate moves from 2% to roughly 9% rather than back to the old 6% —
+    the bonus is real income and should improve the rate.
+  - Worth noting for later: with no salary profile set, the fallback income
+    projection skips the current month entirely (`11 - currentMonth` future
+    months after YTD), which understates full-year income. Not addressed here.
+
+- **Income scenario sign bug (2026-07-25):** a committed "Quarterly Bonus — July
+  2026" (+$3,582 on the Income category) displayed as a **cost**: red, and
+  "Annualized +$43.0k" for what was a single one-off payment.
+  - **Root cause:** `delta_amount` is stored relative to its own category line,
+    so +$500 on Auto Lease means $500 more spending while +$500 on Income means
+    $500 more income — opposite cash effects. Every aggregate and colour rule
+    assumed the spending case (`delta > 0 ? red : green`), so income adjustments
+    were inverted. The stored data was correct throughout; this was purely
+    aggregation and presentation. A second defect sat in the same card:
+    `annualized = monthlyAvg × 12` extrapolated a one-month event into a phantom
+    recurring one ($3,582 → $43.0k).
+  - **Fix:** `scenarioUtils.js` gained `isIncomeAdjustment()` and `cashEffect()`
+    (income `+delta`, everything else `−delta`), plus `cashTotal` /
+    `cashMonthlyAvg` / `cashAnnualized` / `isOneTime` on `computeImpactSummary`,
+    `isIncome` + `cashDelta` on comparison rows and `periodCashDelta` per period.
+    Row amounts still display relative to their own category line — only
+    aggregates and colours moved to cash terms, where positive always means
+    better off. One-month scenarios now report "One-time / Total impact" instead
+    of annualising. `% of monthly income` no longer flags a large *gain* as a
+    warning.
+  - **Also corrected the same inversion in two non-obvious places:** the
+    dashboard's committed-scenario net (`widgetData.scenarioImpact`) and the AI
+    context brief (`contextLoader`), which had been telling the model a bonus was
+    a net delta of +$3,582 of spending.
+  - **Visually unverified** — logic verified against the three shapes (one-time
+    income, 36-month expense, mixed), but not confirmed in the browser.
+
+- **Visual redesign — "Instrument + domain hues" (2026-07-25):** the UI read flat.
 
 - **Visual redesign — "Instrument + domain hues" (2026-07-25):** the UI read flat.
   Diagnosed at token level and fixed there, so every module inherits the change

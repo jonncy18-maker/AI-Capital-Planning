@@ -11,6 +11,7 @@ import { estimateNet } from '../db/taxBrackets.js'
 import { getAIPreferences } from '../db/aiPreferences.js'
 import { formatPreferencesForBrief } from './preferences.js'
 import { incomeVsExpenses } from '../dashboard/widgetData.js'
+import { cashEffect } from '../scenarios/scenarioUtils.js'
 
 // How far back the AI's transaction context reaches. A full trailing year
 // captures the user's actual annual cycle (seasonality, annual bills, bonuses)
@@ -241,15 +242,15 @@ export function buildContextBrief(ctx, yearTxns) {
     if (committed.length) {
       lines.push(`\n## Committed Scenarios (${committed.length})`)
       for (const s of committed) {
-        const total = (s.adjustments ?? []).reduce((sum, a) => sum + Number(a.delta_amount), 0)
-        lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — ${s.adjustments?.length ?? 0} adjustments, net delta $${Math.round(total).toLocaleString()}`)
+        const total = (s.adjustments ?? []).reduce((sum, a) => sum + cashEffect(a), 0)
+        lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — ${s.adjustments?.length ?? 0} adjustments, net cash effect ${total < 0 ? '−' : '+'}$${Math.abs(Math.round(total)).toLocaleString()}/period`)
       }
     }
     if (modeled.length) {
       lines.push(`\n## Modeled Scenarios (${modeled.length})`)
       for (const s of modeled) {
-        const total = (s.adjustments ?? []).reduce((sum, a) => sum + Number(a.delta_amount), 0)
-        lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — ${s.adjustments?.length ?? 0} adjustments, net delta $${Math.round(total).toLocaleString()}`)
+        const total = (s.adjustments ?? []).reduce((sum, a) => sum + cashEffect(a), 0)
+        lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — ${s.adjustments?.length ?? 0} adjustments, net cash effect ${total < 0 ? '−' : '+'}$${Math.abs(Math.round(total)).toLocaleString()}/period`)
       }
     }
   }
