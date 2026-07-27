@@ -12,7 +12,22 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-25 (Forecast gained an income side)
+**Last updated:** 2026-07-25 (Gross → net helper for income scenario adjustments)
+
+- **Gross → net helper on income adjustments (2026-07-25):** income scenarios
+  store an after-tax delta on an "Income"-group category, but the user usually
+  knows the *gross* figure (a $30k bonus, an $18k raise). Added an optional
+  "Gross → net helper" to `AddAdjustmentForm` (Scenario Planner → add adjustment),
+  shown only when an Income category is selected: enter gross, toggle
+  Taxable / 401k, see the breakdown (gross − tax@effRate − 401k = net), and
+  "Use net as Delta" fills the after-tax amount. Pure helper
+  `grossToNet()` in `src/lib/scenarios/scenarioUtils.js` reuses the same effective
+  tax rate (`ctx.incomeEstimate.effectiveRate`) + 401k % the income forecast uses.
+  Falls back gracefully (net = gross) when no salary profile is set. Build clean.
+  *(This is the salvaged piece of a superseded separate-table income-scenario
+  branch — PR #158, closed — reworked onto the existing income-category model.)*
+
+- **Forecast income section (2026-07-25):** Forecast modelled only money going
 
 - **Forecast income section (2026-07-25):** Forecast modelled only money going
   out. Added an Income section above the spend grid, plus year income/net stats.

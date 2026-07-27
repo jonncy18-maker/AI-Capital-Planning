@@ -21,6 +21,20 @@ export function cashEffect(a) {
   return isIncomeAdjustment(a) ? delta : -delta
 }
 
+// Convert a GROSS income figure to the NET cash that actually lands, using the
+// same effective tax rate + 401k % the income forecast uses. An income-scenario
+// adjustment stores the after-tax delta on the income category; the user usually
+// knows the headline (gross) number, so this derives the net for them.
+// taxCtx: { effectiveRate: 0..1, four01kPct: percent }.
+export function grossToNet(gross, { taxable = true, applies401k = false } = {}, taxCtx = {}) {
+  const g = Number(gross) || 0
+  const effRate = Number(taxCtx?.effectiveRate) || 0
+  const k401Pct = Number(taxCtx?.four01kPct) || 0
+  const tax = taxable ? g * effRate : 0
+  const k401 = applies401k ? g * (k401Pct / 100) : 0
+  return { gross: g, tax, k401, net: g - tax - k401, effRatePct: Math.round(effRate * 100), k401Pct }
+}
+
 // Average monthly income from the trailing 12 months of context transactions.
 function monthlyIncomeRunRate(ctx) {
   const incomeYear = (ctx?.transactions ?? [])

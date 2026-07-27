@@ -15,7 +15,7 @@ import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario, runAdj
 import { headerStyles } from '../common/headerStyles.js'
 import { moduleHue } from '../registry.js'
 import Markdown from '../common/Markdown.jsx'
-import { computeImpactSummary, buildComparisonRows, cashEffect } from '../../lib/scenarios/scenarioUtils.js'
+import { computeImpactSummary, buildComparisonRows, cashEffect, grossToNet } from '../../lib/scenarios/scenarioUtils.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const CUR_YEAR = new Date().getFullYear()
@@ -268,7 +268,7 @@ function NewScenarioForm({ onSubmit, onCancel }) {
 
 // ── Add adjustment form ──────────────────────────────────────────────────────
 
-function AddAdjustmentForm({ categories, onSubmit, onCancel }) {
+function AddAdjustmentForm({ categories, onSubmit, onCancel, context }) {
   const curYear = CUR_YEAR
   const [categoryId, setCategoryId] = useState('')
   const [month, setMonth] = useState(new Date().getMonth() + 1)
@@ -278,12 +278,26 @@ function AddAdjustmentForm({ categories, onSubmit, onCancel }) {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
+  // Gross → net helper (income categories only): enter a gross figure, apply
+  // tax/401k, and it fills the after-tax Delta.
+  const [gross, setGross] = useState('')
+  const [grossTaxable, setGrossTaxable] = useState(true)
+  const [grossK401, setGrossK401] = useState(false)
+
   const grouped = {}
   for (const c of categories) {
     const g = c.group || 'Other'
     if (!grouped[g]) grouped[g] = []
     grouped[g].push(c)
   }
+
+  const selectedCat = categories.find(c => c.id === categoryId)
+  const isIncomeCat = ((selectedCat?.group || '') + '').trim().toLowerCase() === 'income'
+  const taxCtx = {
+    effectiveRate: Number(context?.incomeEstimate?.effectiveRate) || 0,
+    four01kPct: Number(context?.profile?.four01k_pct) || 0,
+  }
+  const grossCalc = gross !== '' ? grossToNet(Number(gross), { taxable: grossTaxable, applies401k: grossK401 }, taxCtx) : null
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -342,6 +356,38 @@ function AddAdjustmentForm({ categories, onSubmit, onCancel }) {
           <input type="number" value={delta} onChange={e => setDelta(e.target.value)} placeholder="-500 or +1200" step="0.01" style={{ ...fieldStyle, width: '100%' }} />
         </div>
       </div>
+      {isIncomeCat && (
+        <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--field)', border: '1px solid var(--bd)', borderRadius: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--good, #35c98a)', marginBottom: 8 }}>Gross → net helper</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 120px' }}>
+              <label style={{ fontSize: 11, color: 'var(--tx-3)', display: 'block', marginBottom: 4 }}>Gross ($)</label>
+              <input type="number" value={gross} onChange={e => setGross(e.target.value)} placeholder="e.g. 30000" step="0.01" style={{ ...fieldStyle, width: '100%' }} />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--tx-2)', paddingBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={grossTaxable} onChange={e => setGrossTaxable(e.target.checked)} /> Taxable
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--tx-2)', paddingBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={grossK401} onChange={e => setGrossK401(e.target.checked)} /> 401k
+            </label>
+          </div>
+          {grossCalc && (
+            <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--tx-2)', fontFamily: "'DM Mono', monospace", display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
+              <span>Gross ${Math.round(grossCalc.gross).toLocaleString()}</span>
+              {grossCalc.tax > 0 && <span style={{ color: 'var(--tx-3)' }}>− tax @ {grossCalc.effRatePct}% ${Math.round(grossCalc.tax).toLocaleString()}</span>}
+              {grossCalc.k401 > 0 && <span style={{ color: 'var(--tx-3)' }}>− 401k @ {grossCalc.k401Pct}% ${Math.round(grossCalc.k401).toLocaleString()}</span>}
+              <span style={{ color: 'var(--good, #35c98a)', fontWeight: 700 }}>= net ${Math.round(grossCalc.net).toLocaleString()}</span>
+            </div>
+          )}
+          <button type="button" disabled={!grossCalc} onClick={() => grossCalc && setDelta(String(Math.round(grossCalc.net)))}
+            style={{ marginTop: 8, padding: '5px 12px', background: 'transparent', color: 'var(--good, #35c98a)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: grossCalc ? 'pointer' : 'not-allowed', opacity: grossCalc ? 1 : 0.5 }}>
+            Use net as Delta →
+          </button>
+          {taxCtx.effectiveRate === 0 && (
+            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 6 }}>No tax rate on file — set your salary in Settings for an after-tax estimate.</div>
+          )}
+        </div>
+      )}
       <div style={{ marginBottom: 12 }}>
         <label style={{ fontSize: 11, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }}>Label (optional)</label>
         <input type="text" value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Celebrity Cruise — final payment" style={{ ...fieldStyle, width: '100%' }} />
@@ -2136,7 +2182,7 @@ function ScenarioDetail({
                       </div>
 
                       {adjTab === 'manual' && (showAddForm ? (
-                        <AddAdjustmentForm categories={categories} onSubmit={handleAddAdj} onCancel={() => setShowAddForm(false)} />
+                        <AddAdjustmentForm categories={categories} onSubmit={handleAddAdj} onCancel={() => setShowAddForm(false)} context={context} />
                       ) : (
                         <button onClick={() => setShowAddForm(true)} style={{ padding: '8px 16px', background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent-bd)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                           + Add Adjustment
