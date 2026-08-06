@@ -12,7 +12,47 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-07-25 (Gross → net helper for income scenario adjustments)
+**Last updated:** 2026-08-06 (Planner schedule fixes — forecast fallback, savings hierarchy, transfer math)
+
+- **Transfer-needed math made legible (2026-08-06, PRs #165/#166):** the figure
+  was correct all along — `bills due + min. balance − checking` — but nothing
+  around it agreed. `TOTAL OUTFLOW` sits directly above and reads as its basis
+  (it isn't: the non-card cash in that total is day-to-day spend already leaving
+  checking, which no transfer funds), and the AUTO/MANUAL chips broke down
+  `TOTAL DUE`, so they summed to $4,671 while the transfer read $4,314. Chips
+  moved under the transfer and now sum to it, with a caption spelling out the
+  arithmetic. **Two wrong turns before landing it, both John's catch:** first
+  changed the formula to include the forecast cash (wrong — that cash needs no
+  transfer); then split the transfer by applying the checking balance to auto
+  first (wrong — auto is a *known* fixed draw, manual is the unknown being
+  solved for: "how much do I move out of savings by hand"). Final: auto carries
+  face value, manual absorbs the checking balance, min balance, and rounding;
+  auto capped at the transfer so manual can't go negative. Manual takes the
+  accent styling since it's the number that prompts an action. Applies to both
+  pay periods via the shared `PeriodCard`.
+
+- **Off-forecast expenses resurfacing from the budget (2026-08-06, PR #164):**
+  `POST /api/bills/forecast-amounts` resolved a forecast-linked bill as
+  `sum(forecast_line_items) ?? sum(budget_line_items)`. With no forecast line for
+  a month that `??` fell through to the budget, which still carries the original
+  amount — so an expense dropped off the forecast kept forecasting. Live case:
+  the Aidvantage student loan's forecast ends May 2026 while its budget runs
+  $199/mo through December, so June onward forecast $199. Now, once a year's
+  forecast is initialized it is the sole source of truth ($0 where it has no
+  line); the budget is a fallback only for a year with no forecast at all
+  (2027 here). Mirrors the Forecast module's own `forecastReady` semantics.
+
+- **Savings drawdown hierarchy was unorderable (2026-08-06, PR #164):** the
+  Savings Transfer Plan drains buckets in `display_order` and pins the auto-debit
+  reserve to the first one, but nothing ever *wrote* `display_order` — all four
+  savings accounts sat at 0, so both the drawdown order and the reserve landed on
+  whichever sorted first (the emergency fund, which should drain last). One root
+  cause, two reported symptoms. Savings rows in the Accounts tab gained ↑/↓
+  controls and a position number; `POST /api/accounts` no longer resets
+  `display_order` (or clears `is_primary_checking`/`active`) when a request omits
+  them; new accounts append to the end of their type group; listing sorts
+  `display_order, name` so ties are stable. Live rows reordered to Open Savings →
+  Sinking Fund → Philippine Transfers → Emergency Fund.
 
 - **Gross → net helper on income adjustments (2026-07-25):** income scenarios
   store an after-tax delta on an "Income"-group category, but the user usually
