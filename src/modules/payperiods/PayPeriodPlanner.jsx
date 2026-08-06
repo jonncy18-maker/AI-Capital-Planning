@@ -147,7 +147,10 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
 
   const balanceKey = primaryChecking ? `${primaryChecking.id}-${period}` : null
   const checkingBalance = balanceKey ? (balancesMap[balanceKey] ?? '') : ''
-  const transferNeeded = checkingBalance !== '' ? Math.max(0, total + minCheckingBalance - Number(checkingBalance)) : null
+  // Measured against total outflow (bills + forecast cash spend), not bills alone —
+  // the forecast cash leaves checking too, so a transfer that ignores it lands short.
+  const outflow = total + forecastCash
+  const transferNeeded = checkingBalance !== '' ? Math.max(0, outflow + minCheckingBalance - Number(checkingBalance)) : null
 
   return (
     <div style={{
@@ -305,7 +308,7 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
             }}>
               <MonoLabel style={{ fontSize: 9 }}>TOTAL OUTFLOW</MonoLabel>
               <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: 'var(--tx-1)' }}>
-                {fmt(total + forecastCash)}
+                {fmt(outflow)}
               </div>
             </div>
           </>
@@ -1817,8 +1820,13 @@ export default function PayPeriodPlanner({ userId, mobile }) {
 
                 const p1CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-1`] ?? 0) : 0
                 const p2CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-2`] ?? 0) : 0
-                const gapP1 = Math.max(0, (autoP1 + manualP1) + minCheckingBal - p1CheckingBal)
-                const gapP2 = Math.max(0, (autoP2 + manualP2) + minCheckingBal - p2CheckingBal)
+                // Same basis as the period cards' TRANSFER NEEDED: bills plus the
+                // forecast cash spend pro-rated into the period, less what's already
+                // in checking, keeping the minimum balance untouched.
+                const cashP1 = forecastCashSplit.period1
+                const cashP2 = forecastCashSplit.period2
+                const gapP1 = Math.max(0, (autoP1 + manualP1 + cashP1) + minCheckingBal - p1CheckingBal)
+                const gapP2 = Math.max(0, (autoP2 + manualP2 + cashP2) + minCheckingBal - p2CheckingBal)
 
                 // Hierarchy drawdown — each period uses its own saved balances independently
                 function drawFrom(bkts, gap) {
@@ -1929,9 +1937,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                       {/* Period 1 / Period 2 panels */}
                       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 14 }}>
                         {[
-                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, gap: gapP1, draws: p1Draws },
-                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, gap: gapP2, draws: p2Draws },
-                        ].map(({ key, label, auto, manual, gap, draws }) => (
+                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, cash: cashP1, bal: p1CheckingBal, gap: gapP1, draws: p1Draws },
+                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, cash: cashP2, bal: p2CheckingBal, gap: gapP2, draws: p2Draws },
+                        ].map(({ key, label, auto, manual, cash, bal, gap, draws }) => (
                           <div key={key} style={{
                             border: '1px solid var(--bd)', borderRadius: 8,
                             padding: '12px 14px', background: 'var(--bg-app)',
@@ -1947,6 +1955,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                   { name: 'Total Due',       val: auto + manual },
                                   { name: 'Auto',            val: auto,   muted: true },
                                   { name: 'Manual',          val: manual, muted: true },
+                                  { name: 'Cash (fcst)',     val: cash },
+                                  { name: 'In Checking',     val: -bal },
+                                  { name: `Min. Balance`,    val: minCheckingBal },
                                   { name: 'Transfer Needed', val: gap,    bold: true },
                                 ].map(row => (
                                   <div key={row.name} style={{
@@ -1967,7 +1978,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                       fontWeight: row.bold ? 600 : 400,
                                       fontVariantNumeric: 'tabular-nums',
                                       color: row.bold && gap > 0 ? 'var(--warn)' : row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
-                                    }}>{fmt(row.val)}</span>
+                                    }}>{fmtSigned(row.val)}</span>
                                   </div>
                                 ))}
                               </div>
