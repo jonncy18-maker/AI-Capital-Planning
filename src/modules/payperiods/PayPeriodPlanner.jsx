@@ -136,6 +136,20 @@ function Badge({ label, variant = 'neutral' }) {
 
 // ─── Period Card ──────────────────────────────────────────────────────────────
 
+function SplitChip({ label, value, accent = false }) {
+  return (
+    <span style={{
+      fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.04em',
+      padding: '2px 7px', borderRadius: 4,
+      background: accent ? 'var(--accent-bg)' : 'var(--bg-card)',
+      color: accent ? 'var(--accent)' : 'var(--tx-3)',
+      border: `1px solid ${accent ? 'var(--accent-bd)' : 'var(--bd)'}`,
+    }}>
+      {label} {fmt(value)}
+    </span>
+  )
+}
+
 function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, forecastCash = 0, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
@@ -147,7 +161,18 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
 
   const balanceKey = primaryChecking ? `${primaryChecking.id}-${period}` : null
   const checkingBalance = balanceKey ? (balancesMap[balanceKey] ?? '') : ''
+  const outflow = total + forecastCash
+  // Measured against the bill total only. The non-card cash in TOTAL OUTFLOW is
+  // day-to-day spend already leaving checking on its own — it needs no transfer.
+  // The minimum balance is what should be left over once the bills clear.
   const transferNeeded = checkingBalance !== '' ? Math.max(0, total + minCheckingBalance - Number(checkingBalance)) : null
+
+  // Split the transfer into its auto and manual halves. The auto-debits are a
+  // known, fixed draw, so they carry their full amount; manual is the unknown
+  // being solved for and absorbs the checking balance, the minimum to leave
+  // behind, and the rounding — the two chips always sum to the transfer shown.
+  const autoTransfer = transferNeeded != null ? Math.min(Math.round(autoTotal), Math.round(transferNeeded)) : 0
+  const manualTransfer = transferNeeded != null ? Math.round(transferNeeded) - autoTransfer : 0
 
   return (
     <div style={{
@@ -266,26 +291,10 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
             {fmt(total)}
           </div>
         </div>
-        {bills.length > 0 && (
+        {bills.length > 0 && transferNeeded === null && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 10, justifyContent: 'flex-end' }}>
-            {autoTotal > 0 && (
-              <span style={{
-                fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.04em',
-                padding: '2px 7px', borderRadius: 4,
-                background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
-              }}>
-                AUTO {fmt(autoTotal)}
-              </span>
-            )}
-            {manualTotal > 0 && (
-              <span style={{
-                fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.04em',
-                padding: '2px 7px', borderRadius: 4,
-                background: 'var(--bg-card)', color: 'var(--tx-3)', border: '1px solid var(--bd)',
-              }}>
-                MANUAL {fmt(manualTotal)}
-              </span>
-            )}
+            {autoTotal > 0 && <SplitChip label="AUTO" value={autoTotal} accent />}
+            {manualTotal > 0 && <SplitChip label="MANUAL" value={manualTotal} />}
           </div>
         )}
 
@@ -305,7 +314,7 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
             }}>
               <MonoLabel style={{ fontSize: 9 }}>TOTAL OUTFLOW</MonoLabel>
               <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: 'var(--tx-1)' }}>
-                {fmt(total + forecastCash)}
+                {fmt(outflow)}
               </div>
             </div>
           </>
@@ -356,7 +365,30 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
           </div>
         )}
 
-        {minCheckingBalance > 0 && (
+        {transferNeeded > 0 && bills.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 6, justifyContent: 'flex-end' }}>
+            {autoTransfer > 0 && <SplitChip label="AUTO" value={autoTransfer} accent />}
+            {manualTransfer > 0 && <SplitChip label="MANUAL" value={manualTransfer} />}
+          </div>
+        )}
+
+        {transferNeeded !== null && (
+          <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 5, fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em', lineHeight: 1.5 }}>
+            {fmt(total)} due − {fmt(Number(checkingBalance))} in checking
+            {minCheckingBalance > 0 && ` + ${fmt(minCheckingBalance)} min. balance`}
+            {transferNeeded > 0 && Number(checkingBalance) > 0 && (
+              <div style={{ color: 'var(--tx-4)' }}>
+                checking applied against the manual portion
+              </div>
+            )}
+            {forecastCash > 0 && (
+              <div style={{ color: 'var(--tx-4)' }}>
+                cash spend excluded — it leaves checking without a transfer
+              </div>
+            )}
+          </div>
+        )}
+        {transferNeeded === null && minCheckingBalance > 0 && (
           <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 4, fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em' }}>
             {fmt(minCheckingBalance)} min. balance reserved
           </div>
@@ -1817,6 +1849,8 @@ export default function PayPeriodPlanner({ userId, mobile }) {
 
                 const p1CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-1`] ?? 0) : 0
                 const p2CheckingBal = primaryChecking ? Number(balancesMap[`${primaryChecking.id}-2`] ?? 0) : 0
+                // Same basis as the period cards' TRANSFER NEEDED: bills only, less
+                // what's already in checking, plus the balance to leave behind.
                 const gapP1 = Math.max(0, (autoP1 + manualP1) + minCheckingBal - p1CheckingBal)
                 const gapP2 = Math.max(0, (autoP2 + manualP2) + minCheckingBal - p2CheckingBal)
 
@@ -1929,9 +1963,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                       {/* Period 1 / Period 2 panels */}
                       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 14 }}>
                         {[
-                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, gap: gapP1, draws: p1Draws },
-                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, gap: gapP2, draws: p2Draws },
-                        ].map(({ key, label, auto, manual, gap, draws }) => (
+                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, bal: p1CheckingBal, gap: gapP1, draws: p1Draws },
+                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, bal: p2CheckingBal, gap: gapP2, draws: p2Draws },
+                        ].map(({ key, label, auto, manual, bal, gap, draws }) => (
                           <div key={key} style={{
                             border: '1px solid var(--bd)', borderRadius: 8,
                             padding: '12px 14px', background: 'var(--bg-app)',
@@ -1947,6 +1981,8 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                   { name: 'Total Due',       val: auto + manual },
                                   { name: 'Auto',            val: auto,   muted: true },
                                   { name: 'Manual',          val: manual, muted: true },
+                                  { name: 'In Checking',     val: -bal },
+                                  { name: `Min. Balance`,    val: minCheckingBal },
                                   { name: 'Transfer Needed', val: gap,    bold: true },
                                 ].map(row => (
                                   <div key={row.name} style={{
@@ -1967,7 +2003,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                       fontWeight: row.bold ? 600 : 400,
                                       fontVariantNumeric: 'tabular-nums',
                                       color: row.bold && gap > 0 ? 'var(--warn)' : row.muted ? 'var(--tx-3)' : 'var(--tx-1)',
-                                    }}>{fmt(row.val)}</span>
+                                    }}>{fmtSigned(row.val)}</span>
                                   </div>
                                 ))}
                               </div>
