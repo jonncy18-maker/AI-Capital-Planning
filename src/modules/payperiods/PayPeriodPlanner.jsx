@@ -1377,6 +1377,34 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     await reload()
   }
 
+  // Move an account up/down within its type group. For savings this is the
+  // drawdown hierarchy — position 1 is emptied first. Both accounts in the swap
+  // are rewritten so the whole group ends up densely ordered from 0.
+  async function handleMoveAccount(account, direction) {
+    const group = accounts.filter(a => a.type === account.type)
+    const from = group.findIndex(a => a.id === account.id)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= group.length) return
+
+    const reordered = [...group]
+    reordered.splice(to, 0, reordered.splice(from, 1)[0])
+
+    setAccounts(prev => {
+      const byId = new Map(reordered.map((a, i) => [a.id, { ...a, display_order: i }]))
+      return prev.map(a => byId.get(a.id) ?? a)
+    })
+    try {
+      await Promise.all(
+        reordered.map((a, i) =>
+          a.display_order === i ? null : upsertAccount(userId, { id: a.id, display_order: i })
+        )
+      )
+    } catch (e) {
+      setError(e.message)
+    }
+    await reload()
+  }
+
   async function handleAccountFileUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -2364,6 +2392,15 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                       border: '1px solid var(--bd)', borderTop: 'none',
                       borderRadius: '0 0 10px 10px', overflow: 'hidden',
                     }}>
+                      {group.type === 'savings' && group.accounts.length > 1 && (
+                        <div style={{
+                          padding: '9px 16px', background: 'var(--bg-app)',
+                          borderBottom: '1px solid var(--bd-light)',
+                          fontSize: 11, color: 'var(--tx-3)', lineHeight: 1.4,
+                        }}>
+                          Drawdown hierarchy — the Savings Transfer Plan empties these top to bottom. Use ↑ / ↓ to reorder.
+                        </div>
+                      )}
                       {group.accounts.map((account, i) => {
                         const isEditing = editingAccount?.id === account.id
                         return (
@@ -2399,6 +2436,11 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                 </div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: 14, color: 'var(--tx-1)', fontWeight: 600, marginBottom: 4 }}>
+                                    {group.type === 'savings' && (
+                                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-4)', marginRight: 7 }}>
+                                        {i + 1}.
+                                      </span>
+                                    )}
                                     {account.name}
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2413,6 +2455,26 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                     )}
                                   </div>
                                 </div>
+                                {group.type === 'savings' && group.accounts.length > 1 && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
+                                    {[['↑', -1, i === 0], ['↓', 1, i === group.accounts.length - 1]].map(([glyph, dir, disabled]) => (
+                                      <button
+                                        key={glyph}
+                                        onClick={e => { e.stopPropagation(); handleMoveAccount(account, dir) }}
+                                        disabled={disabled}
+                                        title={dir === -1 ? 'Draw from this bucket earlier' : 'Draw from this bucket later'}
+                                        style={{
+                                          background: 'none', border: '1px solid var(--bd)', borderRadius: 5,
+                                          width: 24, height: 19, lineHeight: 1, padding: 0,
+                                          cursor: disabled ? 'default' : 'pointer',
+                                          color: 'var(--tx-3)', fontSize: 10, opacity: disabled ? 0.25 : 1,
+                                        }}
+                                      >
+                                        {glyph}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

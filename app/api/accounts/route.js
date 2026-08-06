@@ -16,7 +16,7 @@ export async function GET() {
     const rows = await sql`
       SELECT * FROM accounts
       WHERE user_id = ${userId} AND active = true
-      ORDER BY display_order ASC
+      ORDER BY display_order ASC, name ASC
     `
     return Response.json(rows)
   } catch (err) {
@@ -45,9 +45,9 @@ export async function POST(request) {
     id = null,
     name,
     type,
-    is_primary_checking = false,
-    display_order = 0,
-    active = true,
+    is_primary_checking,
+    display_order,
+    active,
   } = body || {}
 
   if (type !== undefined && type !== null && !ALLOWED_TYPES.includes(type)) {
@@ -85,7 +85,9 @@ export async function POST(request) {
         type: type ?? existing.type,
         is_primary_checking:
           is_primary_checking !== undefined ? !!is_primary_checking : existing.is_primary_checking,
-        display_order: display_order ?? existing.display_order,
+        // Only an explicit value reorders — an edit from the account form omits
+        // display_order and must keep the account's place in the hierarchy.
+        display_order: display_order !== undefined ? display_order : existing.display_order,
         active: active !== undefined ? !!active : existing.active,
       }
 
@@ -103,11 +105,22 @@ export async function POST(request) {
       return Response.json(row)
     }
 
+    // A new account lands at the end of its type group so it never jumps ahead
+    // of an existing bucket in the savings drawdown hierarchy.
+    let order = display_order
+    if (order === undefined) {
+      const [{ next }] = await sql`
+        SELECT COALESCE(MAX(display_order) + 1, 0) AS next FROM accounts
+        WHERE user_id = ${userId} AND type = ${type}
+      `
+      order = Number(next)
+    }
+
     const [row] = await sql`
       INSERT INTO accounts
         (user_id, name, type, is_primary_checking, display_order, active)
       VALUES
-        (${userId}, ${name}, ${type}, ${!!is_primary_checking}, ${display_order}, ${active !== undefined ? !!active : true})
+        (${userId}, ${name}, ${type}, ${!!is_primary_checking}, ${order}, ${active !== undefined ? !!active : true})
       RETURNING *
     `
     return Response.json(row, { status: 201 })

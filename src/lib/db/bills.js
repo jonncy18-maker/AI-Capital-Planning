@@ -127,9 +127,10 @@ export async function upsertAccountBalance(_userId, accountId, year, month, peri
 
 // Fetch the effective monthly forecast amount for each bill that has a
 // forecast_category_id. Returns a map of billId → derived amount (after divisor).
-// Resolution: sum(forecast_line_items) ?? sum(budget_line_items) for that
-// category+month. The forecast is an independent dataset; where it has lines for
-// the category/month they define the amount, otherwise the budget is used.
+// Resolution: once the year's forecast is initialized it is the sole source of
+// truth — sum(forecast_line_items) for the category+month, or $0 when it has no
+// line there (an expense dropped off the forecast must not resurface from the
+// budget). Only a year with no forecast at all falls back to sum(budget_line_items).
 export async function getForecastAmountsForBills(_userId, year, month, bills) {
   const linkedBills = bills.filter(b => b.forecast_category_id)
   if (linkedBills.length === 0) return {}
