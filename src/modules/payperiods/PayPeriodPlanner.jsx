@@ -293,8 +293,8 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
         </div>
         {bills.length > 0 && transferNeeded === null && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 10, justifyContent: 'flex-end' }}>
-            {autoTotal > 0 && <SplitChip label="AUTO" value={autoTotal} accent />}
-            {manualTotal > 0 && <SplitChip label="MANUAL" value={manualTotal} />}
+            {autoTotal > 0 && <SplitChip label="AUTO" value={autoTotal} />}
+            {manualTotal > 0 && <SplitChip label="MANUAL" value={manualTotal} accent />}
           </div>
         )}
 
@@ -367,8 +367,8 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
 
         {transferNeeded > 0 && bills.length > 0 && (
           <div style={{ display: 'flex', gap: 8, marginTop: 6, justifyContent: 'flex-end' }}>
-            {autoTransfer > 0 && <SplitChip label="AUTO" value={autoTransfer} accent />}
-            {manualTransfer > 0 && <SplitChip label="MANUAL" value={manualTransfer} />}
+            {autoTransfer > 0 && <SplitChip label="AUTO" value={autoTransfer} />}
+            {manualTransfer > 0 && <SplitChip label="MANUAL" value={manualTransfer} accent />}
           </div>
         )}
 
