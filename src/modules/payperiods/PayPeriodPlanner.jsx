@@ -167,12 +167,11 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
   // The minimum balance is what should be left over once the bills clear.
   const transferNeeded = checkingBalance !== '' ? Math.max(0, total + minCheckingBalance - Number(checkingBalance)) : null
 
-  // Split the transfer into its auto and manual halves. What's already in
-  // checking (beyond the minimum to leave behind) covers the auto-debits first —
-  // those pull on their own date whether or not the transfer happens. Manual
-  // absorbs the rounding so the two chips always sum to the transfer shown.
-  const usableChecking = Math.max(0, Number(checkingBalance || 0) - minCheckingBalance)
-  const autoTransfer = Math.round(Math.max(0, autoTotal - usableChecking))
+  // Split the transfer into its auto and manual halves. The auto-debits are a
+  // known, fixed draw, so they carry their full amount; manual is the unknown
+  // being solved for and absorbs the checking balance, the minimum to leave
+  // behind, and the rounding — the two chips always sum to the transfer shown.
+  const autoTransfer = transferNeeded != null ? Math.min(Math.round(autoTotal), Math.round(transferNeeded)) : 0
   const manualTransfer = transferNeeded != null ? Math.round(transferNeeded) - autoTransfer : 0
 
   return (
@@ -377,9 +376,9 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
           <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 5, fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em', lineHeight: 1.5 }}>
             {fmt(total)} due − {fmt(Number(checkingBalance))} in checking
             {minCheckingBalance > 0 && ` + ${fmt(minCheckingBalance)} min. balance`}
-            {transferNeeded > 0 && usableChecking > 0 && (
+            {transferNeeded > 0 && Number(checkingBalance) > 0 && (
               <div style={{ color: 'var(--tx-4)' }}>
-                checking applied to auto-debits first
+                checking applied against the manual portion
               </div>
             )}
             {forecastCash > 0 && (
