@@ -136,6 +136,20 @@ function Badge({ label, variant = 'neutral' }) {
 
 // ─── Period Card ──────────────────────────────────────────────────────────────
 
+function SplitChip({ label, value, accent = false }) {
+  return (
+    <span style={{
+      fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.04em',
+      padding: '2px 7px', borderRadius: 4,
+      background: accent ? 'var(--accent-bg)' : 'var(--bg-card)',
+      color: accent ? 'var(--accent)' : 'var(--tx-3)',
+      border: `1px solid ${accent ? 'var(--accent-bd)' : 'var(--bd)'}`,
+    }}>
+      {label} {fmt(value)}
+    </span>
+  )
+}
+
 function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, forecastCash = 0, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
@@ -152,6 +166,14 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
   // day-to-day spend already leaving checking on its own — it needs no transfer.
   // The minimum balance is what should be left over once the bills clear.
   const transferNeeded = checkingBalance !== '' ? Math.max(0, total + minCheckingBalance - Number(checkingBalance)) : null
+
+  // Split the transfer into its auto and manual halves. What's already in
+  // checking (beyond the minimum to leave behind) covers the auto-debits first —
+  // those pull on their own date whether or not the transfer happens. Manual
+  // absorbs the rounding so the two chips always sum to the transfer shown.
+  const usableChecking = Math.max(0, Number(checkingBalance || 0) - minCheckingBalance)
+  const autoTransfer = Math.round(Math.max(0, autoTotal - usableChecking))
+  const manualTransfer = transferNeeded != null ? Math.round(transferNeeded) - autoTransfer : 0
 
   return (
     <div style={{
@@ -270,26 +292,10 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
             {fmt(total)}
           </div>
         </div>
-        {bills.length > 0 && (
+        {bills.length > 0 && transferNeeded === null && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 10, justifyContent: 'flex-end' }}>
-            {autoTotal > 0 && (
-              <span style={{
-                fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.04em',
-                padding: '2px 7px', borderRadius: 4,
-                background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
-              }}>
-                AUTO {fmt(autoTotal)}
-              </span>
-            )}
-            {manualTotal > 0 && (
-              <span style={{
-                fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.04em',
-                padding: '2px 7px', borderRadius: 4,
-                background: 'var(--bg-card)', color: 'var(--tx-3)', border: '1px solid var(--bd)',
-              }}>
-                MANUAL {fmt(manualTotal)}
-              </span>
-            )}
+            {autoTotal > 0 && <SplitChip label="AUTO" value={autoTotal} accent />}
+            {manualTotal > 0 && <SplitChip label="MANUAL" value={manualTotal} />}
           </div>
         )}
 
@@ -360,10 +366,22 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
           </div>
         )}
 
+        {transferNeeded > 0 && bills.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 6, justifyContent: 'flex-end' }}>
+            {autoTransfer > 0 && <SplitChip label="AUTO" value={autoTransfer} accent />}
+            {manualTransfer > 0 && <SplitChip label="MANUAL" value={manualTransfer} />}
+          </div>
+        )}
+
         {transferNeeded !== null && (
           <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 5, fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em', lineHeight: 1.5 }}>
             {fmt(total)} due − {fmt(Number(checkingBalance))} in checking
             {minCheckingBalance > 0 && ` + ${fmt(minCheckingBalance)} min. balance`}
+            {transferNeeded > 0 && usableChecking > 0 && (
+              <div style={{ color: 'var(--tx-4)' }}>
+                checking applied to auto-debits first
+              </div>
+            )}
             {forecastCash > 0 && (
               <div style={{ color: 'var(--tx-4)' }}>
                 cash spend excluded — it leaves checking without a transfer
