@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import Markdown from '../common/Markdown.jsx'
+import PendingActionCard from './PendingActionCard.jsx'
+import ActivityPanel from './ActivityPanel.jsx'
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-function PendingScenarioCard({ preview, onConfirm, onCancel }) {
+function PendingScenarioCard({ preview }) {
   const { name, description, adjustments, adjustmentCount, netDelta } = preview
   const shown = adjustments.slice(0, 5)
   const overflow = adjustments.length - shown.length
@@ -41,41 +43,61 @@ function PendingScenarioCard({ preview, onConfirm, onCancel }) {
         )}
       </div>
       <div style={{ borderTop: '1px solid var(--bd)', margin: '8px 0' }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '10.5px', color: 'var(--tx-3)' }}>
-          {adjustmentCount} adjustment{adjustmentCount === 1 ? '' : 's'} · net {netDelta >= 0 ? '+' : '−'}${Math.abs(Math.round(netDelta)).toLocaleString()}
-        </div>
-        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-          <button
-            onClick={onCancel}
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--bd)',
-              borderRadius: '7px',
-              padding: '5px 11px',
-              fontSize: '11px',
-              color: 'var(--tx-2)',
-              cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            style={{
-              background: '#22c55e',
-              border: 'none',
-              borderRadius: '7px',
-              padding: '5px 11px',
-              fontSize: '11px',
-              fontWeight: 600,
-              color: '#fff',
-              cursor: 'pointer',
-            }}
-          >
-            ✓ Confirm
-          </button>
-        </div>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '10.5px', color: 'var(--tx-3)' }}>
+        {adjustmentCount} adjustment{adjustmentCount === 1 ? '' : 's'} · net {netDelta >= 0 ? '+' : '−'}${Math.abs(Math.round(netDelta)).toLocaleString()}
+      </div>
+    </div>
+  )
+}
+
+// One or more writes the assistant wants to make, confirmed as a batch — the
+// model may pair a change with its follow-on (e.g. create a category, then
+// budget it), and approving half of that would leave the data inconsistent.
+function PendingActions({ previews = [], onConfirm, onCancel }) {
+  const label = previews.length === 1
+    ? "Here's what I'd change — confirm to save it:"
+    : `Here are the ${previews.length} changes I'd make — confirm to save them:`
+
+  return (
+    <div style={{ minWidth: 0, flex: 1 }}>
+      <div style={{ fontSize: '13px', color: 'var(--tx-2)', lineHeight: 1.55 }}>{label}</div>
+
+      {previews.map((p, i) => (
+        p.kind === 'scenario'
+          ? <PendingScenarioCard key={p.blockId ?? i} preview={p} />
+          : <PendingActionCard key={p.blockId ?? i} preview={p} />
+      ))}
+
+      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '8px' }}>
+        <button
+          onClick={onCancel}
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--bd)',
+            borderRadius: '7px',
+            padding: '5px 11px',
+            fontSize: '11px',
+            color: 'var(--tx-2)',
+            cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          style={{
+            background: '#22c55e',
+            border: 'none',
+            borderRadius: '7px',
+            padding: '5px 11px',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: '#fff',
+            cursor: 'pointer',
+          }}
+        >
+          ✓ Confirm
+        </button>
       </div>
     </div>
   )
@@ -86,16 +108,21 @@ export default function CommandBar({
   loading,
   hasPending,
   onSubmit,
-  onConfirmScenario,
-  onCancelScenario,
+  onConfirmAction,
+  onCancelAction,
   placeholder,
   accessory,
   conversation = [],
   onClear,
   onViewScenarios,
+  actionLog = [],
+  undoingId,
+  onUndoAction,
+  onClearLog,
 }) {
   const [open, setOpen] = useState(false)
   const [maximized, setMaximized] = useState(false)
+  const [tab, setTab] = useState('chat')
   const [input, setInput] = useState('')
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
@@ -104,7 +131,7 @@ export default function CommandBar({
 
   // Auto-open popup when a request is in flight
   useEffect(() => {
-    if (loading) setOpen(true)
+    if (loading) { setOpen(true); setTab('chat') }
   }, [loading])
 
   // Scroll to bottom when conversation grows (only while open)
@@ -132,6 +159,7 @@ export default function CommandBar({
     onSubmit(trimmed)
     setInput('')
     setOpen(true)
+    setTab('chat')
   }
 
   function handleViewScenarios(id) {
@@ -241,6 +269,23 @@ export default function CommandBar({
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => setTab(t => (t === 'activity' ? 'chat' : 'activity'))}
+                  title={tab === 'activity' ? 'Back to conversation' : 'Changes made by the assistant'}
+                  style={{
+                    background: tab === 'activity' ? 'var(--accent-bg)' : 'none',
+                    border: `1px solid ${tab === 'activity' ? 'var(--accent-bd)' : 'var(--bd)'}`,
+                    cursor: 'pointer',
+                    color: tab === 'activity' ? 'var(--accent)' : 'var(--tx-2)',
+                    fontFamily: "'DM Mono', monospace",
+                    fontSize: '10px',
+                    letterSpacing: '0.04em',
+                    borderRadius: '7px',
+                    padding: '4px 9px',
+                  }}
+                >
+                  {actionLog.length ? `⟲ ${actionLog.length} CHANGES` : '⟲ CHANGES'}
+                </button>
                 {accessory}
                 {!mobile && (
                   <button
@@ -282,7 +327,20 @@ export default function CommandBar({
               </div>
             </div>
 
+            {/* Activity log */}
+            {tab === 'activity' && (
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <ActivityPanel
+                  entries={actionLog}
+                  busyId={undoingId}
+                  onUndo={onUndoAction}
+                  onClear={onClearLog}
+                />
+              </div>
+            )}
+
             {/* Messages */}
+            {tab === 'chat' && (
             <div style={{
               flex: 1,
               overflowY: 'auto',
@@ -315,13 +373,14 @@ export default function CommandBar({
                     key={i}
                     message={m}
                     onViewScenarios={handleViewScenarios}
-                    onConfirm={onConfirmScenario}
-                    onCancel={onCancelScenario}
+                    onConfirm={onConfirmAction}
+                    onCancel={onCancelAction}
                   />
                 ))
               )}
               <div ref={messagesEndRef} />
             </div>
+            )}
 
             {/* Input */}
             <div style={{
@@ -419,10 +478,10 @@ function Turn({ message, onViewScenarios, onConfirm, onCancel }) {
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
         <span style={{ color: 'var(--accent)', fontSize: '13px', marginTop: '3px', flexShrink: 0 }}>✦</span>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: '13px', color: 'var(--tx-2)', lineHeight: 1.55 }}>
-            Here's what I'd create — confirm to save it:
-          </div>
-          <PendingScenarioCard preview={pending.preview} onConfirm={onConfirm} onCancel={onCancel} />
+          {content && (
+            <div style={{ marginBottom: 8 }}><Markdown text={content} /></div>
+          )}
+          <PendingActions previews={pending.previews} onConfirm={onConfirm} onCancel={onCancel} />
         </div>
       </div>
     )

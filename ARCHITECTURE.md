@@ -101,6 +101,11 @@ The default landing screen after login. Widget canvas with drag-to-rearrange con
 
 **Command Bar:** Persistent, context-aware input that follows the user across all modules. On desktop: bottom-of-canvas input bar. On mobile: floating action button (FAB) that expands to a bottom sheet. AI responses manifest as widgets or cards in the canvas — not as a separate chat screen.
 
+*(Updated 2026-08-09)* The command bar is also the app's write surface for the
+assistant: it can operate any module through the tool registry (§5.2.0), showing
+a confirmation card before anything is saved, and keeps a ⟲ CHANGES tab listing
+what it wrote with an Undo where one exists.
+
 ### 4.2 Cash Flow Timing
 Month-by-month view of when money actually moves. Surfaces large and irregular expenses before they arrive. Powered entirely by the Non-Monthly commitment structure in Neon — no AI required to render.
 
@@ -376,11 +381,70 @@ This gives the AI enough context to answer any decision question without requiri
 
 **Query pagination (1,000-row default limit)** *(added 2026-06-23):* All DB helper functions that could realistically return >1000 rows now use a `.range()`-based pagination loop. The original backend's 1,000-row default limit was silent (no error, no warning) — it simply returned a truncated result set. Affected functions: `getRecentTransactions`, `getTransactionsByMonth`, `getTransactionsForYear`, `getDistinctTransactionAccounts`, `getIncomeTransactions`, `getBudgetLineItems`, `getBudgetYears`, `getBillAmountsForBill`, `getBillAmountsRange`. Low-volume tables (categories, commitments, scenarios, snapshots, etc.) are left with default limits.
 
+#### 5.2.0 AI Tool Registry (added 2026-08-09)
+
+The assistant can operate every module the user can operate by hand. All
+AI-callable actions live in one registry, `src/lib/ai/tools/index.js`, which
+composes per-module files (`bills.tools.js`, `budget.tools.js`,
+`forecast.tools.js`, `scenarios.tools.js`, `commitments.tools.js`,
+`wealth.tools.js`, `accounts.tools.js`, `creditcards.tools.js`,
+`income.tools.js`, `settings.tools.js`, `read.tools.js`).
+
+Each tool declares:
+
+```
+name      unique, matches schema.name
+group     module it belongs to
+write     true if it changes data
+schema    the Anthropic tool definition
+preview   (input, ctx) => { title, subtitle, rows[], destructive }
+execute   (userId, input, ctx) => { summary, result, created?, undo? }
+```
+
+**Execution model.** Tools call the existing `src/lib/db/*` client seams, so
+every write still goes through `app/api/**` with its session check and
+validation — the registry adds no new authorization surface. The loop runs in
+the browser, matching how the rest of the app writes.
+
+**Reads.** A single `lookup_data` tool with a `resource` switch covers 23
+datasets. The context brief (§5.2) is a session summary; `lookup_data` is the
+live path and the assistant is instructed to use it before editing anything
+that already exists.
+
+**Writes are always confirmed.** `src/lib/ai/toolAgent.js` runs the tool loop:
+read calls execute immediately, and any write call pauses the turn, returning
+each call's preview payload for the confirmation card. `confirmPendingActions`
+executes them and re-enters the loop (so a chained change is gated at each
+write); `cancelPendingActions` returns error tool results so the model
+acknowledges the decline. Reads issued in the same turn as a write are executed
+at the pause and held, so the model receives one coherent result set whichever
+way the user decides.
+
+**Activity log.** `src/lib/ai/actionLog.js` records each confirmed write
+(`{ tool, group, summary, undo }`) in localStorage per user, surfaced in the
+assistant's ⟲ CHANGES tab. Undo runs the inverse tool directly, with no AI call.
+Only well-defined inverses are offered — a created record can be deleted; an
+edit over prior values is not reconstructable and shows no Undo.
+
+**Not covered:** transaction rows and CSV import have no manual edit path in the
+UI either, so they stay read-only. The Scenario Composer keeps its own narrow
+in-module agent (`scenarioAgent.js`); the global assistant reaches the same
+scenario capabilities through the registry.
+
+**Cost:** the 39 schemas are ~6.4k tokens, sent with every assistant call and
+covered by the existing system-prompt cache breakpoint (tools sit inside that
+cache prefix), so repeat turns in a session read them at ~0.1x.
+
 #### 5.2.1 AI Prompt Stack
 
 All AI calls are assembled from four layers in this order:
 
 1. **Main persona** (`sendMessage.js` → `SYSTEM_PROMPT`) — the assistant's core identity, reasoning style, clarification rules, and financial domain instructions. Appended to every single AI call.
+
+   *(The global assistant additionally gets `assistant.prompts.js` →
+   `buildAssistantSystemExtra()` as layer 3: the rules for acting on the app —
+   read before write, never invent ids, budget vs. forecast are different
+   datasets, every write is user-confirmed.)*
 
 2. **Context brief** (`contextLoader.js` → `buildContextBrief()`) — the user's live financial picture: transactions, budget targets, commitments, scenarios, salary profile. Regenerated per call from Neon data.
 
@@ -390,6 +454,8 @@ All AI calls are assembled from four layers in this order:
 
 **Source file convention:**
 - `src/lib/ai/sendMessage.js` — main persona (layer 1)
+- `src/lib/ai/toolAgent.js` — the full-capability tool loop (preview → confirm → execute)
+- `src/lib/ai/tools/*.tools.js` — one file per module's tools; `tools/index.js` is the registry
 - `src/lib/ai/contextLoader.js` — context brief (layer 2)
 - `src/lib/ai/*.prompts.js` — systemExtra builders (layer 3) — one file per agent/capability
 - `src/lib/ai/parserBase.js` — shared system prompt builder and utilities for the parser family

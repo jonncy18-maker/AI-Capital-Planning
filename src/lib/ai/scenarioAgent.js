@@ -81,7 +81,7 @@ function resolveCategoryId(cats, name) {
   return fuzzy ? fuzzy.id : null
 }
 
-async function executeCreateScenario(userId, input) {
+export async function executeCreateScenario(userId, input) {
   const adjustments = Array.isArray(input?.adjustments) ? input.adjustments : []
   if (!adjustments.length) throw new Error('No adjustments were provided.')
 
@@ -139,7 +139,7 @@ function isIncomeCategoryName(categories, name) {
   return ((cat?.group || '') + '').trim().toLowerCase() === 'income'
 }
 
-function buildPreview(input, categories) {
+export function buildPreview(input, categories) {
   const thisYear = new Date().getFullYear()
   const adjustments = (input?.adjustments ?? []).map(a => ({
     category: a.category || '',
@@ -338,7 +338,7 @@ export const ADD_ADJUSTMENT_TOOL = {
   },
 }
 
-async function executeAddAdjustments(userId, scenarioId, input) {
+export async function executeAddAdjustments(userId, scenarioId, input) {
   const adjustments = Array.isArray(input?.adjustments) ? input.adjustments : []
   if (!adjustments.length) throw new Error('No adjustments provided.')
 
@@ -380,7 +380,7 @@ async function executeAddAdjustments(userId, scenarioId, input) {
   return { adjustmentCount: written, netDelta }
 }
 
-function buildAdjPreview(input, categories) {
+export function buildAdjPreview(input, categories) {
   const thisYear = new Date().getFullYear()
   const adjustments = (input?.adjustments ?? []).map(a => ({
     category: a.category || '',
