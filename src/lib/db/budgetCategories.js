@@ -26,9 +26,17 @@ export async function seedDefaultCategories(_userId) {
 // Upsert a single custom category mapping (e.g. from the unmapped-categories
 // dialog or the Mapping editor). `excludeFromTotals` is only written when the
 // caller passes it, so callers that don't manage it leave the flag untouched.
-export async function upsertCategory(_userId, { category, group, type, excludeFromTotals }) {
+export async function upsertCategory(_userId, {
+  category, group, type, excludeFromTotals, monthlyTarget, annualTarget, isActive,
+}) {
   const body = { category, group, type }
   if (excludeFromTotals !== undefined) body.excludeFromTotals = !!excludeFromTotals
+  // The route already merges these against the existing row, so they're only
+  // sent when a caller explicitly manages them (targets from the AI tools,
+  // is_active from the Mapping editor).
+  if (monthlyTarget !== undefined) body.monthlyTarget = monthlyTarget
+  if (annualTarget !== undefined) body.annualTarget = annualTarget
+  if (isActive !== undefined) body.isActive = !!isActive
 
   const res = await fetch('/api/budget-categories', {
     method: 'POST',

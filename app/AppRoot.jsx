@@ -10,7 +10,9 @@ import { parseBudgetCSV } from '../src/lib/csv/budgetParser.js'
 import { importCategoryMappings } from '../src/lib/db/budgetCategories.js'
 import { useTheme } from '../src/lib/theme/useTheme.js'
 import { loadAIContext, summarizeContext } from '../src/lib/ai/contextLoader.js'
-import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario } from '../src/lib/ai/scenarioAgent.js'
+import { runAssistant, confirmPendingActions, cancelPendingActions } from '../src/lib/ai/toolAgent.js'
+import { executeTool } from '../src/lib/ai/tools/index.js'
+import { getActionLog, recordActions, markUndone, clearActionLog } from '../src/lib/ai/actionLog.js'
 import { getTransactionsByMonth } from '../src/lib/db/transactions.js'
 import { getModule } from '../src/modules/registry.js'
 import Login from '../src/modules/auth/Login.jsx'
@@ -132,7 +134,10 @@ export default function AppRoot({ children }) {
   // Bumped whenever the AI writes data (e.g. creates a scenario) so dependent
   // modules reload without a manual refresh.
   const [dataNonce, setDataNonce] = useState(0)
-  const [pendingScenario, setPendingScenario] = useState(null)
+  const [pendingActions, setPendingActions] = useState(null)
+  // Recent assistant writes, with an undo where one is well-defined.
+  const [actionLog, setActionLog] = useState([])
+  const [undoingId, setUndoingId] = useState(null)
   // When the user clicks "Open →" on an AI-created scenario card, we store the
   // ID here so the Scenarios module can auto-select it on mount/change.
   const [openScenarioId, setOpenScenarioId] = useState(null)
@@ -154,6 +159,10 @@ export default function AppRoot({ children }) {
   }, [user?.id])
 
   const summary = useMemo(() => summarizeContext(aiContext), [aiContext])
+
+  useEffect(() => {
+    setActionLog(user ? getActionLog(user.id) : [])
+  }, [user?.id])
 
   // yearTxns lives here so the AI command bar uses the same fresh data as the
   // dashboard widgets (not the stale ctx.transactions which is capped at 1000 rows).
@@ -183,27 +192,16 @@ export default function AppRoot({ children }) {
     ])
 
     try {
-      const res = await runScenarioAgent({
+      const res = await runAssistant({
         userId: user.id,
         history,
         prompt,
         context: aiContext,
         yearTxns,
+        activeModule: current.short,
         onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
       })
-
-      if (res.status === 'pending') {
-        setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'pending', pending: res.pending }))
-        setPendingScenario(res.pending)
-        setAiLoading(false)
-        return
-      }
-
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
-      if (res.created && res.created.length) {
-        setDataNonce(n => n + 1)
-        reloadAiContext()
-      }
+      applyAgentResult(res)
     } catch (e) {
       setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
     } finally {
@@ -211,25 +209,52 @@ export default function AppRoot({ children }) {
     }
   }
 
-  async function handleConfirmScenario() {
-    const pending = pendingScenario
+  // Shared tail for every agent turn: a pause parks the pending writes for the
+  // confirmation card; a finished turn logs whatever was written and refreshes
+  // the modules that read it.
+  function applyAgentResult(res) {
+    // Writes are logged and the modules refreshed even when the turn pauses
+    // again — a chained change confirms in two rounds, and the first round's
+    // write is already saved by then.
+    if (res.actions?.length) {
+      setActionLog(recordActions(user.id, res.actions))
+    }
+    if (res.actions?.length || res.created?.length) {
+      setDataNonce(n => n + 1)
+      reloadAiContext()
+    }
+
+    if (res.status === 'pending') {
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text || '', status: 'pending', pending: res.pending }))
+      setPendingActions(res.pending)
+      return
+    }
+
+    setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
+  }
+
+  async function handleConfirmActions() {
+    const pending = pendingActions
     if (!pending) return
-    setPendingScenario(null)
+    setPendingActions(null)
     setAiLoading(true)
-    setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText: `Building "${pending.preview.name}" …` }))
+    const first = pending.previews?.[0]
+    setConversation(prev => replaceLast(prev, {
+      role: 'assistant',
+      content: '',
+      status: 'loading',
+      statusText: `${first?.title ?? first?.name ?? 'Saving'} …`,
+    }))
     try {
-      const res = await confirmPendingScenario({
+      const res = await confirmPendingActions({
         userId: user.id,
         pending,
         context: aiContext,
         yearTxns,
+        activeModule: current.short,
         onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
       })
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
-      if (res.created?.length) {
-        setDataNonce(n => n + 1)
-        reloadAiContext()
-      }
+      applyAgentResult(res)
     } catch (e) {
       setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
     } finally {
@@ -237,19 +262,44 @@ export default function AppRoot({ children }) {
     }
   }
 
-  async function handleCancelScenario() {
-    const pending = pendingScenario
+  async function handleCancelActions() {
+    const pending = pendingActions
     if (!pending) return
-    setPendingScenario(null)
+    setPendingActions(null)
     setAiLoading(true)
     setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText: 'Cancelling…' }))
     try {
-      const res = await cancelPendingScenario({ pending, context: aiContext, yearTxns })
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text || 'Scenario cancelled.', status: 'ok', created: [] }))
+      const res = await cancelPendingActions({ pending, context: aiContext, yearTxns })
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text || 'Cancelled — nothing was saved.', status: 'ok', created: [] }))
     } catch {
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: 'Scenario cancelled.', status: 'ok', created: [] }))
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: 'Cancelled — nothing was saved.', status: 'ok', created: [] }))
     } finally {
       setAiLoading(false)
+    }
+  }
+
+  // Undo runs the inverse tool directly — no AI call, no confirmation card:
+  // the user is already looking at what they asked to reverse.
+  async function handleUndoAction(entry) {
+    if (!entry?.undo) return
+    setUndoingId(entry.id)
+    try {
+      await executeTool(entry.undo.tool, user.id, entry.undo.input, {
+        userId: user.id,
+        aiContext,
+        categories: aiContext?.categories ?? [],
+      })
+      setActionLog(markUndone(user.id, entry.id))
+      setDataNonce(n => n + 1)
+      reloadAiContext()
+    } catch (e) {
+      setConversation(prev => [...prev, {
+        role: 'assistant',
+        content: `Could not undo that: ${e.message}`,
+        status: 'error',
+      }])
+    } finally {
+      setUndoingId(null)
     }
   }
 
@@ -392,13 +442,17 @@ export default function AppRoot({ children }) {
             <CommandBar
               mobile={mobile}
               loading={aiLoading}
-              hasPending={!!pendingScenario}
+              hasPending={!!pendingActions}
               onSubmit={handleAiSubmit}
-              onConfirmScenario={handleConfirmScenario}
-              onCancelScenario={handleCancelScenario}
-              placeholder={`Ask about ${current.short.toLowerCase()}…`}
+              onConfirmAction={handleConfirmActions}
+              onCancelAction={handleCancelActions}
+              placeholder={`Ask or change anything in ${current.short.toLowerCase()}…`}
               conversation={conversation}
-              onClear={() => setConversation([])}
+              onClear={() => { setConversation([]); setPendingActions(null) }}
+              actionLog={actionLog}
+              undoingId={undoingId}
+              onUndoAction={handleUndoAction}
+              onClearLog={() => setActionLog(clearActionLog(user.id))}
               onViewScenarios={(scenarioId) => {
                 setOpenScenarioId(scenarioId ?? null)
                 selectModule('scenarios')

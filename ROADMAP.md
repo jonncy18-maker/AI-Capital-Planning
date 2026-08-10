@@ -12,7 +12,43 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-06 (Planner schedule fixes — forecast fallback, savings hierarchy, transfer math)
+**Last updated:** 2026-08-09 (AI assistant everywhere — full tool registry, confirm-before-write, activity log)
+
+- **AI assistant can now operate every module (2026-08-09):** the ✦ command bar
+  already followed the user across all 16 modules but could only write two
+  things — `create_scenario` and `add_adjustment`. Everything else (bills,
+  budget, forecast, commitments, accounts, credit cards, wealth, income,
+  settings) was hands-only. Retrofit in four parts, one session, no schema
+  change:
+  - **Tool registry** (`src/lib/ai/tools/`): 39 tools across 11 groups, each
+    declaring `{ schema, write, preview, execute }`. Adding a capability is one
+    entry — the agent loop, confirmation card and activity log are all driven
+    off that shape. Writes go through the same `src/lib/db/*` seams the modules
+    use, so route-level auth and validation are unchanged.
+  - **Read everywhere**: one `lookup_data` tool with a `resource` switch over 23
+    datasets. The session context brief is a summary; this is the live path the
+    assistant uses before it writes, and for questions about modules the brief
+    never covered (bills, accounts, cards, forecast, import history).
+  - **Confirm before write** (`src/lib/ai/toolAgent.js`): the generic loop
+    replaces the scenario-only agent. Read tool calls run immediately; any write
+    call pauses the turn and returns a preview payload per call, rendered as a
+    confirmation card. Nothing is written until Confirm. A confirmed turn
+    re-enters the loop, so chained work gets a gate at each write. Scenario
+    previews keep their purpose-built card; every other tool renders from
+    `{ title, rows, destructive }`.
+  - **Activity log** (`src/lib/ai/actionLog.js` + `ActivityPanel`): the ⟲ CHANGES
+    tab in the assistant popup lists what the AI wrote, newest first, with Undo
+    where an inverse is well defined (records it created). Stored in
+    localStorage per user — a UI trail over data that already lives in Neon, so
+    no migration and no extra write on the critical path.
+
+  Deliberately out of scope: transaction rows and CSV import (no manual edit
+  path exists in the UI either), and the Scenario Composer's in-module agent,
+  which keeps its narrow `add_adjustment` tool. Cost note: 39 tool schemas are
+  ~6.4k tokens per call, cached with the system prompt (~0.1x on repeat turns
+  within a session), so a cold turn costs about 2¢ more than before.
+
+- **Last updated (previous):** 2026-08-06 (Planner schedule fixes — forecast fallback, savings hierarchy, transfer math)
 
 - **Transfer-needed math made legible (2026-08-06, PRs #165/#166):** the figure
   was correct all along — `bills due + min. balance − checking` — but nothing
