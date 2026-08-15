@@ -46,6 +46,16 @@ doors open. Runbook: **`docs/PWA.md`**. Follows the NextGen-Immersion pilot.
 
 ---
 
+## Coder Profile — always on
+
+Profile: https://raw.githubusercontent.com/jonncy18-maker/Agentic-Loop/main/CODER_PROFILE.md
+
+Read it at the start of every session. It applies to **every task, with no threshold** — it governs how code is written and how it gets verified (root rule: anything not verified by execution is unverified, and gets reported as unverified). It is a separate layer from the loop below, which governs whether the right thing was built. A change small enough to skip the loop is still governed by the profile.
+
+> The loop protocol below is inlined in this file rather than fetched from the Agentic-Loop repo — this project is where the protocol originated. It can drift from the canonical `AGENTIC_LOOP.md`. Reconciling the two is a separate task.
+
+---
+
 ## Agentic Loop — Goal Execution Workflow
 
 ### When to activate
