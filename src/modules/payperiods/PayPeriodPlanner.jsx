@@ -15,7 +15,7 @@ import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
 import { getForecastLineItems } from '../../lib/db/forecastLineItems.js'
 import {
   routeForecastToCards, computeStatementForecast,
-  projectedBillAmounts, splitCashAcrossPeriods,
+  projectedBillAmounts, splitCashAcrossPeriods, splitCashDetailAcrossPeriods,
 } from '../../lib/cashflow/cashflowEngine.js'
 import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
@@ -150,7 +150,8 @@ function SplitChip({ label, value, accent = false }) {
   )
 }
 
-function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, forecastCash = 0, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
+function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, forecastCash = 0, forecastCashDetail = [], primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
+  const [cashDetailOpen, setCashDetailOpen] = useState(false)
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
@@ -300,14 +301,68 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
 
         {forecastCash > 0 && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-              <MonoLabel style={{ fontSize: 9 }} title="Forecast spend not on a credit card (cash-only categories + the portion of spend not put on a card), pro-rated into this period.">
-                NON-CARD CASH (FCST)
-              </MonoLabel>
+            <div
+              onClick={() => forecastCashDetail.length > 0 && setCashDetailOpen(o => !o)}
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6,
+                cursor: forecastCashDetail.length > 0 ? 'pointer' : 'default', userSelect: 'none',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                {forecastCashDetail.length > 0 && (
+                  <span style={{
+                    fontSize: 9, color: 'var(--tx-3)', display: 'inline-block',
+                    transform: cashDetailOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.15s',
+                  }}>
+                    ▶
+                  </span>
+                )}
+                <MonoLabel style={{ fontSize: 9 }} title="Forecast spend not on a credit card (cash-only categories + the portion of spend not put on a card), pro-rated into this period.">
+                  NON-CARD CASH (FCST)
+                </MonoLabel>
+              </div>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: 'var(--tx-2)' }}>
                 +{fmt(forecastCash)}
               </div>
             </div>
+
+            {cashDetailOpen && forecastCashDetail.length > 0 && (
+              <div style={{
+                marginBottom: 10, padding: '6px 10px', borderRadius: 7,
+                background: 'var(--bg-card)', border: '1px solid var(--bd)',
+              }}>
+                {[...forecastCashDetail]
+                  .sort((a, b) => b.amount - a.amount)
+                  .map((item, i) => (
+                    <div
+                      key={`${item.categoryId}-${i}`}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        gap: 8, padding: '4px 0',
+                        borderBottom: i < forecastCashDetail.length - 1 ? '0.5px solid var(--bd-light)' : 'none',
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 11.5, color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.group ? `${item.group} · ${item.name}` : item.name}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        {item.kind === 'uncovered' && (
+                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)', letterSpacing: '0.03em' }}>
+                            UNCOVERED
+                          </span>
+                        )}
+                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-1)' }}>
+                          {fmt(item.amount)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+
             <div style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
               marginBottom: 10, paddingTop: 6, borderTop: '1px solid var(--bd)',
@@ -1266,6 +1321,11 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     () => splitCashAcrossPeriods(cashflow.cashByMonth[navMonth] ?? 0, payDay2 - 1, navYear, navMonth),
     [cashflow, navMonth, navYear, payDay2]
   )
+  // Line-item breakdown of the same non-card cash total, for the collapsible detail list
+  const forecastCashDetailSplit = useMemo(
+    () => splitCashDetailAcrossPeriods(cashflow.cashDetailByMonth[navMonth] ?? [], payDay2 - 1, navYear, navMonth),
+    [cashflow, navMonth, navYear, payDay2]
+  )
 
   // Split bills: period 1 = pay_day < pay_day_2, period 2 = pay_day >= pay_day_2
   // Bills marked exclude_from_schedule are omitted — they still appear in the
@@ -1805,6 +1865,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   forecastAmountsMap={forecastAmountsMap}
                   cardStatementMap={cardStatementMap}
                   forecastCash={forecastCashSplit.period1}
+                  forecastCashDetail={forecastCashDetailSplit.period1}
                   primaryChecking={primaryChecking}
                   balancesMap={balancesMap}
                   onAmountChange={handleAmountChange}
@@ -1823,6 +1884,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   forecastAmountsMap={forecastAmountsMap}
                   cardStatementMap={cardStatementMap}
                   forecastCash={forecastCashSplit.period2}
+                  forecastCashDetail={forecastCashDetailSplit.period2}
                   primaryChecking={primaryChecking}
                   balancesMap={balancesMap}
                   onAmountChange={handleAmountChange}
@@ -2035,6 +2097,19 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                       <div key={`${sa.id}-l`} style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textAlign: 'right', color: 'var(--tx-2)', fontVariantNumeric: 'tabular-nums', padding: '3px 0' }}>{fmt(left)}</div>,
                                     ]
                                   })}
+                                  {/* Totals row */}
+                                  <div style={{ fontSize: 11, color: 'var(--tx-1)', fontWeight: 600, padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    TOTAL
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(draws.reduce((s, b) => s + b.avail, 0))}
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--accent)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(draws.reduce((s, b) => s + b.draw, 0))}
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(draws.reduce((s, b) => s + Math.max(0, b.avail - b.draw), 0))}
+                                  </div>
                                 </div>
                                 <div style={{ marginTop: 8, borderTop: '1px solid var(--bd)', paddingTop: 6, textAlign: 'right' }}>
                                   {gap === 0 ? (
