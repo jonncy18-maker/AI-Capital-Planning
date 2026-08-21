@@ -161,28 +161,3 @@ export function projectedBillAmounts({ bills, statementsByCard, year, month }) {
   }
   return map
 }
-
-// Split an in-month diffuse cash total across the two pay periods by day count.
-// period1 = days 1..midpoint, period2 = the rest.
-export function splitCashAcrossPeriods(total, midpoint, year, month) {
-  const dim = daysInMonth(year, month)
-  const p1Days = Math.max(0, Math.min(midpoint, dim))
-  const frac1 = dim > 0 ? p1Days / dim : 0
-  return { period1: total * frac1, period2: total * (1 - frac1) }
-}
-
-// Same day-count split as splitCashAcrossPeriods, applied per line item so each
-// period card can show which categories make up its NON-CARD CASH (FCST) total.
-export function splitCashDetailAcrossPeriods(detail, midpoint, year, month) {
-  const dim = daysInMonth(year, month)
-  const p1Days = Math.max(0, Math.min(midpoint, dim))
-  const frac1 = dim > 0 ? p1Days / dim : 0
-  const period1 = [], period2 = []
-  for (const item of (detail ?? [])) {
-    const a1 = item.amount * frac1
-    const a2 = item.amount - a1
-    if (a1 > 0.005) period1.push({ ...item, amount: a1 })
-    if (a2 > 0.005) period2.push({ ...item, amount: a2 })
-  }
-  return { period1, period2 }
-}

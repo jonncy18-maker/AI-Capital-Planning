@@ -15,7 +15,7 @@ import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
 import { getForecastLineItems } from '../../lib/db/forecastLineItems.js'
 import {
   routeForecastToCards, computeStatementForecast,
-  projectedBillAmounts, splitCashAcrossPeriods, splitCashDetailAcrossPeriods,
+  projectedBillAmounts,
 } from '../../lib/cashflow/cashflowEngine.js'
 import { parseBillsFromFile } from '../../lib/ai/billParser.js'
 import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
@@ -150,8 +150,7 @@ function SplitChip({ label, value, accent = false }) {
   )
 }
 
-function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, forecastCash = 0, forecastCashDetail = [], primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
-  const [cashDetailOpen, setCashDetailOpen] = useState(false)
+function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
@@ -162,9 +161,6 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
 
   const balanceKey = primaryChecking ? `${primaryChecking.id}-${period}` : null
   const checkingBalance = balanceKey ? (balancesMap[balanceKey] ?? '') : ''
-  const outflow = total + forecastCash
-  // Measured against the bill total only. The non-card cash in TOTAL OUTFLOW is
-  // day-to-day spend already leaving checking on its own — it needs no transfer.
   // The minimum balance is what should be left over once the bills clear.
   const transferNeeded = checkingBalance !== '' ? Math.max(0, total + minCheckingBalance - Number(checkingBalance)) : null
 
@@ -299,82 +295,6 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
           </div>
         )}
 
-        {forecastCash > 0 && (
-          <>
-            <div
-              onClick={() => forecastCashDetail.length > 0 && setCashDetailOpen(o => !o)}
-              style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6,
-                cursor: forecastCashDetail.length > 0 ? 'pointer' : 'default', userSelect: 'none',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                {forecastCashDetail.length > 0 && (
-                  <span style={{
-                    fontSize: 9, color: 'var(--tx-3)', display: 'inline-block',
-                    transform: cashDetailOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.15s',
-                  }}>
-                    ▶
-                  </span>
-                )}
-                <MonoLabel style={{ fontSize: 9 }} title="Forecast spend not on a credit card (cash-only categories + the portion of spend not put on a card), pro-rated into this period.">
-                  NON-CARD CASH (FCST)
-                </MonoLabel>
-              </div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: 'var(--tx-2)' }}>
-                +{fmt(forecastCash)}
-              </div>
-            </div>
-
-            {cashDetailOpen && forecastCashDetail.length > 0 && (
-              <div style={{
-                marginBottom: 10, padding: '6px 10px', borderRadius: 7,
-                background: 'var(--bg-card)', border: '1px solid var(--bd)',
-              }}>
-                {[...forecastCashDetail]
-                  .sort((a, b) => b.amount - a.amount)
-                  .map((item, i) => (
-                    <div
-                      key={`${item.categoryId}-${i}`}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        gap: 8, padding: '4px 0',
-                        borderBottom: i < forecastCashDetail.length - 1 ? '0.5px solid var(--bd-light)' : 'none',
-                      }}
-                    >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 11.5, color: 'var(--tx-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.group ? `${item.group} · ${item.name}` : item.name}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                        {item.kind === 'uncovered' && (
-                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, color: 'var(--tx-4)', letterSpacing: '0.03em' }}>
-                            UNCOVERED
-                          </span>
-                        )}
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-1)' }}>
-                          {fmt(item.amount)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-              marginBottom: 10, paddingTop: 6, borderTop: '1px solid var(--bd)',
-            }}>
-              <MonoLabel style={{ fontSize: 9 }}>TOTAL OUTFLOW</MonoLabel>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: 'var(--tx-1)' }}>
-                {fmt(outflow)}
-              </div>
-            </div>
-          </>
-        )}
-
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <MonoLabel style={{ whiteSpace: 'nowrap' }}>CHECKING BAL.</MonoLabel>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -434,11 +354,6 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
             {transferNeeded > 0 && Number(checkingBalance) > 0 && (
               <div style={{ color: 'var(--tx-4)' }}>
                 checking applied against the manual portion
-              </div>
-            )}
-            {forecastCash > 0 && (
-              <div style={{ color: 'var(--tx-4)' }}>
-                cash spend excluded — it leaves checking without a transfer
               </div>
             )}
           </div>
@@ -1316,17 +1231,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     () => projectedBillAmounts({ bills, statementsByCard, year: navYear, month: navMonth }),
     [bills, statementsByCard, navYear, navMonth]
   )
-  // Non-card forecast cash (cash-only + uncovered spend), split across the two periods
-  const forecastCashSplit = useMemo(
-    () => splitCashAcrossPeriods(cashflow.cashByMonth[navMonth] ?? 0, payDay2 - 1, navYear, navMonth),
-    [cashflow, navMonth, navYear, payDay2]
-  )
-  // Line-item breakdown of the same non-card cash total, for the collapsible detail list
-  const forecastCashDetailSplit = useMemo(
-    () => splitCashDetailAcrossPeriods(cashflow.cashDetailByMonth[navMonth] ?? [], payDay2 - 1, navYear, navMonth),
-    [cashflow, navMonth, navYear, payDay2]
-  )
-
   // Split bills: period 1 = pay_day < pay_day_2, period 2 = pay_day >= pay_day_2
   // Bills marked exclude_from_schedule are omitted — they still appear in the
   // Cash Flow and Trends tabs as outflows but don't need a planned pay date.
@@ -1864,8 +1768,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   amountsMap={amountsMap}
                   forecastAmountsMap={forecastAmountsMap}
                   cardStatementMap={cardStatementMap}
-                  forecastCash={forecastCashSplit.period1}
-                  forecastCashDetail={forecastCashDetailSplit.period1}
                   primaryChecking={primaryChecking}
                   balancesMap={balancesMap}
                   onAmountChange={handleAmountChange}
@@ -1883,8 +1785,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   amountsMap={amountsMap}
                   forecastAmountsMap={forecastAmountsMap}
                   cardStatementMap={cardStatementMap}
-                  forecastCash={forecastCashSplit.period2}
-                  forecastCashDetail={forecastCashDetailSplit.period2}
                   primaryChecking={primaryChecking}
                   balancesMap={balancesMap}
                   onAmountChange={handleAmountChange}
