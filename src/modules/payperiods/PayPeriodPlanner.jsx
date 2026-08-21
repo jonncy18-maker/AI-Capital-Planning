@@ -2097,6 +2097,19 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                       <div key={`${sa.id}-l`} style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textAlign: 'right', color: 'var(--tx-2)', fontVariantNumeric: 'tabular-nums', padding: '3px 0' }}>{fmt(left)}</div>,
                                     ]
                                   })}
+                                  {/* Totals row */}
+                                  <div style={{ fontSize: 11, color: 'var(--tx-1)', fontWeight: 600, padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    TOTAL
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(draws.reduce((s, b) => s + b.avail, 0))}
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--accent)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(draws.reduce((s, b) => s + b.draw, 0))}
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(draws.reduce((s, b) => s + Math.max(0, b.avail - b.draw), 0))}
+                                  </div>
                                 </div>
                                 <div style={{ marginTop: 8, borderTop: '1px solid var(--bd)', paddingTop: 6, textAlign: 'right' }}>
                                   {gap === 0 ? (
