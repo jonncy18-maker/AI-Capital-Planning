@@ -12,7 +12,32 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-22 (Command bar — correct a pending confirmation, full-screen toggle)
+**Last updated:** 2026-08-22 (Dashboard — current-month income no longer shows $0 before payday)
+
+- **Income vs. Expenses widget: current month fell back to $0 instead of the
+  forecast (2026-08-22):** the chart treated the whole current month as
+  "actual" for both series once any part of it had elapsed, so a month where
+  the paycheck hadn't landed yet showed a $0 income bar even though a salary
+  forecast existed — looked broken, especially early in the month.
+  - `Dashboard.jsx#IncomeVsExpensesWidget` — split the shared `isPast` flag
+    into independent `incomeIsPast`/`expenseIsPast` per month. Current month
+    now falls back to forecast (dashed bar, same treatment as future months)
+    whenever that series' actual is still zero — income and expenses can now
+    disagree on forecast-vs-actual within the same month (real spending
+    already posted, income not yet), which the tooltip/bar rendering already
+    supported per-row, just needed both flags threaded through.
+  - Mirrors the fallback convention `widgetData.js#monthlyBudgetVsActual`
+    already uses for expenses (`hasActual = !isFuture && seen[m]`) — this
+    just applies the same idea independently to the income series in the
+    dashboard widget, which had been sharing one flag for both.
+  - Verified: `next build --webpack` clean, lint clean (pre-existing
+    unrelated `fmtK1` unused-var error confirmed via `git stash`), and the
+    fallback logic traced by hand against a synthetic month (income not yet
+    posted + partial expenses) in a Node harness — current month correctly
+    showed the income forecast (dashed) while expenses stayed on their real,
+    lower actual. **Visually unverified in the browser.**
+
+**Last updated (previous):** 2026-08-22 (Command bar — correct a pending confirmation, full-screen toggle)
 
 - **Correct a pending write instead of only Confirm/Cancel (2026-08-22):** the
   input row was fully disabled while a confirmation card was up, so a mistake
