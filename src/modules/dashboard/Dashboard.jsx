@@ -191,14 +191,19 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
   const cm = ive.currentMonth ?? 11
   const chartH = mobile ? 130 : 180
 
-  // Per-month chart data: all 12 months
+  // Per-month chart data: all 12 months. Income and expenses fall back to
+  // forecast independently for the current month — e.g. a paycheck that
+  // hasn't landed yet shouldn't read as "$0 income" when a forecast exists,
+  // even though same-month spending already has real transactions.
   const chartData = IVE_MONTHS.map((label, m) => {
-    const isPast = m <= cm
-    const income = isPast ? (ive.monthlyIncome?.[m] ?? 0) : 0
-    const incForecast = !isPast ? (ive.monthlyIncomeForecast?.[m] ?? 0) : 0
-    const expenses = isPast ? (ive.monthlyExpenses?.[m] ?? 0) : 0
-    const expForecast = !isPast ? (ive.monthlyExpenseForecast?.[m] ?? 0) : 0
-    return { m, label, income, incForecast, expenses, expForecast, isPast }
+    const isFutureMonth = m > cm
+    const incomeIsPast = !isFutureMonth && (m < cm || (ive.monthlyIncome?.[m] ?? 0) > 0)
+    const expenseIsPast = !isFutureMonth && (m < cm || (ive.monthlyExpenses?.[m] ?? 0) > 0)
+    const income = incomeIsPast ? (ive.monthlyIncome?.[m] ?? 0) : 0
+    const incForecast = !incomeIsPast ? (ive.monthlyIncomeForecast?.[m] ?? 0) : 0
+    const expenses = expenseIsPast ? (ive.monthlyExpenses?.[m] ?? 0) : 0
+    const expForecast = !expenseIsPast ? (ive.monthlyExpenseForecast?.[m] ?? 0) : 0
+    return { m, label, income, incForecast, expenses, expForecast, incomeIsPast, expenseIsPast }
   })
 
   const chartMax = Math.max(
@@ -229,10 +234,11 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
         {hover !== null && (() => {
           const d = chartData[hover]
           if (!d) return null
-          const inc = d.isPast ? d.income : d.incForecast
-          const exp = d.isPast ? d.expenses : d.expForecast
+          const inc = d.incomeIsPast ? d.income : d.incForecast
+          const exp = d.expenseIsPast ? d.expenses : d.expForecast
           const net = inc - exp
-          const isFcst = !d.isPast
+          const incIsFcst = !d.incomeIsPast
+          const expIsFcst = !d.expenseIsPast
           return (
             <div style={{
               position: 'absolute', top: -6, left: '50%', transform: 'translateX(-50%)',
@@ -241,12 +247,12 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
               boxShadow: '0 8px 24px rgba(0,0,0,0.35)', pointerEvents: 'none', whiteSpace: 'nowrap',
             }}>
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 8 }}>
-                {d.label}{isFcst ? ' · forecast' : ''}
+                {d.label}{incIsFcst && expIsFcst ? ' · forecast' : ''}
               </div>
               {(hasActualIncome || hasForecastIncome) && (
-                <IveTooltipRow label={isFcst ? 'Income (fcst)' : 'Income'} value={fmtMoney(inc)} highlight="accent" />
+                <IveTooltipRow label={incIsFcst ? 'Income (fcst)' : 'Income'} value={fmtMoney(inc)} highlight="accent" />
               )}
-              <IveTooltipRow label={isFcst ? 'Expenses (fcst)' : 'Expenses'} value={fmtMoney(exp)} highlight="warn" />
+              <IveTooltipRow label={expIsFcst ? 'Expenses (fcst)' : 'Expenses'} value={fmtMoney(exp)} highlight="warn" />
               {(hasActualIncome || hasForecastIncome) && (
                 <IveTooltipRow
                   label="Net"
@@ -270,12 +276,13 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 6 : 8, height: chartH }}>
               {chartData.map((d) => {
                 const showInc = hasActualIncome || hasForecastIncome
-                const incVal = d.isPast ? d.income : d.incForecast
-                const expVal = d.isPast ? d.expenses : d.expForecast
+                const incVal = d.incomeIsPast ? d.income : d.incForecast
+                const expVal = d.expenseIsPast ? d.expenses : d.expForecast
                 const incH = showInc ? (incVal / chartMax) * chartH : 0
                 const expH = (expVal / chartMax) * chartH
                 const isHov = hover === d.m
-                const isFcst = !d.isPast
+                const incIsFcst = !d.incomeIsPast
+                const expIsFcst = !d.expenseIsPast
                 return (
                   <div
                     key={d.m}
@@ -292,10 +299,10 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
                       <div style={{
                         width: mobile ? 14 : '48%', maxWidth: 28,
                         height: Math.max(incH, 2),
-                        background: isFcst ? 'var(--forecast-fill)' : 'var(--accent)',
-                        border: isFcst ? '1px dashed var(--accent)' : 'none',
+                        background: incIsFcst ? 'var(--forecast-fill)' : 'var(--accent)',
+                        border: incIsFcst ? '1px dashed var(--accent)' : 'none',
                         borderRadius: '3px 3px 0 0',
-                        opacity: isHov ? 1 : isFcst ? 0.9 : 0.88,
+                        opacity: isHov ? 1 : incIsFcst ? 0.9 : 0.88,
                         boxSizing: 'border-box',
                       }} />
                     )}
@@ -303,10 +310,10 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
                     <div style={{
                       width: mobile ? 14 : '48%', maxWidth: 28,
                       height: Math.max(expH, 2),
-                      background: isFcst ? 'var(--forecast-fill)' : 'var(--warn)',
-                      border: isFcst ? '1px dashed var(--warn)' : 'none',
+                      background: expIsFcst ? 'var(--forecast-fill)' : 'var(--warn)',
+                      border: expIsFcst ? '1px dashed var(--warn)' : 'none',
                       borderRadius: '3px 3px 0 0',
-                      opacity: isHov ? 1 : isFcst ? 0.9 : 0.8,
+                      opacity: isHov ? 1 : expIsFcst ? 0.9 : 0.8,
                       boxSizing: 'border-box',
                     }} />
 
