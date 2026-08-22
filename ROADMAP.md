@@ -12,7 +12,40 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-09 (AI assistant everywhere — full tool registry, confirm-before-write, activity log)
+**Last updated:** 2026-08-22 (Command bar file upload — drag-and-drop and click-to-browse)
+
+- **Assistant can read an attached file (2026-08-22):** the command bar gained a
+  📎 button and a drag-and-drop zone (drop anywhere on the open popup) for
+  attaching one image or PDF per turn — a photo of a bill, a screenshot of a
+  quote, a scanned statement — so the user doesn't have to transcribe it into
+  the chat. Approved from a before/after mockup (Phase 1) before any code.
+  - `src/lib/ai/attachments.js` (new): validates type (`image/jpeg|png|webp|gif`,
+    `application/pdf`) and size, reads the file via `FileReader` into base64,
+    and builds the Anthropic `image`/`document` content block. Client-side cap
+    is **3 MB** raw — base64 inflates ~33%, and Vercel serverless functions
+    have a fixed 4.5 MB request-body ceiling that also has to fit the system
+    prompt, context brief, and the 39 tool schemas.
+  - `CommandBar.jsx` — paperclip button + hidden file input, a dashed
+    drop-overlay while dragging over the popup, a staged-file chip above the
+    input (name, size, remove), and an attachment chip rendered on the sent
+    user bubble. Submit is now enabled with a file alone (no caption
+    required — defaults to "What can you tell me about this file?").
+  - `AppRoot.jsx#handleAiSubmit` — builds the multi-block user message
+    (`buildUserContent`) when a file is attached and passes it straight into
+    `runAssistant`'s existing `prompt` param, which already accepted any
+    content shape; no change needed in `toolAgent.js` or the `/api/ai-chat`
+    route, since both already forward `messages` content verbatim to
+    Anthropic.
+  - **Deliberately out of scope:** this is ad-hoc, in-chat reading only, not a
+    data importer — bulk transaction history stays on the CSV path in
+    Settings. One file per turn, no multi-file batching.
+  - Verified: `next build --webpack` compiles clean (54 routes), lint clean on
+    all changed/new files (one pre-existing `CommandBar.jsx` lint error at the
+    loading-popup effect predates this change, confirmed via `git stash`).
+    **Visually unverified** — not yet exercised in a browser (drag-and-drop,
+    the paperclip picker, and an actual Claude read of an attached file/PDF).
+
+- **Last updated (previous):** 2026-08-09 (AI assistant everywhere — full tool registry, confirm-before-write, activity log)
 
 - **AI assistant can now operate every module (2026-08-09):** the ✦ command bar
   already followed the user across all 16 modules but could only write two

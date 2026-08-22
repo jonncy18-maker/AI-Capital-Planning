@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import Markdown from '../common/Markdown.jsx'
 import PendingActionCard from './PendingActionCard.jsx'
 import ActivityPanel from './ActivityPanel.jsx'
+import { ALLOWED_FILE_TYPES, MAX_FILE_BYTES, isSupportedFile, readFileAsAttachment, formatFileSize } from '../../lib/ai/attachments.js'
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -124,10 +125,57 @@ export default function CommandBar({
   const [maximized, setMaximized] = useState(false)
   const [tab, setTab] = useState('chat')
   const [input, setInput] = useState('')
+  const [stagedFile, setStagedFile] = useState(null)
+  const [fileError, setFileError] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const dragCounter = useRef(0)
   const ph = placeholder || 'Ask anything about your finances…'
   const hasMessages = conversation.length > 0
+
+  async function handleFiles(fileList) {
+    const file = fileList?.[0]
+    if (!file) return
+    if (!isSupportedFile(file)) {
+      setFileError('Only images (JPG, PNG, WEBP, GIF) and PDFs are supported.')
+      return
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      setFileError(`That file is too large — max ${formatFileSize(MAX_FILE_BYTES)}.`)
+      return
+    }
+    setFileError(null)
+    try {
+      setStagedFile(await readFileAsAttachment(file))
+    } catch (e) {
+      setFileError(e.message || 'Could not read that file.')
+    }
+  }
+
+  function handleDragEnter(e) {
+    e.preventDefault()
+    dragCounter.current += 1
+    setDragOver(true)
+  }
+  function handleDragOver(e) {
+    e.preventDefault()
+  }
+  function handleDragLeave(e) {
+    e.preventDefault()
+    dragCounter.current -= 1
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0
+      setDragOver(false)
+    }
+  }
+  function handleDrop(e) {
+    e.preventDefault()
+    dragCounter.current = 0
+    setDragOver(false)
+    handleFiles(e.dataTransfer.files)
+  }
 
   // Auto-open popup when a request is in flight
   useEffect(() => {
@@ -155,9 +203,11 @@ export default function CommandBar({
 
   function submit() {
     const trimmed = input.trim()
-    if (!trimmed || loading) return
-    onSubmit(trimmed)
+    if ((!trimmed && !stagedFile) || loading) return
+    onSubmit(trimmed, stagedFile)
     setInput('')
+    setStagedFile(null)
+    setFileError(null)
     setOpen(true)
     setTab('chat')
   }
@@ -233,7 +283,12 @@ export default function CommandBar({
             />
           )}
 
-          <div style={{
+          <div
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            style={{
             position: 'fixed',
             right: '18px',
             bottom: '82px',
@@ -250,6 +305,30 @@ export default function CommandBar({
             boxShadow: '0 8px 40px rgba(0,0,0,0.22)',
             overflow: 'hidden',
           }}>
+            {dragOver && (
+              <div style={{
+                position: 'absolute',
+                inset: '8px',
+                zIndex: 5,
+                borderRadius: '10px',
+                border: '1.5px dashed var(--accent)',
+                background: 'var(--accent-bg)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'column',
+                gap: '6px',
+                pointerEvents: 'none',
+              }}>
+                <span style={{ fontSize: '22px', color: 'var(--accent)' }}>⇩</span>
+                <span style={{
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: '10.5px',
+                  letterSpacing: '0.03em',
+                  color: 'var(--accent)',
+                }}>DROP FILE TO ATTACH</span>
+              </div>
+            )}
 
             {/* Header */}
             <div style={{
@@ -388,6 +467,46 @@ export default function CommandBar({
               borderTop: '1px solid var(--bd)',
               padding: '11px 13px',
             }}>
+              {stagedFile && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '8px',
+                  padding: '6px 8px',
+                  borderRadius: '8px',
+                  background: 'var(--bg-card-2)',
+                  border: '1px solid var(--bd)',
+                }}>
+                  <span style={{
+                    width: '22px', height: '22px', flexShrink: 0,
+                    borderRadius: '5px',
+                    background: 'var(--accent-bg)',
+                    color: 'var(--accent)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '11px',
+                  }}>{stagedFile.mediaType === 'application/pdf' ? '▤' : '◱'}</span>
+                  <span style={{
+                    flex: 1, minWidth: 0,
+                    fontSize: '11.5px', fontWeight: 500, color: 'var(--tx-1)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{stagedFile.name}</span>
+                  <span style={{
+                    fontFamily: "'DM Mono', monospace", fontSize: '9.5px', color: 'var(--tx-3)', flexShrink: 0,
+                  }}>{formatFileSize(stagedFile.size)}</span>
+                  <button
+                    onClick={() => setStagedFile(null)}
+                    title="Remove attachment"
+                    style={{
+                      flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--tx-3)', fontSize: '13px', padding: '0 2px', lineHeight: 1,
+                    }}
+                  >✕</button>
+                </div>
+              )}
+              {fileError && (
+                <div style={{ fontSize: '11px', color: 'var(--warn)', marginBottom: '8px' }}>{fileError}</div>
+              )}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -397,6 +516,32 @@ export default function CommandBar({
                 background: 'var(--accent-bg)',
                 padding: '9px 12px',
               }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ALLOWED_FILE_TYPES.join(',')}
+                  onChange={e => { handleFiles(e.target.files); e.target.value = '' }}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading || hasPending}
+                  title="Attach a file"
+                  style={{
+                    flexShrink: 0,
+                    width: '26px',
+                    height: '26px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--accent-bd)',
+                    borderRadius: '7px',
+                    color: 'var(--accent)',
+                    fontSize: '13px',
+                    cursor: loading || hasPending ? 'default' : 'pointer',
+                  }}
+                >📎</button>
                 <input
                   ref={inputRef}
                   value={input}
@@ -417,18 +562,18 @@ export default function CommandBar({
                 />
                 <button
                   onClick={submit}
-                  disabled={loading || hasPending || !input.trim()}
+                  disabled={loading || hasPending || (!input.trim() && !stagedFile)}
                   style={{
                     flexShrink: 0,
-                    background: input.trim() && !loading ? 'var(--accent)' : 'transparent',
-                    color: input.trim() && !loading ? 'var(--accent-tx-on)' : 'var(--tx-3)',
+                    background: (input.trim() || stagedFile) && !loading ? 'var(--accent)' : 'transparent',
+                    color: (input.trim() || stagedFile) && !loading ? 'var(--accent-tx-on)' : 'var(--tx-3)',
                     border: 'none',
                     borderRadius: '7px',
                     padding: '6px 12px',
                     fontFamily: "'DM Mono', monospace",
                     fontSize: '11px',
                     letterSpacing: '0.04em',
-                    cursor: input.trim() && !loading ? 'pointer' : 'default',
+                    cursor: (input.trim() || stagedFile) && !loading ? 'pointer' : 'default',
                   }}
                 >
                   {loading ? '···' : 'ASK'}
@@ -450,9 +595,10 @@ export default function CommandBar({
 }
 
 function Turn({ message, onViewScenarios, onConfirm, onCancel }) {
-  const { role, content, status, statusText, created, pending } = message
+  const { role, content, status, statusText, created, pending, attachment } = message
 
   if (role === 'user') {
+    const text = typeof content === 'string' ? content : (content.find(b => b.type === 'text')?.text || '')
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <div style={{
@@ -467,7 +613,25 @@ function Turn({ message, onViewScenarios, onConfirm, onCancel }) {
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}>
-          {content}
+          {text}
+          {attachment && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginTop: '7px',
+              padding: '4px 9px 4px 7px',
+              borderRadius: '8px',
+              background: 'var(--bg-card-2)',
+              border: '1px solid var(--bd)',
+              fontFamily: "'DM Mono', monospace",
+              fontSize: '10.5px',
+              color: 'var(--tx-2)',
+            }}>
+              <span>{attachment.mediaType === 'application/pdf' ? '▤' : '◱'}</span>
+              {attachment.name}
+            </div>
+          )}
         </div>
       </div>
     )
