@@ -11,6 +11,7 @@ import { importCategoryMappings } from '../src/lib/db/budgetCategories.js'
 import { useTheme } from '../src/lib/theme/useTheme.js'
 import { loadAIContext, summarizeContext } from '../src/lib/ai/contextLoader.js'
 import { runAssistant, confirmPendingActions, cancelPendingActions } from '../src/lib/ai/toolAgent.js'
+import { buildUserContent } from '../src/lib/ai/attachments.js'
 import { executeTool } from '../src/lib/ai/tools/index.js'
 import { getActionLog, recordActions, markUndone, clearActionLog } from '../src/lib/ai/actionLog.js'
 import { getTransactionsByMonth } from '../src/lib/db/transactions.js'
@@ -177,17 +178,19 @@ export default function AppRoot({ children }) {
     return () => { cancelled = true }
   }, [user?.id, aiContext?.thisYear, dataNonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleAiSubmit(prompt) {
+  async function handleAiSubmit(prompt, file) {
     // Build history from completed turns, then run the agent (tool-enabled, so it
     // can actually create a scenario rather than only describing it).
     const history = conversation
       .filter(m => m.content && m.status !== 'loading')
       .map(m => ({ role: m.role, content: m.content }))
 
+    const content = file ? buildUserContent(prompt, file) : prompt
+
     setAiLoading(true)
     setConversation(prev => [
       ...prev,
-      { role: 'user', content: prompt },
+      { role: 'user', content, attachment: file ? { name: file.name, mediaType: file.mediaType } : null },
       { role: 'assistant', content: '', status: 'loading' },
     ])
 
@@ -195,7 +198,7 @@ export default function AppRoot({ children }) {
       const res = await runAssistant({
         userId: user.id,
         history,
-        prompt,
+        prompt: content,
         context: aiContext,
         yearTxns,
         activeModule: current.short,
