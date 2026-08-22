@@ -1,13 +1,13 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // GET /api/budget-line-items/years
 // Mirrors src/lib/db/budgetLineItems.js#getBudgetYears: distinct sorted list
 // of budget_year values for the user. Neon has no default row cap, so a
 // single DISTINCT query covers this without the source's manual paging loop
 // (a 1,000-row page limit would have required one).
-export async function GET() {
-  const { data: session } = await auth.getSession()
+export async function GET(request) {
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

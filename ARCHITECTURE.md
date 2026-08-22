@@ -463,6 +463,50 @@ All AI calls are assembled from four layers in this order:
 
 When debugging unexpected AI behavior, check the layers in order: is the persona correct? Is the context data fresh? Is systemExtra providing the right framing? Are tool descriptions accurate?
 
+#### 5.2.2 MCP Connector (added 2026-08-22)
+
+A remote MCP server at `app/api/mcp` exposes the same 39-tool registry
+(§5.2.0) to Claude Code, authenticated by a personal access token instead of
+the browser's Neon Auth session cookie — Claude chat/Cowork support is a
+deliberately deferred phase 2 (they generally require the server to speak
+OAuth; a static bearer token is enough for Claude Code's connector config).
+
+**Auth.** `personal_access_tokens` (migration 021) stores only a SHA-256
+hash per token; the raw value exists once, at creation, printed by
+`scripts/create-mcp-token.js` and never persisted. Every `app/api/**` route
+now calls `src/lib/neon/apiAuth.js#getSessionOrToken(request)` instead of
+`auth.getSession()` directly — it accepts either the session cookie or an
+`Authorization: Bearer <token>` header and resolves both to the same
+`{ data: { user: { id } } }` shape, so no route needed a behavioral change
+beyond that one call-site swap (mechanical, all 56 affected routes).
+
+**Reuse, not a parallel path.** The MCP route calls the *same* `app/api/**`
+routes the browser does — same validation, same FK behavior — rather than
+querying Neon directly and duplicating that logic. This works because
+`src/lib/db/*.js` (the client seam every tool's `execute()` already calls)
+now goes through `src/lib/db/apiClient.js#apiFetch()` instead of calling
+`fetch()` inline. In the browser `apiFetch` is an unchanged passthrough
+(relative URL, cookie). Server-side, `src/lib/db/mcpContext.js` — imported
+only by the MCP route, never reachable from the client bundle — wires in an
+implementation that resolves an absolute URL and swaps the cookie for the
+calling token, scoped per-request via `node:async_hooks` `AsyncLocalStorage`
+(safe under concurrent requests on a warm serverless instance; mutating
+`globalThis.fetch` directly would not be). `node:async_hooks` had to live in
+`mcpContext.js` specifically — `apiClient.js` is imported by every `db/*.js`
+file, which are also bundled into the browser, and webpack refuses to bundle
+Node built-ins into client code.
+
+**Confirmation model.** Every tool's `execute()` already ignores the `ctx`
+argument (only `preview()`, used solely for the in-app confirmation card,
+reads it) — so the MCP route calls `executeTool()` directly with an empty
+ctx and skips `buildPreview()`/the pause-for-confirmation step entirely.
+Writes execute the moment the connecting Claude client's own tool-approval
+step lets the call through; there's no browser to render a second card to.
+
+**Not yet exposed:** claude.ai chat and Cowork (OAuth), and no way to mint or
+revoke a token from the Settings UI yet — `scripts/create-mcp-token.js` is a
+one-time local script against the production `DATABASE_URL`.
+
 ### 5.3 Deduplication Logic
 
 On every CSV import, a `dedup_key` is generated per row:

@@ -7,6 +7,8 @@
 // with existing callers (contextLoader.js, scenarioAgent.js, and every
 // src/modules/* caller listed below).
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -16,7 +18,7 @@ async function parseJsonOrThrow(res) {
 // Upsert the default Monarch category → group/type mappings for this user.
 // Safe to call multiple times — will not overwrite user-customized targets.
 export async function seedDefaultCategories(_userId) {
-  const res = await fetch('/api/budget-categories/seed', {
+  const res = await apiFetch('/api/budget-categories/seed', {
     method: 'POST',
     credentials: 'include',
   })
@@ -38,7 +40,7 @@ export async function upsertCategory(_userId, {
   if (annualTarget !== undefined) body.annualTarget = annualTarget
   if (isActive !== undefined) body.isActive = !!isActive
 
-  const res = await fetch('/api/budget-categories', {
+  const res = await apiFetch('/api/budget-categories', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -50,14 +52,14 @@ export async function upsertCategory(_userId, {
 // Set of category names this user has flagged exclude_from_totals — used to
 // drop transfers / credit-card payments from spend & income aggregations.
 export async function getExcludedCategoryNames(_userId) {
-  const res = await fetch('/api/budget-categories', { credentials: 'include' })
+  const res = await apiFetch('/api/budget-categories', { credentials: 'include' })
   const data = await parseJsonOrThrow(res)
   return new Set((data ?? []).filter(r => r.exclude_from_totals).map(r => r.category).filter(Boolean))
 }
 
 // Fetch all budget_categories for this user.
 export async function getBudgetCategories(_userId) {
-  const res = await fetch('/api/budget-categories', { credentials: 'include' })
+  const res = await apiFetch('/api/budget-categories', { credentials: 'include' })
   const data = await parseJsonOrThrow(res)
   return data ?? []
 }
@@ -67,7 +69,7 @@ export async function getBudgetCategories(_userId) {
 // instead of a fixed built-in list). Derived client-side from the same
 // category list the GET route already returns.
 export async function getUserGroups(_userId) {
-  const res = await fetch('/api/budget-categories', { credentials: 'include' })
+  const res = await apiFetch('/api/budget-categories', { credentials: 'include' })
   const data = await parseJsonOrThrow(res)
   return [...new Set((data ?? []).map(r => r.group).filter(Boolean))].sort()
 }
@@ -81,7 +83,7 @@ export async function importCategoryMappings(_userId, rows) {
 
   if (payload.length === 0) return { imported: 0 }
 
-  const res = await fetch('/api/budget-categories/import', {
+  const res = await apiFetch('/api/budget-categories/import', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

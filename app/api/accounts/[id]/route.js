@@ -1,12 +1,12 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/bills.js#deleteAccount. Hardened: the source only
 // filters by `id` (the original schema relied on RLS to prevent cross-user
 // access) — here we add an explicit user_id check since Neon has no RLS layer
 // to fall back on.
 export async function DELETE(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

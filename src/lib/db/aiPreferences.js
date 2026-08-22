@@ -8,11 +8,13 @@
 // neutral defaults. We default to an empty object (and swallow errors) so the
 // UI keeps working even if the request fails.
 
+import { apiFetch } from './apiClient.js'
+
 const EMPTY = { preferences: {}, interview: null, grill_enabled: false }
 
 export async function getAIPreferences(_userId) {
   try {
-    const res = await fetch('/api/ai-preferences', { credentials: 'include' })
+    const res = await apiFetch('/api/ai-preferences', { credentials: 'include' })
     if (!res.ok) return { ...EMPTY }
     const data = await res.json().catch(() => null)
     if (!data) return { ...EMPTY }
@@ -32,7 +34,7 @@ export async function saveAIPreferences(_userId, { preferences, interview, grill
   if (interview !== undefined) body.interview = interview
   if (grill_enabled !== undefined) body.grill_enabled = grill_enabled
 
-  const res = await fetch('/api/ai-preferences', {
+  const res = await apiFetch('/api/ai-preferences', {
     method: 'PUT',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 const ALLOWED_TYPES = ['Fixed', 'Flexible', 'Non-Monthly']
 
@@ -8,7 +8,7 @@ const ALLOWED_TYPES = ['Fixed', 'Flexible', 'Non-Monthly']
 // is_active filter (callers filter client-side), so we default to returning
 // everything and only apply a filter when ?is_active= is explicitly passed.
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -48,7 +48,7 @@ export async function GET(request) {
 // this is implemented as fetch-then-insert-or-update rather than
 // INSERT ... ON CONFLICT (judgment call — see report).
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

@@ -1,13 +1,13 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // Narrow, dedicated endpoint for the two cc_* fields on user_profiles.
 // app/api/profile/route.js#PUT deliberately excludes cc_coverage_pct and
 // cc_optimization_pct from its full-profile upsert (see the comment there)
 // so it never clobbers them — this route owns them instead, mirroring
 // src/lib/db/creditCards.js#getCCSettings / #updateCCSettings.
-export async function GET() {
-  const { data: session } = await auth.getSession()
+export async function GET(request) {
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -28,7 +28,7 @@ export async function GET() {
 }
 
 export async function PUT(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

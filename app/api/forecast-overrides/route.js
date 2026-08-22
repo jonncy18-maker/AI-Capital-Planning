@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/forecastOverrides.js#getForecastOverrides returns via
@@ -19,7 +19,7 @@ function shapeOverride(row) {
 // GET /api/forecast-overrides?year=
 // Mirrors src/lib/db/forecastOverrides.js#getForecastOverrides.
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -60,7 +60,7 @@ export async function GET(request) {
 // since it was missing from the original Neon schema recovery). Unlike the
 // source's fire-and-forget upsert, this route returns the resulting row.
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -112,7 +112,7 @@ export async function POST(request) {
 // params are used rather than a nested /[id] route, same judgment call as
 // app/api/income-actuals/route.js#DELETE.
 export async function DELETE(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

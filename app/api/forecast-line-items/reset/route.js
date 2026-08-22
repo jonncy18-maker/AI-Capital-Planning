@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 function shapeForecastLineItem(row) {
   const { cat_id, cat_category, cat_group, cat_type, ...rest } = row
@@ -23,7 +23,7 @@ function shapeForecastLineItem(row) {
 // the same transaction array as the DELETE, per the source's
 // delete-then-reseed sequencing.
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

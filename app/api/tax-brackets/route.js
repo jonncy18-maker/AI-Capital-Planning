@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/taxBrackets.js#loadAll: `tax_brackets` is world-readable
 // reference data (federal brackets, FICA constants, state rates), not
@@ -10,8 +10,8 @@ import { auth } from '../../../src/lib/neon/authServer.js'
 // Returns the full raw table; the client re-runs the existing pure
 // find/resolveYear/inflate logic (src/lib/tax/*.js) against these rows,
 // same as it does today against the database-loaded rows.
-export async function GET() {
-  const { data: session } = await auth.getSession()
+export async function GET(request) {
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

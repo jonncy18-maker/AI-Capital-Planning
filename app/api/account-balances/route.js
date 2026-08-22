@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/bills.js#getAccountBalances returns via the original
@@ -18,7 +18,7 @@ function shapeBalance(row) {
 // GET /api/account-balances?year=&month=
 // Mirrors src/lib/db/bills.js#getAccountBalances.
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -62,7 +62,7 @@ export async function GET(request) {
 // missing on the Neon dev branch and was added directly + documented in
 // db/migrations/018_neon_bills_unique_constraints.sql.
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

@@ -4,6 +4,8 @@
 // (AppRoot.jsx, GrillSession.jsx, PayPeriodPlanner.jsx, contextLoader.js) even
 // though the route derives the real identity from the session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -11,12 +13,12 @@ async function parseJsonOrThrow(res) {
 }
 
 export async function getProfile(_userId) {
-  const res = await fetch('/api/profile', { credentials: 'include' })
+  const res = await apiFetch('/api/profile', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function saveMinCheckingBalance(_userId, amount) {
-  const res = await fetch('/api/profile', {
+  const res = await apiFetch('/api/profile', {
     method: 'PATCH',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -26,7 +28,7 @@ export async function saveMinCheckingBalance(_userId, amount) {
 }
 
 export async function saveProfile(_userId, profile) {
-  const res = await fetch('/api/profile', {
+  const res = await apiFetch('/api/profile', {
     method: 'PUT',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

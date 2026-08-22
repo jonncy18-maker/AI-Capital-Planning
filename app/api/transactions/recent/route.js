@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // GET /api/transactions/recent?days=
 // Mirrors src/lib/db/transactions.js#getRecentTransactions: summary-level
@@ -7,7 +7,7 @@ import { auth } from '../../../../src/lib/neon/authServer.js'
 // first. Neon has no default row cap, so no paging loop is needed here
 // (the original version paged in chunks of 1,000 to work around that cap).
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

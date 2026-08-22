@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // PATCH /api/budget-line-items/:id
 // Body: { amount }
@@ -11,7 +11,7 @@ import { auth } from '../../../../src/lib/neon/authServer.js'
 // doesn't exist or isn't owned by the caller — the same class of gap
 // hardened for scenario_adjustments#deleteAdjustment in the Wave 1 port.
 export async function PATCH(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -55,7 +55,7 @@ export async function PATCH(request, context) {
 // caller (the source filters only by `id`, relying entirely on RLS in the
 // original backend, which Neon does not have).
 export async function DELETE(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

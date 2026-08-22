@@ -1,9 +1,9 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/creditCards.js#getCreditCards.
-export async function GET() {
-  const { data: session } = await auth.getSession()
+export async function GET(request) {
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -29,7 +29,7 @@ export async function GET() {
 // - body.id present  -> UPDATE by id, scoped to user_id for authorization.
 // - body.id absent   -> INSERT a new row with a fresh server-generated id.
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

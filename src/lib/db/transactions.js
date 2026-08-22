@@ -4,6 +4,8 @@
 // with existing callers even though each route derives the real identity
 // from the session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -18,7 +20,7 @@ export function buildDedupKey({ date, merchant, amount, account }) {
 // Insert rows from a parsed CSV, skipping duplicates.
 // Returns { inserted: number, skipped: number }.
 export async function importTransactions(_userId, rows) {
-  const res = await fetch('/api/transactions', {
+  const res = await apiFetch('/api/transactions', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -31,7 +33,7 @@ export async function importTransactions(_userId, rows) {
 // Defaults to a full trailing year so the AI sees the whole annual cycle.
 export async function getRecentTransactions(_userId, days = 365) {
   const params = new URLSearchParams({ days: String(days) })
-  const res = await fetch(`/api/transactions/recent?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/transactions/recent?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
@@ -42,20 +44,20 @@ export async function getTransactions(_userId, { from, to, category, limit = 500
   if (to) params.set('to', to)
   if (category) params.set('category', category)
   params.set('limit', String(limit))
-  const res = await fetch(`/api/transactions?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/transactions?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 // Fetch a wide window of transactions for budget pattern analysis.
 export async function getTransactionsForAnalysis(_userId, months = 24) {
   const params = new URLSearchParams({ months: String(months) })
-  const res = await fetch(`/api/transactions/analysis?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/transactions/analysis?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 // Fetch all expense transactions for a full calendar year (for forecast actuals).
 export async function getTransactionsForYear(_userId, year) {
-  const res = await fetch(`/api/transactions/year/${year}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/transactions/year/${year}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
@@ -70,13 +72,13 @@ export async function getExpenseActualsByCategories(_userId, categories, startYe
     startYear: String(startYear),
     endYear: String(endYear),
   })
-  const res = await fetch(`/api/transactions/by-category?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/transactions/by-category?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 // Fetch transactions in a date range for cash flow calendar aggregation.
 export async function getTransactionsByMonth(_userId, fromDate, toDate) {
   const params = new URLSearchParams({ from: fromDate, to: toDate })
-  const res = await fetch(`/api/transactions/by-month?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/transactions/by-month?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }

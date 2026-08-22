@@ -1,12 +1,12 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/creditCards.js#getPointsBalances: fetch all snapshot
 // rows ordered newest-first, then reduce to the latest row per card in JS
 // (kept server-side to match the source's returned map shape exactly:
 // { [cardId]: { balance, as_of_date, ... } }).
-export async function GET() {
-  const { data: session } = await auth.getSession()
+export async function GET(request) {
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -34,7 +34,7 @@ export async function GET() {
 // this is a plain INSERT — each call creates a new snapshot row, it does not
 // update an existing one.
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

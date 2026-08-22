@@ -1,3 +1,5 @@
+import { apiFetch } from './apiClient.js'
+
 import { estimateNetIncome } from '../tax/estimateTax.js'
 import { inflate, inflateBrackets } from '../tax/inflation.js'
 
@@ -10,7 +12,7 @@ let _cache = null
 
 async function loadAll() {
   if (_cache) return _cache
-  const res = await fetch('/api/tax-brackets', { credentials: 'include' })
+  const res = await apiFetch('/api/tax-brackets', { credentials: 'include' })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
   _cache = body || []

@@ -9,10 +9,12 @@
 // 'draft' (and swallow ALL errors, including network/parse failures) so the
 // UI keeps working even if the budget_status table hasn't been migrated yet.
 
+import { apiFetch } from './apiClient.js'
+
 export async function getBudgetStatus(_userId, year, version = 'v1') {
   try {
     const params = new URLSearchParams({ year, version })
-    const res = await fetch(`/api/budget-status?${params.toString()}`, { credentials: 'include' })
+    const res = await apiFetch(`/api/budget-status?${params.toString()}`, { credentials: 'include' })
     const body = await res.json().catch(() => null)
     if (!res.ok || !body) return { status: 'draft', finalized_at: null }
     return { status: body?.status ?? 'draft', finalized_at: body?.finalized_at ?? null }
@@ -22,7 +24,7 @@ export async function getBudgetStatus(_userId, year, version = 'v1') {
 }
 
 export async function setBudgetStatus(_userId, year, status, version = 'v1') {
-  const res = await fetch('/api/budget-status', {
+  const res = await apiFetch('/api/budget-status', {
     method: 'PUT',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // DELETE /api/forecast-line-items/by-label?year=&categoryId=&label=
 // Mirrors src/lib/db/forecastLineItems.js#deleteForecastItemsByLabel:
@@ -9,7 +9,7 @@ import { auth } from '../../../../src/lib/neon/authServer.js'
 // optional — omitting it targets rows where label IS NULL, matching the
 // source's `label != null ? .eq('label', label) : .is('label', null)`.
 export async function DELETE(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

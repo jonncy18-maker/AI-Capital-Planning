@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 import { CATEGORY_SEED_DATA } from '../../../../src/lib/csv/categoryMap.js'
 
 // Mirrors src/lib/db/budgetCategories.js#seedDefaultCategories: upsert the
@@ -11,8 +11,8 @@ import { CATEGORY_SEED_DATA } from '../../../../src/lib/csv/categoryMap.js'
 // unique constraint on (user_id, category) enforced here, so each row is a
 // sequential exists-check + insert-if-missing rather than a single
 // INSERT ... ON CONFLICT statement.
-export async function POST() {
-  const { data: session } = await auth.getSession()
+export async function POST(request) {
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

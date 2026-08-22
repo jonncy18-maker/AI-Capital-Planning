@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 function shapeForecastLineItem(row) {
   const { cat_id, cat_category, cat_group, cat_type, ...rest } = row
@@ -23,7 +23,7 @@ function shapeForecastLineItem(row) {
 // budget_line_items' updateLineItemAmount/deleteLineItem in Wave 2 and
 // scenario_adjustments in Wave 1.
 export async function PATCH(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -103,7 +103,7 @@ export async function PATCH(request, context) {
 // the caller (the source filters only by `id`, relying entirely on RLS in the
 // original backend, which Neon does not have).
 export async function DELETE(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

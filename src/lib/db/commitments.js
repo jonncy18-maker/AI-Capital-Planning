@@ -5,6 +5,8 @@
 // Budget.jsx, Commitments.jsx) even though the routes derive the real
 // identity from the session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   if (res.status === 204) return null
   const body = await res.json().catch(() => ({}))
@@ -18,14 +20,14 @@ export async function getCommitments(_userId, { status = 'active' } = {}) {
   // param explicitly so `{ status: null }` (used by Commitments.jsx to list
   // everything) maps onto that "empty means no filter" contract.
   const params = new URLSearchParams({ status: status ?? '' })
-  const res = await fetch(`/api/commitments?${params.toString()}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/commitments?${params.toString()}`, { credentials: 'include' })
   const data = await parseJsonOrThrow(res)
   return data ?? []
 }
 
 export async function upsertCommitment(_userId, commitment) {
   if (commitment?.id) {
-    const res = await fetch(`/api/commitments/${commitment.id}`, {
+    const res = await apiFetch(`/api/commitments/${commitment.id}`, {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
@@ -34,7 +36,7 @@ export async function upsertCommitment(_userId, commitment) {
     return parseJsonOrThrow(res)
   }
 
-  const res = await fetch('/api/commitments', {
+  const res = await apiFetch('/api/commitments', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -44,7 +46,7 @@ export async function upsertCommitment(_userId, commitment) {
 }
 
 export async function deleteCommitment(id) {
-  const res = await fetch(`/api/commitments/${id}`, {
+  const res = await apiFetch(`/api/commitments/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   })

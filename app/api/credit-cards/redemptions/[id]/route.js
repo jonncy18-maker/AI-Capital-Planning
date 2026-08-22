@@ -1,11 +1,11 @@
 import { getNeonSql } from '../../../../../src/lib/neon/client.js'
-import { auth } from '../../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/creditCards.js#deletePointRedemption, hardened: the
 // source only filters by id. WHERE user_id = ${userId} is the authorization
 // check — a user can never delete a redemption they don't own.
 export async function DELETE(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

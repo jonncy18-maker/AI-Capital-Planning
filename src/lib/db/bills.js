@@ -5,6 +5,8 @@
 // kept for signature compatibility with existing callers even though the
 // routes derive the real identity from the session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -20,12 +22,12 @@ async function parseNoContentOrThrow(res) {
 // ─── Accounts ────────────────────────────────────────────────────────────────
 
 export async function getAccounts(_userId) {
-  const res = await fetch('/api/accounts', { credentials: 'include' })
+  const res = await apiFetch('/api/accounts', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function upsertAccount(_userId, account) {
-  const res = await fetch('/api/accounts', {
+  const res = await apiFetch('/api/accounts', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -35,7 +37,7 @@ export async function upsertAccount(_userId, account) {
 }
 
 export async function deleteAccount(id) {
-  const res = await fetch(`/api/accounts/${id}`, {
+  const res = await apiFetch(`/api/accounts/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -45,12 +47,12 @@ export async function deleteAccount(id) {
 // ─── Bills ───────────────────────────────────────────────────────────────────
 
 export async function getBills(_userId) {
-  const res = await fetch('/api/bills', { credentials: 'include' })
+  const res = await apiFetch('/api/bills', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function upsertBill(_userId, bill) {
-  const res = await fetch('/api/bills', {
+  const res = await apiFetch('/api/bills', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -60,7 +62,7 @@ export async function upsertBill(_userId, bill) {
 }
 
 export async function deleteBill(id) {
-  const res = await fetch(`/api/bills/${id}`, {
+  const res = await apiFetch(`/api/bills/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -71,24 +73,24 @@ export async function deleteBill(id) {
 
 export async function getBillAmounts(_userId, year, month) {
   const params = new URLSearchParams({ year: String(year), month: String(month) })
-  const res = await fetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function getBillAmountsForBill(billId) {
   const params = new URLSearchParams({ billId })
-  const res = await fetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function getBillAmountsRange(_userId, startYear, endYear) {
   const params = new URLSearchParams({ startYear: String(startYear), endYear: String(endYear) })
-  const res = await fetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/bill-amounts?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function upsertBillAmount(_userId, billId, year, month, amount, notes = null) {
-  const res = await fetch('/api/bill-amounts', {
+  const res = await apiFetch('/api/bill-amounts', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -98,7 +100,7 @@ export async function upsertBillAmount(_userId, billId, year, month, amount, not
 }
 
 export async function deleteBillAmount(billId, year, month) {
-  const res = await fetch(`/api/bill-amounts/${billId}/${year}/${month}`, {
+  const res = await apiFetch(`/api/bill-amounts/${billId}/${year}/${month}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -109,12 +111,12 @@ export async function deleteBillAmount(billId, year, month) {
 
 export async function getAccountBalances(_userId, year, month) {
   const params = new URLSearchParams({ year: String(year), month: String(month) })
-  const res = await fetch(`/api/account-balances?${params}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/account-balances?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function upsertAccountBalance(_userId, accountId, year, month, periodHalf, balance) {
-  const res = await fetch('/api/account-balances', {
+  const res = await apiFetch('/api/account-balances', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -135,7 +137,7 @@ export async function getForecastAmountsForBills(_userId, year, month, bills) {
   const linkedBills = bills.filter(b => b.forecast_category_id)
   if (linkedBills.length === 0) return {}
 
-  const res = await fetch('/api/bills/forecast-amounts', {
+  const res = await apiFetch('/api/bills/forecast-amounts', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

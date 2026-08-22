@@ -1,12 +1,12 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/creditCards.js#deleteCreditCard, hardened: the source
 // only filters by id (relies on RLS). WHERE user_id = ${userId} is the
 // authorization check here — a user can never delete a card they don't own,
 // even by guessing an id.
 export async function DELETE(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

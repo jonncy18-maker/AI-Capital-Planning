@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/transactions.js#buildDedupKey exactly. Duplicated here
 // (rather than imported) so this server route has no dependency on the
@@ -12,7 +12,7 @@ function buildDedupKey({ date, merchant, amount, account }) {
 // Mirrors src/lib/db/transactions.js#getTransactions: general-purpose
 // filtered fetch, newest first, capped by limit (default 500).
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -55,7 +55,7 @@ export async function GET(request) {
 // directly. Batches of 500 via jsonb_to_recordset to match the source
 // file's batching and avoid oversized statements.
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
