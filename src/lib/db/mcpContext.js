@@ -16,6 +16,14 @@ const mcpAuthContext = new AsyncLocalStorage()
 
 function getAppBaseUrl() {
   if (process.env.APP_BASE_URL) return process.env.APP_BASE_URL
+  // VERCEL_URL is the per-deployment hostname, which sits behind Vercel
+  // Authentication (SSO protection) whenever it's enabled for anything but
+  // custom domains — exactly this project's setting. A self-fetch to that
+  // URL gets bounced by Vercel's own auth wall before it ever reaches this
+  // app, silently producing empty-looking data. VERCEL_PROJECT_PRODUCTION_URL
+  // is the assigned production domain (here, the exempt ai-capital-planning
+  // .vercel.app alias) and isn't behind that wall.
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
   return 'http://localhost:3000'
 }

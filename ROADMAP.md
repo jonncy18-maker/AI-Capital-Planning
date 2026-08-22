@@ -12,7 +12,46 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-22 (MCP connector — Claude Code can now read/write this app directly)
+**Last updated:** 2026-08-22 (MCP connector — fixed a Vercel SSO wall silently blanking read results)
+
+- **First live end-to-end test, found and fixed a real bug (2026-08-22):**
+  token minted (`personal_access_tokens`), connector added in Claude Code
+  (`claude mcp add`, confirmed `✔ Connected`), then a real question —
+  "what bills do I have set up?" — came back "1 bill, all fields empty."
+  The account actually has 20 real bills; this was the MCP route's own
+  self-fetch failing, not a hallucination.
+  - **Root cause:** this project has Vercel Authentication (SSO protection)
+    enabled for `all_except_custom_domains`. `getAppBaseUrl()`
+    (`src/lib/db/mcpContext.js`) fell back to `VERCEL_URL` — the
+    per-*deployment* hostname, which sits behind that SSO wall — instead of
+    the exempt `ai-capital-planning.vercel.app` alias you actually browse
+    to. The self-fetch to `/api/bills` got bounced by Vercel's own auth
+    page before reaching the app; the response wasn't valid JSON, and
+    `parseJsonOrThrow`'s `.catch(() => ({}))` (in every `src/lib/db/*.js`
+    file, pre-existing, not part of this feature) silently turned that
+    failure into `{}` — which `lookup_data` then wrapped as `[{}]`, i.e.
+    exactly "1 row, everything empty."
+  - **Fix:** `getAppBaseUrl()` now prefers `VERCEL_PROJECT_PRODUCTION_URL`
+    (Vercel's stable production-domain env var — resolves to the exempt
+    alias) ahead of `VERCEL_URL`, with `APP_BASE_URL` still available as an
+    explicit override. Zero config needed on Vercel's side — both env vars
+    are already provided automatically. Confirmed the resolution order by
+    hand in a Node harness with both variables set/unset.
+  - **Deliberately not touched:** the SSO protection setting itself — that
+    protects preview deployments from public access and has nothing to do
+    with this bug; disabling it wasn't the fix and wasn't this session's
+    call to make.
+  - **Confirmed working separately:** `delete_bill` (and by extension every
+    tool using `resolveByName`) can't target a row with a blank/empty
+    `name` — not a bug introduced here, a pre-existing edge case the live
+    test happened to surface. No such row actually exists in production
+    (verified directly via SQL), so nothing to clean up.
+  - Verified: `next build --webpack` clean, lint clean (same pre-existing
+    `no-undef: process` gap on server files). **Still needs a second live
+    round** — re-ask the same question through the connector once this
+    redeploys, to confirm real bill data comes back this time.
+
+**Last updated (previous):** 2026-08-22 (MCP connector — Claude Code can now read/write this app directly)
 
 - **Remote MCP server for Claude Code (2026-08-22):** approved from an
   architecture writeup (Phase 1) before any code — three decisions locked in
