@@ -182,6 +182,27 @@ export async function confirmPendingActions({ userId, pending, context, yearTxns
   })
 }
 
+// The user typed a correction instead of confirming/cancelling a pending
+// write (e.g. "actually make that $500, not $300"). Every paused tool_use
+// block needs a tool_result before the conversation can continue, so this
+// resolves them as declined-with-feedback and folds the user's new message
+// into the same turn, then re-enters the loop so the model can propose a
+// revised change informed by both.
+export async function reviseWithFeedback({ userId, pending, content, context, yearTxns, activeModule, onStatus }) {
+  const ctx = buildContext({ userId, context, activeModule })
+  const { messagesWithAI, writeBlocks, heldResults, systemExtra } = pending
+  const feedback = Array.isArray(content) ? content : [{ type: 'text', text: content }]
+  const results = [
+    ...(heldResults ?? []),
+    ...writeBlocks.map(b => toolResult(b.id, { ok: false, error: 'Not confirmed — the user sent a correction instead. See their message.' }, true)),
+  ]
+  const messages = [...messagesWithAI, { role: 'user', content: [...results, ...feedback] }]
+
+  return runLoop({
+    messages, ctx, systemExtra, yearTxns, onStatus, created: [], actions: [], seedResults: null,
+  })
+}
+
 // Tell the model the writes were declined and get a short acknowledgement.
 // No tools on this call, so it cannot immediately propose the same write again.
 export async function cancelPendingActions({ pending, context, yearTxns }) {

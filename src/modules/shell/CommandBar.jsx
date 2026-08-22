@@ -217,10 +217,11 @@ export default function CommandBar({
     setOpen(false)
   }
 
+  const fullScreen = maximized && !mobile
   const popupWidth = mobile
     ? 'calc(100vw - 36px)'
-    : maximized ? 'min(760px, calc(100vw - 80px))' : '400px'
-  const popupHeight = maximized ? 'calc(100dvh - 100px)' : '520px'
+    : fullScreen ? '100vw' : '400px'
+  const popupHeight = fullScreen ? '100dvh' : '520px'
 
   return (
     <>
@@ -290,19 +291,19 @@ export default function CommandBar({
             onDrop={handleDrop}
             style={{
             position: 'fixed',
-            right: '18px',
-            bottom: '82px',
+            right: fullScreen ? 0 : '18px',
+            bottom: fullScreen ? 0 : '82px',
             zIndex: 199,
             width: popupWidth,
             height: popupHeight,
-            maxHeight: 'calc(100dvh - 100px)',
+            maxHeight: fullScreen ? '100dvh' : 'calc(100dvh - 100px)',
             transition: 'width 0.2s ease, height 0.2s ease',
             display: 'flex',
             flexDirection: 'column',
             background: 'var(--bg-card)',
-            border: '1px solid var(--bd)',
-            borderRadius: '16px',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.22)',
+            border: fullScreen ? 'none' : '1px solid var(--bd)',
+            borderRadius: fullScreen ? 0 : '16px',
+            boxShadow: fullScreen ? 'none' : '0 8px 40px rgba(0,0,0,0.22)',
             overflow: 'hidden',
           }}>
             {dragOver && (
@@ -369,7 +370,7 @@ export default function CommandBar({
                 {!mobile && (
                   <button
                     onClick={() => setMaximized(m => !m)}
-                    title={maximized ? 'Restore' : 'Maximize'}
+                    title={maximized ? 'Exit full screen' : 'Full screen'}
                     style={{
                       background: 'none',
                       border: '1px solid var(--bd)',
@@ -525,7 +526,7 @@ export default function CommandBar({
                 />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={loading || hasPending}
+                  disabled={loading}
                   title="Attach a file"
                   style={{
                     flexShrink: 0,
@@ -539,7 +540,7 @@ export default function CommandBar({
                     borderRadius: '7px',
                     color: 'var(--accent)',
                     fontSize: '13px',
-                    cursor: loading || hasPending ? 'default' : 'pointer',
+                    cursor: loading ? 'default' : 'pointer',
                   }}
                 >📎</button>
                 <input
@@ -547,8 +548,8 @@ export default function CommandBar({
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !loading) submit() }}
-                  placeholder={ph}
-                  disabled={loading || hasPending}
+                  placeholder={hasPending ? 'Or type a correction instead of confirming…' : ph}
+                  disabled={loading}
                   style={{
                     flex: 1,
                     minWidth: 0,
@@ -562,7 +563,7 @@ export default function CommandBar({
                 />
                 <button
                   onClick={submit}
-                  disabled={loading || hasPending || (!input.trim() && !stagedFile)}
+                  disabled={loading || (!input.trim() && !stagedFile)}
                   style={{
                     flexShrink: 0,
                     background: (input.trim() || stagedFile) && !loading ? 'var(--accent)' : 'transparent',
