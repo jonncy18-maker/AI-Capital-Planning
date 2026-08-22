@@ -10,7 +10,7 @@ import { parseBudgetCSV } from '../src/lib/csv/budgetParser.js'
 import { importCategoryMappings } from '../src/lib/db/budgetCategories.js'
 import { useTheme } from '../src/lib/theme/useTheme.js'
 import { loadAIContext, summarizeContext } from '../src/lib/ai/contextLoader.js'
-import { runAssistant, confirmPendingActions, cancelPendingActions } from '../src/lib/ai/toolAgent.js'
+import { runAssistant, confirmPendingActions, cancelPendingActions, reviseWithFeedback } from '../src/lib/ai/toolAgent.js'
 import { buildUserContent } from '../src/lib/ai/attachments.js'
 import { executeTool } from '../src/lib/ai/tools/index.js'
 import { getActionLog, recordActions, markUndone, clearActionLog } from '../src/lib/ai/actionLog.js'
@@ -179,6 +179,11 @@ export default function AppRoot({ children }) {
   }, [user?.id, aiContext?.thisYear, dataNonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleAiSubmit(prompt, file) {
+    // A confirmation card is already up — the user typed a correction instead
+    // of clicking Confirm/Cancel. Route that as feedback on the pending write
+    // rather than starting a fresh top-level turn.
+    if (pendingActions) return handleReviseWhilePending(prompt, file)
+
     // Build history from completed turns, then run the agent (tool-enabled, so it
     // can actually create a scenario rather than only describing it).
     const history = conversation
@@ -234,6 +239,48 @@ export default function AppRoot({ children }) {
     }
 
     setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
+  }
+
+  // The user typed a correction instead of confirming the pending card.
+  // Nothing was saved, so this drops the stale card's Confirm/Cancel buttons
+  // (they'd otherwise still be clickable but now reference cleared state),
+  // then feeds the correction back to the model as feedback on that turn.
+  async function handleReviseWhilePending(prompt, file) {
+    const pending = pendingActions
+    if (!pending) return
+    const trimmed = (prompt || '').trim()
+    const content = file ? buildUserContent(trimmed, file) : (trimmed || 'Let me adjust that.')
+
+    setPendingActions(null)
+    setAiLoading(true)
+    setConversation(prev => {
+      const last = prev[prev.length - 1]
+      const withoutPendingCard = last?.pending
+        ? [...prev.slice(0, -1), { ...last, status: 'ok', pending: null }]
+        : prev
+      return [
+        ...withoutPendingCard,
+        { role: 'user', content, attachment: file ? { name: file.name, kind: file.kind } : null },
+        { role: 'assistant', content: '', status: 'loading' },
+      ]
+    })
+
+    try {
+      const res = await reviseWithFeedback({
+        userId: user.id,
+        pending,
+        content,
+        context: aiContext,
+        yearTxns,
+        activeModule: current.short,
+        onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
+      })
+      applyAgentResult(res)
+    } catch (e) {
+      setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
+    } finally {
+      setAiLoading(false)
+    }
   }
 
   async function handleConfirmActions() {

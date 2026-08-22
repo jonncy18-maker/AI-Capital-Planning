@@ -12,7 +12,39 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-22 (Command bar file upload — added Word/Excel/text/Markdown support)
+**Last updated:** 2026-08-22 (Command bar — correct a pending confirmation, full-screen toggle)
+
+- **Correct a pending write instead of only Confirm/Cancel (2026-08-22):** the
+  input row was fully disabled while a confirmation card was up, so a mistake
+  in a proposed scenario/write meant Cancel-and-retype-the-whole-thing. The
+  input (and file attach) now stays live during a pending confirmation;
+  submitting text there is treated as feedback on that pending write rather
+  than a fresh top-level question.
+  - `toolAgent.js#reviseWithFeedback` (new): every paused `tool_use` block
+    needs a `tool_result` before the conversation can continue, so this
+    resolves the pending write(s) as declined-with-feedback (same shape as
+    `cancelPendingActions`) and folds the user's correction into the *same*
+    user turn, then re-enters the loop — the model sees both in one go and
+    can propose a revised change.
+  - `AppRoot.jsx#handleReviseWhilePending` — routes through this path instead
+    of `handleAiSubmit`'s normal history-building whenever `pendingActions`
+    is set; also strips the stale card's `pending` field from the prior
+    conversation turn (its Confirm/Cancel buttons would otherwise still
+    render but reference cleared state).
+  - `CommandBar.jsx` — dropped `hasPending` from the input/attach/Ask
+    `disabled` checks (kept `loading`), swapped the placeholder to "Or type a
+    correction instead of confirming…" while a card is up.
+- **Full-screen toggle for the assistant popup (2026-08-22):** the existing
+  ⊞ button only widened the popup to 760px with margins on every side. On
+  desktop it now goes edge-to-edge (`100vw`/`100dvh`, no border/radius/shadow)
+  — mobile is unaffected, since its popup is already near-fullwidth by
+  default. Button title updated to "Full screen" / "Exit full screen".
+- Verified: `next build --webpack` clean, lint clean (same pre-existing
+  `CommandBar.jsx` error at the loading-popup effect, unrelated to this
+  change). **Visually unverified in the browser** — same outstanding item as
+  the file-upload work above.
+
+**Last updated (previous):** 2026-08-22 (Command bar file upload — added Word/Excel/text/Markdown support)
 
 - **File upload extended to Word, Excel, text, and Markdown (2026-08-22, same
   day follow-up):** the initial ship only accepted images and PDFs — the two
