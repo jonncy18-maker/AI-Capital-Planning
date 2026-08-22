@@ -12,7 +12,52 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-22 (MCP connector — fixed a Vercel SSO wall silently blanking read results)
+**Last updated:** 2026-08-23 (MCP connector phase 2 — OAuth for claude.ai / Cowork / Claude Code Remote)
+
+- **MCP OAuth shipped, same night phase 1's bug got fixed (2026-08-23):**
+  discovered live — trying to add the connector from Claude Code Remote (the
+  cloud icon, confirmed same restriction applies to claude.ai chat and
+  Cowork) failed with "Couldn't register with AI Capital Planning's sign-in
+  service." Confirmed by testing that none of those three share Claude
+  Code's local CLI config, and that claude.ai's custom-connector flow
+  requires real OAuth — no plain-header option the way the CLI has. That
+  was exactly the phase 2 scope deferred when phase 1 shipped; approved to
+  build it (three decisions, all per my recommendation: keep an explicit
+  consent screen even though it's single-user, no refresh tokens — mint a
+  non-expiring token like the existing script does, and implement Dynamic
+  Client Registration so claude.ai self-registers instead of a hand-entered
+  Client ID). Full design in `ARCHITECTURE.md` §5.2.3.
+  - **New:** `app/api/mcp/{register,authorize,token}/route.js`,
+    `app/.well-known/oauth-{authorization-server,protected-resource}/route.js`,
+    `db/migrations/022_oauth_clients_and_codes.sql` (applied directly to the
+    live `dev` branch, same as 021) — two tables, `oauth_clients` and
+    `oauth_authorization_codes`.
+  - **The reuse paid off exactly as designed:** an OAuth-issued access
+    token is just another row in `personal_access_tokens`, hashed the same
+    way `scripts/create-mcp-token.js` does it. `getSessionOrToken()`, every
+    `app/api/**` route, and the MCP route's token check needed **zero**
+    changes — the whole phase 2 build is additive, no changes to phase 1's
+    files except the MCP route's 401 response gaining a `WWW-Authenticate`
+    discovery header.
+  - **One small addition to existing app code:** `AppRoot.jsx` picks up a
+    `?mcp_authorize=` query param once login completes and resumes the
+    OAuth flow — needed because the authorize route can't redirect straight
+    back to itself through this app's SPA-style login (there's no separate
+    `/login` route to bounce to and from).
+  - Verified: `next build --webpack` clean (new dot-prefixed `.well-known`
+    route folders built fine), lint clean on every new file, and the
+    highest-risk logic exercised directly in a Node harness without a live
+    DB: PKCE challenge/verifier math (correct verifier passes, wrong one is
+    rejected), both new routes' pre-DB input validation (missing
+    `redirect_uris`, unsupported `grant_type`, missing token params all
+    40x before ever calling `getNeonSql()`), both discovery documents
+    resolve correct absolute URLs from a real request origin, and the MCP
+    route's 401 now carries the right `WWW-Authenticate` header. **Not yet
+    verified:** an actual claude.ai "Add custom connector" attempt against
+    the deployed endpoints — that's the next live test once this ships,
+    exactly like phase 1's first real run surfaced the SSO bug.
+
+**Last updated (previous):** 2026-08-22 (MCP connector — fixed a Vercel SSO wall silently blanking read results)
 
 - **First live end-to-end test, found and fixed a real bug (2026-08-22):**
   token minted (`personal_access_tokens`), connector added in Claude Code

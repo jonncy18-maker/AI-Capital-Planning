@@ -56,6 +56,17 @@ export default function AppRoot({ children }) {
   const [pendingImport, setPendingImport] = useState(null)
   // pendingImport = { csvRaw, csvName, profileData }
 
+  // Resume an in-progress MCP OAuth consent flow after login. The authorize
+  // route (app/api/mcp/authorize) bounces an unauthenticated request here
+  // with ?mcp_authorize=<encoded original query>, since login itself lives
+  // in this SPA rather than a separate route it could redirect back to.
+  useEffect(() => {
+    if (!session) return
+    const params = new URLSearchParams(window.location.search)
+    const resume = params.get('mcp_authorize')
+    if (resume) window.location.href = `/api/mcp/authorize?${resume}`
+  }, [session])
+
   // Load profile from DB when user session is established
   useEffect(() => {
     if (!user) { setProfile(null); return }

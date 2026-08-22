@@ -74,7 +74,15 @@ function buildServer(auth) {
 async function handle(request) {
   const auth = await resolveToken(request)
   if (!auth) {
-    return Response.json({ error: 'Missing or invalid bearer token.' }, { status: 401 })
+    // WWW-Authenticate points an unauthenticated client (e.g. claude.ai's
+    // "Add custom connector" flow) at the protected-resource metadata, which
+    // in turn points at the authorization server metadata — the discovery
+    // chain the OAuth flow (app/api/mcp/{authorize,token,register}) relies on.
+    const resourceMetadataUrl = `${new URL(request.url).origin}/.well-known/oauth-protected-resource`
+    return Response.json(
+      { error: 'Missing or invalid bearer token.' },
+      { status: 401, headers: { 'WWW-Authenticate': `Bearer resource_metadata="${resourceMetadataUrl}"` } }
+    )
   }
 
   // Fresh server + transport per request — stateless mode, no sticky session
