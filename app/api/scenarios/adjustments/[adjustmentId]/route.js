@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../../src/lib/neon/client.js'
-import { auth } from '../../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../../src/lib/neon/apiAuth.js'
 
 // Flatter sibling of app/api/scenarios/[id]/adjustments/[adjustmentId]/route.js
 // DELETE, for src/lib/db/scenarios.js#deleteAdjustment(adjustmentId), whose
@@ -8,7 +8,7 @@ import { auth } from '../../../../../src/lib/neon/authServer.js'
 // (see app/api/scenarios/[id]/adjustments/route.js), so ownership can be
 // verified directly without a join through scenarios.
 export async function DELETE(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

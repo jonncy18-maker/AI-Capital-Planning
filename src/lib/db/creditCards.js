@@ -4,6 +4,8 @@
 // existing callers even though the routes derive the real identity from the
 // session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -19,13 +21,13 @@ async function noContentOrThrow(res) {
 // ─── Credit Cards ─────────────────────────────────────────────────────────────
 
 export async function getCreditCards(_userId) {
-  const res = await fetch('/api/credit-cards', { credentials: 'include' })
+  const res = await apiFetch('/api/credit-cards', { credentials: 'include' })
   const data = await parseJsonOrThrow(res)
   return data ?? []
 }
 
 export async function upsertCreditCard(_userId, card) {
-  const res = await fetch('/api/credit-cards', {
+  const res = await apiFetch('/api/credit-cards', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -35,7 +37,7 @@ export async function upsertCreditCard(_userId, card) {
 }
 
 export async function deleteCreditCard(id) {
-  const res = await fetch(`/api/credit-cards/${id}`, {
+  const res = await apiFetch(`/api/credit-cards/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -45,13 +47,13 @@ export async function deleteCreditCard(id) {
 // ─── Earn Rates ───────────────────────────────────────────────────────────────
 
 export async function getEarnRates(_userId) {
-  const res = await fetch('/api/credit-cards/earn-rates', { credentials: 'include' })
+  const res = await apiFetch('/api/credit-cards/earn-rates', { credentials: 'include' })
   const data = await parseJsonOrThrow(res)
   return data ?? []
 }
 
 export async function upsertEarnRate(_userId, cardId, ccCategory, earnRate) {
-  const res = await fetch('/api/credit-cards/earn-rates', {
+  const res = await apiFetch('/api/credit-cards/earn-rates', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -62,7 +64,7 @@ export async function upsertEarnRate(_userId, cardId, ccCategory, earnRate) {
 
 export async function deleteEarnRate(cardId, ccCategory) {
   const params = new URLSearchParams({ cardId, ccCategory })
-  const res = await fetch(`/api/credit-cards/earn-rates?${params.toString()}`, {
+  const res = await apiFetch(`/api/credit-cards/earn-rates?${params.toString()}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -84,12 +86,12 @@ export function buildEarnRateMap(earnRates) {
 
 // Returns the latest snapshot per card as a map: { [cardId]: { balance, as_of_date } }
 export async function getPointsBalances(_userId) {
-  const res = await fetch('/api/credit-cards/points', { credentials: 'include' })
+  const res = await apiFetch('/api/credit-cards/points', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function upsertPointsBalance(_userId, cardId, balance, asOfDate) {
-  const res = await fetch('/api/credit-cards/points', {
+  const res = await apiFetch('/api/credit-cards/points', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -102,7 +104,7 @@ export async function upsertPointsBalance(_userId, cardId, balance, asOfDate) {
 
 export async function getPointRedemptions(_userId, year) {
   const params = new URLSearchParams({ year: String(year) })
-  const res = await fetch(`/api/credit-cards/redemptions?${params.toString()}`, {
+  const res = await apiFetch(`/api/credit-cards/redemptions?${params.toString()}`, {
     credentials: 'include',
   })
   const data = await parseJsonOrThrow(res)
@@ -110,7 +112,7 @@ export async function getPointRedemptions(_userId, year) {
 }
 
 export async function upsertPointRedemption(_userId, redemption) {
-  const res = await fetch('/api/credit-cards/redemptions', {
+  const res = await apiFetch('/api/credit-cards/redemptions', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -120,7 +122,7 @@ export async function upsertPointRedemption(_userId, redemption) {
 }
 
 export async function deletePointRedemption(id) {
-  const res = await fetch(`/api/credit-cards/redemptions/${id}`, {
+  const res = await apiFetch(`/api/credit-cards/redemptions/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -132,7 +134,7 @@ export async function deletePointRedemption(id) {
 // Returns distinct account names from transactions with their transaction counts,
 // for the AI to classify as credit cards. Caller passes result to parseCreditCardsFromTransactions.
 export async function getDistinctTransactionAccounts(_userId) {
-  const res = await fetch('/api/credit-cards/transaction-accounts', { credentials: 'include' })
+  const res = await apiFetch('/api/credit-cards/transaction-accounts', { credentials: 'include' })
   const data = await parseJsonOrThrow(res)
   return data ?? []
 }
@@ -140,12 +142,12 @@ export async function getDistinctTransactionAccounts(_userId) {
 // ─── CC Settings (from user_profiles) ────────────────────────────────────────
 
 export async function getCCSettings(_userId) {
-  const res = await fetch('/api/credit-cards/settings', { credentials: 'include' })
+  const res = await apiFetch('/api/credit-cards/settings', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function updateCCSettings(_userId, { coveragePct, optimizationPct }) {
-  const res = await fetch('/api/credit-cards/settings', {
+  const res = await apiFetch('/api/credit-cards/settings', {
     method: 'PUT',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

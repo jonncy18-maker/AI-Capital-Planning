@@ -5,6 +5,8 @@
 // scenarioAgent.js, contextLoader.js) even though each route derives the
 // real identity from the session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -12,12 +14,12 @@ async function parseJsonOrThrow(res) {
 }
 
 export async function getScenarios(_userId) {
-  const res = await fetch('/api/scenarios', { credentials: 'include' })
+  const res = await apiFetch('/api/scenarios', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function createScenario(_userId, { name, description = '', state = 'modeled' }) {
-  const res = await fetch('/api/scenarios', {
+  const res = await apiFetch('/api/scenarios', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -27,7 +29,7 @@ export async function createScenario(_userId, { name, description = '', state = 
 }
 
 export async function updateScenario(_userId, scenarioId, updates) {
-  const res = await fetch(`/api/scenarios/${scenarioId}`, {
+  const res = await apiFetch(`/api/scenarios/${scenarioId}`, {
     method: 'PATCH',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -37,7 +39,7 @@ export async function updateScenario(_userId, scenarioId, updates) {
 }
 
 export async function deleteScenario(_userId, scenarioId) {
-  const res = await fetch(`/api/scenarios/${scenarioId}`, {
+  const res = await apiFetch(`/api/scenarios/${scenarioId}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -48,7 +50,7 @@ export async function deleteScenario(_userId, scenarioId) {
 }
 
 export async function promoteToCommitted(_userId, scenarioId) {
-  const res = await fetch(`/api/scenarios/${scenarioId}`, {
+  const res = await apiFetch(`/api/scenarios/${scenarioId}`, {
     method: 'PATCH',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -58,7 +60,7 @@ export async function promoteToCommitted(_userId, scenarioId) {
 }
 
 export async function promoteToModeled(_userId, scenarioId) {
-  const res = await fetch(`/api/scenarios/${scenarioId}`, {
+  const res = await apiFetch(`/api/scenarios/${scenarioId}`, {
     method: 'PATCH',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -68,12 +70,12 @@ export async function promoteToModeled(_userId, scenarioId) {
 }
 
 export async function getAdjustments(_userId, scenarioId) {
-  const res = await fetch(`/api/scenarios/${scenarioId}/adjustments`, { credentials: 'include' })
+  const res = await apiFetch(`/api/scenarios/${scenarioId}/adjustments`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function addAdjustment(_userId, scenarioId, { category_id, month, year, delta_amount, label = '' }) {
-  const res = await fetch(`/api/scenarios/${scenarioId}/adjustments`, {
+  const res = await apiFetch(`/api/scenarios/${scenarioId}/adjustments`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -83,7 +85,7 @@ export async function addAdjustment(_userId, scenarioId, { category_id, month, y
 }
 
 export async function deleteAdjustment(adjustmentId) {
-  const res = await fetch(`/api/scenarios/adjustments/${adjustmentId}`, {
+  const res = await apiFetch(`/api/scenarios/adjustments/${adjustmentId}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -94,7 +96,7 @@ export async function deleteAdjustment(adjustmentId) {
 }
 
 export async function cloneScenario(_userId, scenarioId, { name, description = '' }) {
-  const res = await fetch(`/api/scenarios/${scenarioId}/clone`, {
+  const res = await apiFetch(`/api/scenarios/${scenarioId}/clone`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

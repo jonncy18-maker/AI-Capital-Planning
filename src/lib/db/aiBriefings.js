@@ -3,6 +3,8 @@
 // `userId` params are kept for signature compatibility with existing callers
 // even though the route derives the real identity from the session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -12,12 +14,12 @@ async function parseJsonOrThrow(res) {
 // Most recent cached briefing for a module context (or dashboard overview).
 export async function getLatestBriefing(_userId, moduleContext = 'dashboard') {
   const params = new URLSearchParams({ module_context: moduleContext })
-  const res = await fetch(`/api/ai-briefings?${params.toString()}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/ai-briefings?${params.toString()}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function saveBriefing(_userId, { narrative, context_summary, module_context = 'dashboard' }) {
-  const res = await fetch('/api/ai-briefings', {
+  const res = await apiFetch('/api/ai-briefings', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

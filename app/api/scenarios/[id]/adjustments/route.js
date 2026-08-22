@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../../src/lib/neon/client.js'
-import { auth } from '../../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../../src/lib/neon/apiAuth.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/scenarios.js#getAdjustments/#addAdjustment return via the original
@@ -17,7 +17,7 @@ function shapeAdjustment(row) {
 }
 
 export async function GET(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -54,7 +54,7 @@ export async function GET(request, context) {
 }
 
 export async function POST(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

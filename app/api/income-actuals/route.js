@@ -1,10 +1,10 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // GET /api/income-actuals?startYear=&endYear=
 // Mirrors src/lib/db/income.js#getIncomeActualsRange.
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -38,7 +38,7 @@ export async function GET(request) {
 // Mirrors src/lib/db/income.js#upsertIncomeActual: upsert on the
 // (user_id, year, month) unique constraint, returns the resulting row.
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -85,7 +85,7 @@ export async function POST(request) {
 // than a nested /[id] route, consistent with how this route already
 // addresses records by year/month everywhere else.
 export async function DELETE(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

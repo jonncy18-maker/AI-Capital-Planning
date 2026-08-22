@@ -4,6 +4,8 @@
 // derives the real identity from the Neon Auth session cookie
 // (credentials: 'include').
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -11,7 +13,7 @@ async function parseJsonOrThrow(res) {
 }
 
 export async function getForecastOverrides(_userId, year) {
-  const res = await fetch(`/api/forecast-overrides?year=${encodeURIComponent(year)}`, {
+  const res = await apiFetch(`/api/forecast-overrides?year=${encodeURIComponent(year)}`, {
     credentials: 'include',
   })
   const data = await parseJsonOrThrow(res)
@@ -19,7 +21,7 @@ export async function getForecastOverrides(_userId, year) {
 }
 
 export async function upsertForecastOverride(_userId, { categoryId, year, month, amount, note }) {
-  const res = await fetch('/api/forecast-overrides', {
+  const res = await apiFetch('/api/forecast-overrides', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -34,7 +36,7 @@ export async function deleteForecastOverride(_userId, categoryId, year, month) {
     year: String(year),
     month: String(month),
   })
-  const res = await fetch(`/api/forecast-overrides?${params.toString()}`, {
+  const res = await apiFetch(`/api/forecast-overrides?${params.toString()}`, {
     method: 'DELETE',
     credentials: 'include',
   })

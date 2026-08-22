@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // GET /api/bill-amounts — three read modes on one route, disambiguated by
 // which query params are present (checked in this priority order):
@@ -9,7 +9,7 @@ import { auth } from '../../../src/lib/neon/authServer.js'
 // Neon has no default row cap, so modes 1 and 2 skip the source's manual
 // paging loop (a 1,000-row page limit would have required one).
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -84,7 +84,7 @@ export async function GET(request) {
 // and was added directly + documented in
 // db/migrations/018_neon_bills_unique_constraints.sql.
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/budgetLineItems.js#getBudgetLineItems/#insertBudgetLineItem
@@ -22,7 +22,7 @@ function shapeLineItem(row) {
 // default row cap, so a single joined query covers this function without the
 // source's manual paging loop (a 1,000-row page limit would have required one).
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -60,7 +60,7 @@ export async function GET(request) {
 //   2. { year, version, categoryId, month, amount, label } -> single insert
 //      (mirrors src/lib/db/budgetLineItems.js#insertBudgetLineItem)
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

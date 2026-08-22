@@ -6,6 +6,8 @@
 // contextLoader.js) even though the routes derive the real identity from the
 // session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -18,18 +20,18 @@ export async function getBudgetLineItems(_userId, { year } = {}) {
   const params = new URLSearchParams()
   if (year) params.set('year', year)
   const qs = params.toString()
-  const res = await fetch(`/api/budget-line-items${qs ? `?${qs}` : ''}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/budget-line-items${qs ? `?${qs}` : ''}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 export async function getBudgetYears(_userId) {
-  const res = await fetch('/api/budget-line-items/years', { credentials: 'include' })
+  const res = await apiFetch('/api/budget-line-items/years', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
 // Replace all budget_line_items for a given year+version with the supplied rows.
 export async function saveBudgetForYear(_userId, year, version = 'v1', items) {
-  const res = await fetch('/api/budget-line-items', {
+  const res = await apiFetch('/api/budget-line-items', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -42,7 +44,7 @@ export async function saveBudgetForYear(_userId, year, version = 'v1', items) {
 // the Forecast drill-down). Returns the inserted row with its category joined so
 // callers can fold it straight into their in-memory line-item list.
 export async function insertBudgetLineItem(_userId, { year, version = 'v1', categoryId, month, amount, label }) {
-  const res = await fetch('/api/budget-line-items', {
+  const res = await apiFetch('/api/budget-line-items', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -53,7 +55,7 @@ export async function insertBudgetLineItem(_userId, { year, version = 'v1', cate
 
 // Update a single line item's amount (for inline editing).
 export async function updateLineItemAmount(id, amount) {
-  const res = await fetch(`/api/budget-line-items/${id}`, {
+  const res = await apiFetch(`/api/budget-line-items/${id}`, {
     method: 'PATCH',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -63,7 +65,7 @@ export async function updateLineItemAmount(id, amount) {
 }
 
 export async function deleteLineItem(id) {
-  const res = await fetch(`/api/budget-line-items/${id}`, {
+  const res = await apiFetch(`/api/budget-line-items/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   })

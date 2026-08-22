@@ -1,9 +1,9 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/creditCards.js#getEarnRates.
-export async function GET() {
-  const { data: session } = await auth.getSession()
+export async function GET(request) {
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -25,7 +25,7 @@ export async function GET() {
 // (credit_card_earn_rates_card_id_cc_category_key — verified via pg_constraint,
 // see db/migrations/017_neon_missing_unique_constraints.sql).
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -71,7 +71,7 @@ export async function POST(request) {
 // column (verified via information_schema), so we filter directly on it —
 // the authorization boundary for this delete.
 export async function DELETE(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

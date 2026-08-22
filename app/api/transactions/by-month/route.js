@@ -1,12 +1,12 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // GET /api/transactions/by-month?from=&to=
 // Mirrors src/lib/db/transactions.js#getTransactionsByMonth: date-range
 // fetch for cash flow calendar aggregation, oldest first. Both bounds are
 // required (the source function's fromDate/toDate are required params).
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

@@ -1,11 +1,11 @@
 import { getNeonSql } from '../../../../../src/lib/neon/client.js'
-import { auth } from '../../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../../src/lib/neon/apiAuth.js'
 
 // GET /api/transactions/year/:year
 // Mirrors src/lib/db/transactions.js#getTransactionsForYear: full-calendar-
 // year expense actuals (amount < 0 only) for forecast actuals, oldest first.
 export async function GET(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

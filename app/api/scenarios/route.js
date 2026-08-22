@@ -1,10 +1,10 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 const ALLOWED_STATES = ['modeled', 'committed', 'idea']
 
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
@@ -24,7 +24,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

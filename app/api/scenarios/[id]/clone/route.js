@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../../src/lib/neon/client.js'
-import { auth } from '../../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../../src/lib/neon/apiAuth.js'
 
 // Mirrors src/lib/db/scenarios.js#cloneScenario: create a new scenario and
 // copy every adjustment from the source scenario onto it. Unlike the old
@@ -9,7 +9,7 @@ import { auth } from '../../../../../src/lib/neon/authServer.js'
 // atomic by construction (a lone Postgres statement) without needing to
 // thread a generated id back through a sql.transaction array.
 export async function POST(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

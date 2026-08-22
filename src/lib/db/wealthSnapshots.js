@@ -5,6 +5,8 @@
 // (Wealth.jsx, contextLoader.js) even though the routes derive the real
 // identity from the session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -12,7 +14,7 @@ async function parseJsonOrThrow(res) {
 }
 
 export async function getWealthSnapshots(_userId, limit = 24) {
-  const res = await fetch(`/api/wealth-snapshots?limit=${encodeURIComponent(limit)}`, {
+  const res = await apiFetch(`/api/wealth-snapshots?limit=${encodeURIComponent(limit)}`, {
     credentials: 'include',
   })
   const data = await parseJsonOrThrow(res)
@@ -20,7 +22,7 @@ export async function getWealthSnapshots(_userId, limit = 24) {
 }
 
 export async function getLatestWealthSnapshot(_userId) {
-  const res = await fetch('/api/wealth-snapshots?latest=true', { credentials: 'include' })
+  const res = await apiFetch('/api/wealth-snapshots?latest=true', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
@@ -33,7 +35,7 @@ export async function saveWealthSnapshot(_userId, {
   liabilities,
   notes,
 }) {
-  const res = await fetch('/api/wealth-snapshots', {
+  const res = await apiFetch('/api/wealth-snapshots', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -51,7 +53,7 @@ export async function saveWealthSnapshot(_userId, {
 }
 
 export async function deleteWealthSnapshot(id) {
-  const res = await fetch(`/api/wealth-snapshots/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/wealth-snapshots/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     credentials: 'include',
   })

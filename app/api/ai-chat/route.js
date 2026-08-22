@@ -1,4 +1,4 @@
-import { auth } from '../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 
 // Next.js port of db/functions/ai-chat (Deno edge function). Server-side
 // proxy to the Anthropic API — the ANTHROPIC_API_KEY secret lives only in this
@@ -58,7 +58,7 @@ async function resolveModel(family) {
 }
 
 export async function POST(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

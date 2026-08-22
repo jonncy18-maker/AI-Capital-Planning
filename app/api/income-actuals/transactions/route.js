@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
-import { auth } from '../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
 
 // GET /api/income-actuals/transactions?startDate=&endDate=
 // Mirrors src/lib/db/income.js#getIncomeTransactions: positive (income)
@@ -11,7 +11,7 @@ import { auth } from '../../../../src/lib/neon/authServer.js'
 // unnecessary here (a 1,000-row page limit would have required one) — same reasoning
 // already applied in the Wave 1 transactions/recent route.
 export async function GET(request) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

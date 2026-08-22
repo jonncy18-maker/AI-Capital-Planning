@@ -4,6 +4,8 @@
 // (ImportFlow.jsx, Settings.jsx) even though the route derives the real
 // identity from the session itself.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -11,7 +13,7 @@ async function parseJsonOrThrow(res) {
 }
 
 export async function logImport(_userId, { filename, totalRows, inserted, skipped, unmappedCount }) {
-  const res = await fetch('/api/import-logs', {
+  const res = await apiFetch('/api/import-logs', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -27,7 +29,7 @@ export async function logImport(_userId, { filename, totalRows, inserted, skippe
 }
 
 export async function getImportHistory(_userId) {
-  const res = await fetch('/api/import-logs', { credentials: 'include' })
+  const res = await apiFetch('/api/import-logs', { credentials: 'include' })
   const data = await parseJsonOrThrow(res)
   return data ?? []
 }

@@ -1,5 +1,5 @@
 import { getNeonSql } from '../../../../../../src/lib/neon/client.js'
-import { auth } from '../../../../../../src/lib/neon/authServer.js'
+import { getSessionOrToken } from '../../../../../../src/lib/neon/apiAuth.js'
 
 // DELETE /api/bill-amounts/:billId/:year/:month
 // Mirrors src/lib/db/bills.js#deleteBillAmount. Hardened: the source has no
@@ -7,7 +7,7 @@ import { auth } from '../../../../../../src/lib/neon/authServer.js'
 // delete only filters by bill_id/year/month) — we add an ownership check via
 // EXISTS against bills, consistent with the GET ?billId= hardening.
 export async function DELETE(request, context) {
-  const { data: session } = await auth.getSession()
+  const { data: session } = await getSessionOrToken(request)
   if (!session?.user?.id) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }

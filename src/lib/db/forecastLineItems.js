@@ -8,6 +8,8 @@
 // the budget and edited independently thereafter. Budget edits never flow into
 // the forecast, and forecast edits never touch the budget.
 
+import { apiFetch } from './apiClient.js'
+
 async function parseJsonOrThrow(res) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
@@ -15,7 +17,7 @@ async function parseJsonOrThrow(res) {
 }
 
 export async function getForecastLineItems(_userId, year) {
-  const res = await fetch(`/api/forecast-line-items?year=${encodeURIComponent(year)}`, {
+  const res = await apiFetch(`/api/forecast-line-items?year=${encodeURIComponent(year)}`, {
     credentials: 'include',
   })
   const data = await parseJsonOrThrow(res)
@@ -24,7 +26,7 @@ export async function getForecastLineItems(_userId, year) {
 
 // True when a forecast already exists for the year (i.e. it has been initialized).
 export async function hasForecastForYear(_userId, year) {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/forecast-line-items?year=${encodeURIComponent(year)}&hasForecast=true`,
     { credentials: 'include' }
   )
@@ -33,7 +35,7 @@ export async function hasForecastForYear(_userId, year) {
 }
 
 export async function insertForecastLineItem(_userId, { year, categoryId, month, amount, label, note }) {
-  const res = await fetch('/api/forecast-line-items', {
+  const res = await apiFetch('/api/forecast-line-items', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -55,7 +57,7 @@ export async function updateForecastLineItem(id, { amount, label, note }) {
   if (label !== undefined) patch.label = label
   if (note !== undefined) patch.note = note
 
-  const res = await fetch(`/api/forecast-line-items/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/forecast-line-items/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -65,7 +67,7 @@ export async function updateForecastLineItem(id, { amount, label, note }) {
 }
 
 export async function deleteForecastLineItem(id) {
-  const res = await fetch(`/api/forecast-line-items/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/forecast-line-items/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -79,7 +81,7 @@ export async function deleteForecastLineItem(id) {
 // time a user initializes the forecast (or when resetting it back to the budget).
 // Returns the freshly inserted forecast rows (with their category joined).
 export async function seedForecastFromBudget(_userId, year) {
-  const res = await fetch('/api/forecast-line-items/seed', {
+  const res = await apiFetch('/api/forecast-line-items/seed', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -91,7 +93,7 @@ export async function seedForecastFromBudget(_userId, year) {
 
 // Reset: wipe the year's forecast and re-seed it from the current budget.
 export async function resetForecastToBudget(_userId, year) {
-  const res = await fetch('/api/forecast-line-items/reset', {
+  const res = await apiFetch('/api/forecast-line-items/reset', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
@@ -105,7 +107,7 @@ export async function resetForecastToBudget(_userId, year) {
 export async function deleteForecastItemsByLabel(_userId, { year, categoryId, label }) {
   const params = new URLSearchParams({ year: String(year), categoryId })
   if (label != null) params.set('label', label)
-  const res = await fetch(`/api/forecast-line-items/by-label?${params.toString()}`, {
+  const res = await apiFetch(`/api/forecast-line-items/by-label?${params.toString()}`, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -116,7 +118,7 @@ export async function deleteForecastItemsByLabel(_userId, { year, categoryId, la
 // with a flat rate. Deletes existing rows in that range, then inserts new ones.
 // Returns the freshly inserted rows.
 export async function setForecastRate(_userId, { year, categoryId, label, rate, fromMonth }) {
-  const res = await fetch('/api/forecast-line-items/set-rate', {
+  const res = await apiFetch('/api/forecast-line-items/set-rate', {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },

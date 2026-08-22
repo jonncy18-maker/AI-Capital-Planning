@@ -12,7 +12,55 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-22 (Dashboard — current-month income no longer shows $0 before payday)
+**Last updated:** 2026-08-22 (MCP connector — Claude Code can now read/write this app directly)
+
+- **Remote MCP server for Claude Code (2026-08-22):** approved from an
+  architecture writeup (Phase 1) before any code — three decisions locked in
+  first: writes execute immediately on the connecting client's own tool
+  approval (no second in-app confirmation, since there's no browser to show
+  one to), one token gets full access matching the in-app assistant, and
+  claude.ai chat/Cowork are a deliberately deferred phase 2 since they
+  generally require the server to speak OAuth (a static bearer token is
+  enough for Claude Code's connector config). Full design is in
+  `ARCHITECTURE.md` §5.2.2.
+  - **New:** `app/api/mcp/route.js` (the MCP server, `@modelcontextprotocol/sdk`'s
+    `WebStandardStreamableHTTPServerTransport` — Web Standard `Request`/`Response`,
+    matches a Next.js route handler natively), `db/migrations/021_personal_access_tokens.sql`
+    (hash-only token storage, applied directly to the live `dev` branch — see
+    the `auth.users` note below), `src/lib/neon/apiAuth.js#getSessionOrToken()`,
+    `src/lib/db/apiClient.js` + `src/lib/db/mcpContext.js` (the fetch seam
+    split described in the architecture note), `scripts/create-mcp-token.js`.
+  - **Mechanical, repo-wide swap:** all 56 `app/api/**` routes now call
+    `getSessionOrToken(request)` instead of `auth.getSession()` directly —
+    scripted, not hand-edited, then verified with a full `next build` and a
+    lint pass confirming zero new errors (diffed against `git stash` to
+    separate pre-existing lint noise from anything this touched). Same
+    treatment for the 109 `fetch('/api/...')` call sites across all 17
+    `src/lib/db/*.js` files, now routed through `apiFetch()`.
+  - **A real discrepancy found along the way:** migration files from the
+    Supabase era (015 onward) still write `references auth.users(id)`, but
+    the live Neon database's actual FK target — confirmed via
+    `information_schema` on every existing table's `user_id` column — is
+    `neon_auth."user"(id)`. The live schema is correct; only the checked-in
+    migration *files* are stale (`auth.users` doesn't exist as a table at
+    all on the live database). `021_personal_access_tokens.sql` was written
+    and applied against the real target; the older files were left alone
+    (out of scope here) but this is worth a cleanup pass at some point so
+    the migration history stops lying about the live schema.
+  - **Verified:** `next build --webpack` clean end to end after both mechanical
+    passes; the MCP protocol layer itself (tool listing, JSON-RPC round-trip
+    over a real `Request`/`Response`, unauthenticated-request rejection, error
+    shape for an unknown tool call) exercised directly against the real
+    39-tool registry and the real transport in a Node harness — all 39 tools
+    list with correctly-shaped JSON schema, `initialize` returns a proper
+    SSE-framed response, a request with no bearer token 401s before ever
+    touching the database. **Not yet verified:** an actual token-authenticated
+    call reaching the live database end-to-end — that needs a real token
+    (`scripts/create-mcp-token.js`, run locally against the production
+    `DATABASE_URL`) and a Claude Code connector pointed at the deployed
+    `/api/mcp` URL, which is the next step once this deploys.
+
+**Last updated (previous):** 2026-08-22 (Dashboard — current-month income no longer shows $0 before payday)
 
 - **Income vs. Expenses widget: current month fell back to $0 instead of the
   forecast (2026-08-22):** the chart treated the whole current month as
