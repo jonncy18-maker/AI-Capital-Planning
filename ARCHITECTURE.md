@@ -503,9 +503,62 @@ ctx and skips `buildPreview()`/the pause-for-confirmation step entirely.
 Writes execute the moment the connecting Claude client's own tool-approval
 step lets the call through; there's no browser to render a second card to.
 
-**Not yet exposed:** claude.ai chat and Cowork (OAuth), and no way to mint or
-revoke a token from the Settings UI yet — `scripts/create-mcp-token.js` is a
-one-time local script against the production `DATABASE_URL`.
+**Not yet exposed:** no way to mint or revoke a bearer token from the
+Settings UI yet — `scripts/create-mcp-token.js` is a one-time local script
+against the production `DATABASE_URL`. (claude.ai chat/Cowork OAuth, the
+other item originally listed here, shipped — see §5.2.3.)
+
+#### 5.2.3 MCP OAuth — claude.ai / Cowork / Claude Code Remote (added 2026-08-23)
+
+Phase 2 of §5.2.2: claude.ai's own connector settings (used by chat, Cowork,
+and Claude Code Remote — confirmed by testing, since none of them share the
+local CLI's `~/.claude.json`) refused a plain bearer-token connector with
+"Couldn't register with AI Capital Planning's sign-in service" — they require
+a real OAuth 2.0 authorization-code + PKCE flow with working discovery
+metadata, not a header a human can paste in.
+
+**The whole point: this reuses §5.2.2's resource-server side unchanged.** An
+OAuth-issued access token is just another row in `personal_access_tokens` —
+minted by `/api/mcp/token` as a real random secret and inserted the same
+way `scripts/create-mcp-token.js` does it (hash only, `name` records which
+OAuth client it came from). `getSessionOrToken()`, every `app/api/**` route,
+and the MCP route's own token check needed zero changes.
+
+**Endpoints added** (all under `app/api/mcp/`, all new):
+- `register` — Dynamic Client Registration (RFC 7591). Public clients only
+  (no `client_secret`; PKCE is the sole client authentication), so claude.ai
+  self-registers instead of you hand-entering an OAuth Client ID. New table
+  `oauth_clients` (migration 022).
+- `authorize` — GET renders a plain server-rendered consent page ("Allow
+  &lt;client&gt; to access your data?") after checking the *session cookie*
+  directly via `auth.getSession()` — deliberately not `getSessionOrToken()`,
+  since this page is for a human in a browser, never a bearer token. An
+  unauthenticated visit bounces to `/?mcp_authorize=<encoded query>`;
+  `AppRoot.jsx` picks that param up once login completes and resumes the
+  flow — the one change to existing app code this phase needed, since login
+  itself lives in the SPA rather than a separate route the authorize
+  endpoint could redirect back to on its own. POST records the human's
+  Allow/Deny as a single-use, 5-minute authorization code (`oauth_authorization_codes`,
+  migration 022) tied to the PKCE `code_challenge`.
+- `token` — exchanges the code for an access token after verifying PKCE
+  (SHA-256 of the client's `code_verifier` must match the stored
+  `code_challenge`) and atomically consuming the code (`UPDATE ...
+  WHERE used_at IS NULL RETURNING` — replay-proof under concurrent
+  requests for the same reason `apiFetch`'s AsyncLocalStorage scoping is).
+  No refresh tokens: the minted access token doesn't expire, matching a
+  manually-created token's trust model, revocable the identical way
+  (`personal_access_tokens.revoked_at`).
+- `/.well-known/oauth-authorization-server` (RFC 8414) and
+  `/.well-known/oauth-protected-resource` (RFC 9728) — discovery metadata.
+  The MCP route's 401 response now also carries a `WWW-Authenticate: Bearer
+  resource_metadata="…"` header pointing at the protected-resource document,
+  which points at the authorization-server document, which lists the three
+  endpoints above — the chain a client walks with zero prior configuration.
+
+**Deliberately not built:** refresh tokens (see above) and a Settings-UI
+consent/token management screen — revoking or auditing an OAuth-issued
+token today means going to `personal_access_tokens` directly, same as any
+other token from this feature.
 
 ### 5.3 Deduplication Logic
 
