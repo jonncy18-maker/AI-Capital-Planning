@@ -12,7 +12,43 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-22 (Command bar file upload — drag-and-drop and click-to-browse)
+**Last updated:** 2026-08-22 (Command bar file upload — added Word/Excel/text/Markdown support)
+
+- **File upload extended to Word, Excel, text, and Markdown (2026-08-22, same
+  day follow-up):** the initial ship only accepted images and PDFs — the two
+  types Claude reads natively. Extended to `.docx`, `.xlsx`, `.txt`, and `.md`
+  by resolving them to plain text client-side before they ever reach the API,
+  since Claude's native document understanding doesn't cover Word/Excel's
+  binary formats:
+  - `src/lib/docx/docxReader.js` (new): zero-dependency `.docx` reader mirroring
+    `xlsxReader.js`'s zip-parsing approach — pulls `word/document.xml`, maps
+    `</w:p>` to line breaks and `<w:tab/>`/`<w:br/>` to their plain-text
+    equivalents, strips the rest of the markup.
+  - `attachments.js` reworked around a `fileKind()` classifier (`image` |
+    `pdf` | `xlsx` | `docx` | `text`) — extension-checked first since browsers
+    often report no MIME type at all for `.md`. `.xlsx` reuses the existing
+    `readXlsx()` (already zero-dependency, built for the Upload Budget path)
+    and flattens sheets into a `Sheet | row | col` text table; `.docx` uses
+    the new reader; `.txt`/`.md` are read as-is. All four route through a new
+    `MAX_TEXT_CHARS` (100k chars) truncation so a large spreadsheet or doc
+    can't blow the context budget the way it could blow the base64
+    request-body ceiling for images/PDFs.
+  - Anthropic message block changed accordingly: images/PDFs still use
+    base64 `image`/`document` blocks; the four text-resolved kinds now build
+    a `{ type: 'document', source: { type: 'text', media_type: 'text/plain' },
+    title }` block so the model sees them labeled as a document.
+  - `CommandBar.jsx`/`AppRoot.jsx` — file-picker `accept` attribute widened
+    (`ACCEPT_ATTR`), staged-file and sent-message chip icons keyed off
+    `file.kind` instead of a hardcoded PDF check.
+  - Verified: `next build --webpack` clean, lint clean (same pre-existing
+    `CommandBar.jsx` error as before, unrelated to this change), and both new
+    readers round-tripped against hand-built minimal `.docx`/`.xlsx` fixtures
+    in a Node harness (zip parsing + text extraction confirmed correct
+    output) since Node has no `File`/`FileReader` to drive the browser path
+    directly. **Visually unverified in the browser** — same outstanding item
+    as the original upload feature.
+
+**Last updated (previous):** 2026-08-22 (Command bar file upload — drag-and-drop and click-to-browse)
 
 - **Assistant can read an attached file (2026-08-22):** the command bar gained a
   📎 button and a drag-and-drop zone (drop anywhere on the open popup) for

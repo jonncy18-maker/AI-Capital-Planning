@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import Markdown from '../common/Markdown.jsx'
 import PendingActionCard from './PendingActionCard.jsx'
 import ActivityPanel from './ActivityPanel.jsx'
-import { ALLOWED_FILE_TYPES, MAX_FILE_BYTES, isSupportedFile, readFileAsAttachment, formatFileSize } from '../../lib/ai/attachments.js'
+import { ACCEPT_ATTR, MAX_FILE_BYTES, UNSUPPORTED_FILE_MESSAGE, isSupportedFile, readFileAsAttachment, formatFileSize } from '../../lib/ai/attachments.js'
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -139,7 +139,7 @@ export default function CommandBar({
     const file = fileList?.[0]
     if (!file) return
     if (!isSupportedFile(file)) {
-      setFileError('Only images (JPG, PNG, WEBP, GIF) and PDFs are supported.')
+      setFileError(UNSUPPORTED_FILE_MESSAGE)
       return
     }
     if (file.size > MAX_FILE_BYTES) {
@@ -485,7 +485,7 @@ export default function CommandBar({
                     color: 'var(--accent)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: '11px',
-                  }}>{stagedFile.mediaType === 'application/pdf' ? '▤' : '◱'}</span>
+                  }}>{stagedFile.kind === 'image' ? '◱' : '▤'}</span>
                   <span style={{
                     flex: 1, minWidth: 0,
                     fontSize: '11.5px', fontWeight: 500, color: 'var(--tx-1)',
@@ -519,7 +519,7 @@ export default function CommandBar({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept={ALLOWED_FILE_TYPES.join(',')}
+                  accept={ACCEPT_ATTR}
                   onChange={e => { handleFiles(e.target.files); e.target.value = '' }}
                   style={{ display: 'none' }}
                 />
@@ -628,7 +628,7 @@ function Turn({ message, onViewScenarios, onConfirm, onCancel }) {
               fontSize: '10.5px',
               color: 'var(--tx-2)',
             }}>
-              <span>{attachment.mediaType === 'application/pdf' ? '▤' : '◱'}</span>
+              <span>{attachment.kind === 'image' ? '◱' : '▤'}</span>
               {attachment.name}
             </div>
           )}

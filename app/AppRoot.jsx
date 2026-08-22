@@ -190,7 +190,7 @@ export default function AppRoot({ children }) {
     setAiLoading(true)
     setConversation(prev => [
       ...prev,
-      { role: 'user', content, attachment: file ? { name: file.name, mediaType: file.mediaType } : null },
+      { role: 'user', content, attachment: file ? { name: file.name, kind: file.kind } : null },
       { role: 'assistant', content: '', status: 'loading' },
     ])
 
