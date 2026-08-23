@@ -12,8 +12,24 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 }
 
+// `values` is empty exactly when there's nothing valid to submit (every
+// error path passes {}) — in that case the page must not offer Allow/Deny
+// buttons at all, since clicking either would just resubmit blank fields
+// and fail again with a *different*, more confusing error. A real client
+// mismatch or expired code needs a fresh attempt from Claude, not a retry
+// here.
 function consentPage({ clientName, values, error }) {
+  const hasForm = Object.keys(values).length > 0
   const hidden = Object.entries(values).map(([k, v]) => `<input type="hidden" name="${k}" value="${escapeHtml(v)}">`).join('\n')
+  const action = hasForm
+    ? `<form method="POST">
+      ${hidden}
+      <div class="row">
+        <button class="deny" name="action" value="deny">Deny</button>
+        <button class="allow" name="action" value="allow">Allow</button>
+      </div>
+    </form>`
+    : `<p class="retry">Go back to Claude and try adding the connector again.</p>`
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Authorize — AI Capital Planning</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -23,6 +39,7 @@ function consentPage({ clientName, values, error }) {
   h1 { font-size:18px; margin:0 0 6px; }
   p { font-size:14px; line-height:1.6; color:#a7b2bc; margin:0 0 24px; }
   .err { color:#f87171; font-size:13px; margin-bottom:16px; }
+  .retry { font-size:13px; color:#6c838c; margin:0; }
   .row { display:flex; gap:10px; }
   button { flex:1; padding:11px; border-radius:9px; border:1px solid #1f2a2f; font-size:14px; font-weight:600; cursor:pointer; }
   .allow { background:#22d3bb; color:#06201c; border:none; }
@@ -30,16 +47,10 @@ function consentPage({ clientName, values, error }) {
 </style></head>
 <body>
   <div class="card">
-    <h1>Allow ${escapeHtml(clientName || 'this app')} to access your data?</h1>
-    <p>This grants full read/write access to your AI Capital Planning data — bills, budget, forecast, scenarios, and everything else the in-app assistant can see.</p>
+    <h1>${hasForm ? `Allow ${escapeHtml(clientName || 'this app')} to access your data?` : 'Couldn’t start this authorization'}</h1>
+    ${hasForm ? `<p>This grants full read/write access to your AI Capital Planning data — bills, budget, forecast, scenarios, and everything else the in-app assistant can see.</p>` : ''}
     ${error ? `<div class="err">${escapeHtml(error)}</div>` : ''}
-    <form method="POST">
-      ${hidden}
-      <div class="row">
-        <button class="deny" name="action" value="deny">Deny</button>
-        <button class="allow" name="action" value="allow">Allow</button>
-      </div>
-    </form>
+    ${action}
   </div>
 </body></html>`
 }

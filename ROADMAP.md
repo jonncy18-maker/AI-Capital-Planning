@@ -12,7 +12,50 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-23 (MCP connector phase 2 — OAuth for claude.ai / Cowork / Claude Code Remote)
+**Last updated:** 2026-08-23 (MCP OAuth — fixed a double-path bug in the post-login resume redirect)
+
+- **First live OAuth attempt, found and fixed a real bug (2026-08-23):**
+  same night phase 2 shipped — tried "Add custom connector" from Claude
+  Desktop, it discovered the endpoints, self-registered via DCR, bounced to
+  login correctly, but after signing in the consent page came back as a 400
+  with "Invalid client or redirect_uri," and clicking Allow just failed
+  again (repeatedly — the error page still offered working-looking
+  Allow/Deny buttons with nothing valid behind them).
+  - **Root cause, found via Vercel runtime logs** (`GET /api/mcp/authorize`
+    → 302 login bounce → 400 on the resume request → five `POST` 400s from
+    retrying Allow): `AppRoot.jsx`'s post-login resume effect. The authorize
+    route's login-redirect already encodes the *full* `/api/mcp/authorize?…`
+    path+query into `?mcp_authorize=`; `URLSearchParams.get()` auto-decodes
+    it when read back, but the resume effect then prepended
+    `/api/mcp/authorize?` a *second* time — so the server received a query
+    string starting with a literal `/api/mcp/authorize?response_type`
+    instead of `response_type`, and every param lookup (`response_type`,
+    `client_id`, `redirect_uri`, …) came back `null`. Confirmed exactly by
+    replaying both versions through real `URL`/`URLSearchParams` in a Node
+    harness — the buggy version reproduces the garbled query string
+    character-for-character, the fixed version parses every param
+    correctly.
+  - **Fix:** `AppRoot.jsx` now navigates to `resume` directly instead of
+    re-wrapping it in another `/api/mcp/authorize?` prefix.
+  - **Second fix, same root cause class:** `consentPage()` in
+    `app/api/mcp/authorize/route.js` rendered a fully clickable Allow/Deny
+    form on *every* error, including ones with no valid data to submit
+    (`values: {}`) — which is exactly what turned one real error into five
+    repeated, more confusing ones. It now only renders the form when there's
+    something legitimate to submit; a hard error (unknown client, expired
+    code, malformed request) shows the message with no button at all and a
+    plain "go back to Claude and try again."
+  - Verified: `next build --webpack` clean; confirmed via `mcp__Neon__run_sql`
+    that DCR itself worked correctly the whole time (one `oauth_clients` row,
+    `client_name: "Claude"`, `redirect_uris` a real Postgres array, not a
+    malformed string) — ruling that out early narrowed the search to the
+    redirect/resume path. The double-path bug traced and reproduced exactly
+    in a Node harness; the form/no-form branching checked directly against
+    both an empty and populated `values` object. **Not yet verified:** a
+    second live "Add custom connector" attempt end-to-end — that's the next
+    step once this deploys.
+
+**Last updated (previous):** 2026-08-23 (MCP connector phase 2 — OAuth for claude.ai / Cowork / Claude Code Remote)
 
 - **MCP OAuth shipped, same night phase 1's bug got fixed (2026-08-23):**
   discovered live — trying to add the connector from Claude Code Remote (the
