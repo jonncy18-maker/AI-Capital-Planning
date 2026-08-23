@@ -64,7 +64,13 @@ export default function AppRoot({ children }) {
     if (!session) return
     const params = new URLSearchParams(window.location.search)
     const resume = params.get('mcp_authorize')
-    if (resume) window.location.href = `/api/mcp/authorize?${resume}`
+    // `resume` is already the full "/api/mcp/authorize?..." path+query (that's
+    // what the authorize route encoded it from) — navigate to it directly.
+    // Prepending "/api/mcp/authorize?" here again doubled the path, so the
+    // server saw a query string starting with a stray literal "/api/mcp/
+    // authorize?response_type" instead of "response_type", and every param
+    // lookup (response_type, client_id, ...) came back null.
+    if (resume) window.location.href = resume
   }, [session])
 
   // Load profile from DB when user session is established
