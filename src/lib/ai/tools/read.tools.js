@@ -56,8 +56,9 @@ export const LOOKUP_TOOL = {
       year: { type: 'integer', description: 'Four-digit year. Used by bill_amounts, account_balances, redemptions, budget_line_items, forecast_line_items, forecast_overrides, transactions, income_actuals. Defaults to the current year.' },
       month: { type: 'integer', minimum: 1, maximum: 12, description: 'Month 1-12. Used by account_balances and transactions.' },
       scenario: { type: 'string', description: 'Scenario name or id — required for scenario_adjustments.' },
-      search: { type: 'string', description: 'Case-insensitive filter applied to the row name/category/merchant.' },
+      search: { type: 'string', description: 'Case-insensitive filter applied to the row name/category/group/merchant.' },
       limit: { type: 'integer', description: `Max rows to return (default 100, hard cap ${MAX_ROWS}).` },
+      offset: { type: 'integer', description: 'Skip this many matching rows before returning `limit` more — page through a result larger than one call can return using the previous response\'s `next_offset`.' },
     },
     required: ['resource'],
   },
@@ -126,6 +127,7 @@ async function fetchResource(userId, input) {
       return (rows ?? []).map(li => ({
         id: li.id,
         category: li.budget_categories?.category ?? li.category ?? null,
+        group: li.budget_categories?.group ?? null,
         month: li.month,
         year: li.budget_year ?? year,
         amount: li.amount,
@@ -183,14 +185,19 @@ export const readTools = [
       const list = Array.isArray(rows) ? rows : [rows]
       const filtered = list.filter(r => matches(r, input?.search))
       const limit = Math.min(MAX_ROWS, Math.max(1, Number(input?.limit) || 100))
-      const page = filtered.slice(0, limit).map(compact)
+      const offset = Math.max(0, Number(input?.offset) || 0)
+      const page = filtered.slice(offset, offset + limit).map(compact)
+      const nextOffset = offset + page.length < filtered.length ? offset + page.length : null
       return {
-        summary: `Read ${page.length} ${input.resource} row${page.length === 1 ? '' : 's'}`,
+        summary: `Read ${page.length} of ${filtered.length} ${input.resource} row${filtered.length === 1 ? '' : 's'}`
+          + (nextOffset != null ? ` (more available — call again with offset: ${nextOffset})` : ''),
         result: {
           resource: input.resource,
           count: filtered.length,
           returned: page.length,
-          truncated: filtered.length > page.length,
+          offset,
+          next_offset: nextOffset,
+          truncated: nextOffset != null,
           rows: page,
         },
       }
