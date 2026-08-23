@@ -12,7 +12,42 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-23 (MCP OAuth — fixed a double-path bug in the post-login resume redirect)
+**Last updated:** 2026-08-23 (Tool registry — scenario editing + lookup_data pagination, both found via real MCP usage)
+
+- **OAuth confirmed fully working end to end (2026-08-23):** connector added
+  successfully from both Claude Code Remote (cloud) and Claude Desktop after
+  the double-path fix — discovery, DCR, login bounce, consent, and a real
+  token all working. Phase 2 is done, not just shipped.
+- **Two real gaps found from actually using the connector, both fixed same
+  session:**
+  - **`update_scenario` (new tool):** asked the assistant (via MCP) to fix a
+    scenario's stale description after its adjustments had been corrected —
+    no tool existed for renaming a scenario or editing its description
+    (only create/clone/commit/revert/delete/adjust). Added
+    `src/lib/ai/tools/scenarios.tools.js#update_scenario`, backed by the
+    already-existing `updateScenario()` db helper and `/api/scenarios/[id]`
+    PATCH route — deliberately scoped to `name`/`description` only, never
+    `state` (that stays commit_scenario/revert_scenario's job) or
+    adjustments.
+  - **`lookup_data` pagination + a real search-coverage gap:** a live session
+    hit the 400-row hard cap fetching a full year of `forecast_line_items`
+    (589 rows) with no way to get the rest, and separately found the
+    `search` filter silently missing rows. Root cause on the second one:
+    `forecast_line_items`' row shape (`src/lib/ai/tools/read.tools.js`)
+    flattened `category` from the `budget_categories` join but dropped
+    `group` — unlike its sibling `budget_line_items`, which kept both — so
+    a group-name search had nothing to match against for this resource.
+    Fixed the row shape to match, and added real pagination: `offset` in
+    the schema, `next_offset` in the response, and the summary text itself
+    tells the model to call again with that offset when more rows exist.
+  - Verified: `next build --webpack` clean, lint clean on all three changed
+    files. Pagination logic traced against a synthetic 589-row set in a
+    Node harness — two calls (400 + 189) correctly retrieve every row with
+    no gap or overlap. **Not yet verified:** a live re-run of the exact
+    forecast-fetch that originally hit the cap, or a fresh `update_scenario`
+    call through the connector — both are the natural next live tests.
+
+**Last updated (previous):** 2026-08-23 (MCP OAuth — fixed a double-path bug in the post-login resume redirect)
 
 - **First live OAuth attempt, found and fixed a real bug (2026-08-23):**
   same night phase 2 shipped — tried "Add custom connector" from Claude

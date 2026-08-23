@@ -9,7 +9,7 @@ import {
   executeCreateScenario, executeAddAdjustments, buildPreview, buildAdjPreview,
 } from '../scenarioAgent.js'
 import {
-  getScenarios, getAdjustments, deleteScenario, cloneScenario,
+  getScenarios, getAdjustments, deleteScenario, cloneScenario, updateScenario,
   promoteToCommitted, promoteToModeled, deleteAdjustment,
 } from '../../db/scenarios.js'
 import { getBudgetCategories } from '../../db/budgetCategories.js'
@@ -144,6 +144,47 @@ export const scenarioTools = [
       const target = await requireScenario(userId, requireField(input, 'scenario'))
       await promoteToModeled(userId, target.id)
       return { summary: `Reverted scenario "${target.name}" to modeled`, result: { scenarioId: target.id } }
+    },
+  },
+
+  {
+    name: 'update_scenario',
+    group: 'scenarios',
+    write: true,
+    schema: {
+      name: 'update_scenario',
+      description:
+        'Rename a scenario or edit its description — e.g. to correct stale wording after its ' +
+        'adjustments changed. Does not touch state (use commit_scenario/revert_scenario for that) ' +
+        'or its adjustments.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          scenario: { type: 'string', description: 'Scenario name or id.' },
+          name: { type: 'string', description: 'New name. Omit to leave unchanged.' },
+          description: { type: 'string', description: 'New description. Omit to leave unchanged.' },
+        },
+        required: ['scenario'],
+      },
+    },
+    async preview(input, ctx) {
+      const target = resolveByName(await getScenarios(ctx.userId), input.scenario)
+      const rows = []
+      if (input.name !== undefined) rows.push(row('Name', `${target?.name ?? '—'} → ${input.name}`))
+      if (input.description !== undefined) rows.push(row('Description', input.description || '(cleared)'))
+      return {
+        title: `Update scenario · ${target?.name ?? input.scenario}`,
+        rows: rows.length ? rows : [row('Change', 'Nothing to update — provide name and/or description.', 'muted')],
+      }
+    },
+    async execute(userId, input) {
+      const target = await requireScenario(userId, requireField(input, 'scenario'))
+      const updates = {}
+      if (input.name !== undefined) updates.name = input.name
+      if (input.description !== undefined) updates.description = input.description
+      if (Object.keys(updates).length === 0) throw new Error('Provide a new name and/or description to update.')
+      await updateScenario(userId, target.id, updates)
+      return { summary: `Updated "${target.name}"`, result: { scenarioId: target.id, ...updates } }
     },
   },
 
