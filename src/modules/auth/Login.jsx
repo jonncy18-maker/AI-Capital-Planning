@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { authClient } from '../../lib/neon/authClient.js'
 
+// Sign-in only: self-registration is closed server-side in
+// app/api/auth/[...path]/route.js (ALLOWED_SIGNUP_EMAILS gate), so the app
+// deliberately offers no sign-up form.
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [mode, setMode] = useState('signin') // 'signin' | 'signup'
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null) // { type: 'error'|'info', text }
 
@@ -41,9 +42,7 @@ export default function Login() {
 
     let result
     try {
-      result = mode === 'signup'
-        ? await authClient.signUp.email({ email, password, name: name || email.split('@')[0] })
-        : await authClient.signIn.email({ email, password })
+      result = await authClient.signIn.email({ email, password })
     } catch (err) {
       // Network/CORS/thrown errors never reach the { error } shape below.
       console.error('[auth] threw:', err)
@@ -61,10 +60,9 @@ export default function Login() {
       return
     }
 
-    // Neon Auth's default config has no email-confirmation step (confirmed
-    // during the pilot) — a successful sign-up returns a session cookie
-    // immediately, same as sign-in. useAuth's useSession() picks it up via
-    // its own subscription, so there's nothing further to do here.
+    // A successful sign-in returns a session cookie immediately; useAuth's
+    // useSession() picks it up via its own subscription, so there's nothing
+    // further to do here.
   }
 
   const field = {
@@ -109,19 +107,10 @@ export default function Login() {
           letterSpacing: '0.06em',
           marginBottom: '32px',
         }}>
-          {mode === 'signin' ? '// SIGN IN' : '// CREATE ACCOUNT'}
+          {'// SIGN IN'}
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {mode === 'signup' && (
-            <input
-              type="text"
-              placeholder="Name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              style={field}
-            />
-          )}
           <input
             type="email"
             placeholder="Email"
@@ -171,25 +160,9 @@ export default function Login() {
               marginTop: '4px',
             }}
           >
-            {loading ? '…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+            {loading ? '…' : 'Sign in'}
           </button>
         </form>
-
-        <div style={{
-          marginTop: '20px',
-          fontSize: '13px',
-          color: 'var(--tx-3, #475569)',
-          fontFamily: 'Inter, sans-serif',
-          textAlign: 'center',
-        }}>
-          {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
-          <span
-            onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setMessage(null) }}
-            style={{ color: 'var(--accent, #00C2A8)', cursor: 'pointer' }}
-          >
-            {mode === 'signin' ? 'Create one' : 'Sign in'}
-          </span>
-        </div>
       </div>
     </div>
   )

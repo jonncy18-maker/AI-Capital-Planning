@@ -1,4 +1,5 @@
 import { auth } from '../../../src/lib/neon/authServer.js'
+import { rateLimit } from '../../../src/lib/api/rateLimit.js'
 
 // Next.js port of db/functions/ai-chat (Deno edge function). Server-side
 // proxy to the Anthropic API — the ANTHROPIC_API_KEY secret lives only in this
@@ -23,6 +24,15 @@ const MODEL_FALLBACKS = {
 }
 const DEFAULT_FAMILY = 'sonnet'
 const RESOLVE_TTL_MS = 6 * 60 * 60 * 1000
+
+// Abuse guards: the route proxies to a paid API, so client input can't be
+// trusted to pick arbitrary models or token budgets. The app's own callers
+// (src/lib/ai/*) only ever send modelFamily + maxTokens ≤ 4096, so these
+// caps are invisible in normal use.
+const ALLOWED_MODEL_RE = /^claude-(haiku|sonnet)-[\w.-]+$/
+const MAX_TOKENS_CAP = 8192
+const MAX_BODY_CHARS = 400_000
+const RATE = { limit: 30, windowMs: 5 * 60 * 1000 }
 
 // Module-level cache persists across invocations only within a warm
 // serverless instance (same caveat as the original Deno deployment).
@@ -67,17 +77,31 @@ export async function POST(request) {
     return Response.json({ error: 'ANTHROPIC_API_KEY is not configured on this deployment.' }, { status: 500 })
   }
 
+  if (!rateLimit(`ai-chat:${session.user.id}`, RATE)) {
+    return Response.json({ error: 'Too many requests — try again in a few minutes.' }, { status: 429 })
+  }
+
+  let raw
   let payload
   try {
-    payload = await request.json()
+    raw = await request.text()
+    payload = JSON.parse(raw)
   } catch {
     return Response.json({ error: 'Invalid JSON body.' }, { status: 400 })
+  }
+  if (raw.length > MAX_BODY_CHARS) {
+    return Response.json({ error: 'Request body too large.' }, { status: 413 })
   }
 
   const { messages, system, maxTokens, model, modelFamily, cacheSystem, tools } = payload || {}
   if (!Array.isArray(messages) || messages.length === 0) {
     return Response.json({ error: 'messages[] is required.' }, { status: 400 })
   }
+
+  if (model !== undefined && !ALLOWED_MODEL_RE.test(String(model))) {
+    return Response.json({ error: 'Requested model is not allowed.' }, { status: 400 })
+  }
+  const cappedMaxTokens = Math.min(Math.max(1, Number(maxTokens) || 1024), MAX_TOKENS_CAP)
 
   const resolvedModel = model ?? (await resolveModel(modelFamily ?? DEFAULT_FAMILY))
 
@@ -97,7 +121,7 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         model: resolvedModel,
-        max_tokens: maxTokens ?? 1024,
+        max_tokens: cappedMaxTokens,
         system: systemParam,
         messages,
         ...(Array.isArray(tools) && tools.length ? { tools } : {}),

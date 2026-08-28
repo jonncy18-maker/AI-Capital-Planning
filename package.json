@@ -13,7 +13,7 @@
     "@neondatabase/auth": "^0.4.2-beta",
     "@neondatabase/serverless": "^1.1.0",
     "@serwist/next": "^9.5.12",
-    "next": "^16.2.10",
+    "next": "^16.2.12",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
@@ -27,5 +27,8 @@
     "globals": "^17.6.0",
     "prettier": "^3.8.4",
     "serwist": "^9.5.12"
+  },
+  "overrides": {
+    "better-auth": "1.4.22"
   }
 }

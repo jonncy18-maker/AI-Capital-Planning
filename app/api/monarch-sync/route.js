@@ -1,4 +1,5 @@
 import { auth } from '../../../src/lib/neon/authServer.js'
+import { rateLimit } from '../../../src/lib/api/rateLimit.js'
 
 // Next.js port of db/functions/monarch-sync (Deno edge function).
 // Pulls transactions from Monarch Money's private GraphQL API server-side —
@@ -140,6 +141,13 @@ export async function POST(request) {
   const { email, password, mfaCode, since } = payload || {}
   if (!email || !password) {
     return Response.json({ error: 'email and password are required.' }, { status: 400 })
+  }
+
+  // Each call performs a live login against Monarch, so throttle hard: this
+  // blocks the route being used as a credential-testing relay and avoids
+  // tripping Monarch's own abuse detection against the account.
+  if (!rateLimit(`monarch-sync:${session.user.id}`, { limit: 5, windowMs: 15 * 60 * 1000 })) {
+    return Response.json({ error: 'Too many sync attempts — try again in 15 minutes.' }, { status: 429 })
   }
 
   // Regenerated per request rather than module-scoped like the Deno version's

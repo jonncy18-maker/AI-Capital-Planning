@@ -52,12 +52,22 @@ export async function POST(request) {
 
   try {
     const sql = getNeonSql()
+
+    // Ownership check before the upsert: the conflict target is (card_id,
+    // cc_category) with no user_id, so without this a caller could hit the
+    // conflict path on another user's row and overwrite it.
+    const [card] = await sql`
+      SELECT id FROM credit_cards WHERE id = ${cardId} AND user_id = ${userId}
+    `
+    if (!card) {
+      return Response.json({ error: 'Card not found.' }, { status: 404 })
+    }
+
     const [row] = await sql`
       INSERT INTO credit_card_earn_rates (card_id, user_id, cc_category, earn_rate)
       VALUES (${cardId}, ${userId}, ${ccCategory}, ${earnRate})
       ON CONFLICT (card_id, cc_category) DO UPDATE SET
-        earn_rate = EXCLUDED.earn_rate,
-        user_id = EXCLUDED.user_id
+        earn_rate = EXCLUDED.earn_rate
       RETURNING *
     `
     return Response.json(row)
