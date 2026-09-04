@@ -1184,12 +1184,17 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     }).catch(() => {})
   }, [userId, navYear, navMonth])
 
-  // Reload forecast amounts whenever bills or nav month changes
+  // Reload forecast amounts whenever bills or nav month changes.
+  // Guarded against out-of-order responses: rapid dependency changes (mount
+  // hydration, month nav) can fire overlapping requests, and without this a
+  // slower stale response resolving last would silently overwrite a newer one.
   useEffect(() => {
     if (!userId || bills.length === 0) return
+    let cancelled = false
     getForecastAmountsForBills(userId, navYear, navMonth, bills)
-      .then(map => setForecastAmountsMap(map))
+      .then(map => { if (!cancelled) setForecastAmountsMap(map) })
       .catch(() => {})
+    return () => { cancelled = true }
   }, [userId, navYear, navMonth, bills])
 
   // Reload budget line items + the independent forecast when the nav year changes —

@@ -108,26 +108,30 @@ export async function POST(request) {
     }
 
     if (existing) {
+      // `!== undefined ? value : existing.value` (not `??`) so that a client
+      // explicitly clearing a nullable field (e.g. unlinking forecast_category_id,
+      // or clearing fixed_amount when switching a bill to forecast-linked) actually
+      // persists the null instead of silently falling back to the old value.
       const merged = {
-        name: name ?? existing.name,
-        bill_type: bill_type ?? existing.bill_type,
-        due_day: due_day ?? existing.due_day,
+        name: name !== undefined ? name : existing.name,
+        bill_type: bill_type !== undefined ? bill_type : existing.bill_type,
+        due_day: due_day !== undefined ? due_day : existing.due_day,
         pay_same_as_due: pay_same_as_due !== undefined ? !!pay_same_as_due : existing.pay_same_as_due,
-        pay_day: pay_day ?? existing.pay_day,
-        payment_method: payment_method ?? existing.payment_method,
-        fixed_amount: fixed_amount ?? existing.fixed_amount,
-        debits_from_account_id: debits_from_account_id ?? existing.debits_from_account_id,
+        pay_day: pay_day !== undefined ? pay_day : existing.pay_day,
+        payment_method: payment_method !== undefined ? payment_method : existing.payment_method,
+        fixed_amount: fixed_amount !== undefined ? fixed_amount : existing.fixed_amount,
+        debits_from_account_id: debits_from_account_id !== undefined ? debits_from_account_id : existing.debits_from_account_id,
         active: active !== undefined ? !!active : existing.active,
-        display_order: display_order ?? existing.display_order,
+        display_order: display_order !== undefined ? display_order : existing.display_order,
         is_auto_funded: is_auto_funded !== undefined ? !!is_auto_funded : existing.is_auto_funded,
-        auto_fund_account_id: auto_fund_account_id ?? existing.auto_fund_account_id,
-        auto_fund_day: auto_fund_day ?? existing.auto_fund_day,
-        auto_fund_amount: auto_fund_amount ?? existing.auto_fund_amount,
-        forecast_category_id: forecast_category_id ?? existing.forecast_category_id,
-        forecast_divisor: forecast_divisor ?? existing.forecast_divisor,
-        statement_close_day: statement_close_day ?? existing.statement_close_day,
-        credit_card_id: credit_card_id ?? existing.credit_card_id,
-        actuals_category: actuals_category ?? existing.actuals_category,
+        auto_fund_account_id: auto_fund_account_id !== undefined ? auto_fund_account_id : existing.auto_fund_account_id,
+        auto_fund_day: auto_fund_day !== undefined ? auto_fund_day : existing.auto_fund_day,
+        auto_fund_amount: auto_fund_amount !== undefined ? auto_fund_amount : existing.auto_fund_amount,
+        forecast_category_id: forecast_category_id !== undefined ? forecast_category_id : existing.forecast_category_id,
+        forecast_divisor: forecast_divisor !== undefined ? forecast_divisor : existing.forecast_divisor,
+        statement_close_day: statement_close_day !== undefined ? statement_close_day : existing.statement_close_day,
+        credit_card_id: credit_card_id !== undefined ? credit_card_id : existing.credit_card_id,
+        actuals_category: actuals_category !== undefined ? actuals_category : existing.actuals_category,
         exclude_from_schedule:
           exclude_from_schedule !== undefined ? !!exclude_from_schedule : existing.exclude_from_schedule,
       }
