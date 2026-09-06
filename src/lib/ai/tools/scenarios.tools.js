@@ -51,7 +51,8 @@ export const scenarioTools = [
       name: 'add_scenario_adjustments',
       description:
         ADD_ADJUSTMENT_TOOL.description.replace('the current scenario', 'an existing scenario') +
-        ' Name the scenario in `scenario`.',
+        ' Name the scenario in `scenario`. If that scenario is already committed its forecast rows' +
+        ' are rebuilt straight away, so there is no need to commit it again afterwards.',
       input_schema: {
         type: 'object',
         properties: {
@@ -86,7 +87,9 @@ export const scenarioTools = [
       description:
         'Promote a modeled scenario to committed. This writes its adjustments into the forecast, ' +
         'so every downstream view (Forecast, Bill Planner, cash flow) picks them up. Reversible ' +
-        'with revert_scenario.',
+        'with revert_scenario. Safe to call on an already-committed scenario: it rewrites the ' +
+        'forecast rows from the current adjustments, which re-syncs one whose amounts were edited ' +
+        'after it was first committed.',
       input_schema: {
         type: 'object',
         properties: { scenario: { type: 'string', description: 'Scenario name or id.' } },

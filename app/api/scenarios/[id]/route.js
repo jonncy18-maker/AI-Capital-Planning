@@ -86,13 +86,19 @@ export async function PATCH(request, context) {
     // (tagged with source_scenario_id) so Forecast and, downstream, Bill
     // Planner reflect it without a separate step. Leaving 'committed' removes
     // those tagged rows again, reverting the forecast cleanly.
+    const stateRequested = Object.prototype.hasOwnProperty.call(updates, 'state')
     const enteringCommitted = merged.state === 'committed' && existing.state !== 'committed'
     const leavingCommitted = existing.state === 'committed' && merged.state !== 'committed'
+    const stayingCommitted = merged.state === 'committed' && existing.state === 'committed'
+    // Re-committing an already-committed scenario is the natural "push my edits
+    // through" gesture — it is what commit_scenario sends — so treat it as an
+    // explicit resync. Without this it matched no branch below and silently did
+    // nothing, reporting success while the forecast kept the old amounts.
+    const recommitted = stayingCommitted && stateRequested
     // The materialized labels embed the scenario name, so renaming a scenario
     // that stays committed has to rebuild them or the forecast keeps showing
     // the old name.
-    const renamedWhileCommitted =
-      merged.state === 'committed' && existing.state === 'committed' && merged.name !== existing.name
+    const renamedWhileCommitted = stayingCommitted && merged.name !== existing.name
 
     const statements = [
       sql`
@@ -113,7 +119,7 @@ export async function PATCH(request, context) {
         sql`DELETE FROM forecast_line_items WHERE source_scenario_id = ${id} AND user_id = ${userId}`
       )
     }
-    if (enteringCommitted || renamedWhileCommitted) {
+    if (enteringCommitted || recommitted || renamedWhileCommitted) {
       // merged.name, not existing.name: a commit that renames in the same
       // request must label the rows with the new name.
       statements.push(
