@@ -1856,8 +1856,26 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   balance: Number(balancesMap[`${sa.id}-2`] ?? 0),
                   autoReserve: i === 0 ? autoP2 : 0,
                 }))
-                const p1Draws = drawFrom(p1Buckets, gapP1)
-                const p2Draws = drawFrom(p2Buckets, gapP2)
+                // The combined (auto+manual) target already counts the auto dollars,
+                // so drawing it against p1Buckets/p2Buckets (which reserve the auto
+                // amount off position 0) would deduct that money from Open Savings'
+                // pool without ever crediting it toward the auto need — silently
+                // pushing that shortfall onto the next bucket down the hierarchy.
+                // p1Buckets/p2Buckets (autoReserve intact) are for the manual-only
+                // target below, where excluding the auto amount from the pool is
+                // exactly what's needed.
+                const p1FullBuckets = savingsAccounts.map((sa) => ({
+                  account: sa,
+                  balance: Number(balancesMap[`${sa.id}-1`] ?? 0),
+                  autoReserve: 0,
+                }))
+                const p2FullBuckets = savingsAccounts.map((sa) => ({
+                  account: sa,
+                  balance: Number(balancesMap[`${sa.id}-2`] ?? 0),
+                  autoReserve: 0,
+                }))
+                const p1Draws = drawFrom(p1FullBuckets, gapP1)
+                const p2Draws = drawFrom(p2FullBuckets, gapP2)
                 const uncoveredP1 = gapP1 - p1Draws.reduce((s, b) => s + b.draw, 0)
                 const uncoveredP2 = gapP2 - p2Draws.reduce((s, b) => s + b.draw, 0)
                 const totalUncovered = uncoveredP1 + uncoveredP2
