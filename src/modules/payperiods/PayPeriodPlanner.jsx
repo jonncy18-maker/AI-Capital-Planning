@@ -1129,6 +1129,21 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     })
   }
 
+  // Auto/manual split within hierarchy mode — persisted in localStorage.
+  // Only meaningful alongside the hierarchy drawdown, so it's turned off
+  // whenever hierarchy mode itself is turned off (see toggleHierarchy usage
+  // below and the render guard `useHierarchy && splitAutoManual`).
+  const [splitAutoManual, setSplitAutoManual] = useState(
+    () => localStorage.getItem('pp_split_auto_manual') === 'true'
+  )
+  function toggleSplitAutoManual() {
+    setSplitAutoManual(prev => {
+      const next = !prev
+      localStorage.setItem('pp_split_auto_manual', String(next))
+      return next
+    })
+  }
+
   // Historical bill amounts upload state
   const amountsFileInputRef = useRef(null)
   const [parsedAmountRows, setParsedAmountRows] = useState(null) // null = inactive
@@ -1847,6 +1862,18 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                 const uncoveredP2 = gapP2 - p2Draws.reduce((s, b) => s + b.draw, 0)
                 const totalUncovered = uncoveredP1 + uncoveredP2
 
+                // Auto/manual split: the auto amount is always assumed to come as
+                // one lump transfer from the top of the hierarchy (position 0) —
+                // it doesn't need a per-bucket breakdown since it's a single
+                // advance transfer, not money the user manually moves bill by
+                // bill. What's left (the buckets' balances net of that same
+                // autoReserve, which p1Buckets/p2Buckets already apply to
+                // position 0) is drawn down the hierarchy for the manual portion
+                // only, so this reuses the exact same bucket construction above.
+                const showSplit = useHierarchy && splitAutoManual
+                const p1ManualDraws = showSplit ? drawFrom(p1Buckets, manualP1) : null
+                const p2ManualDraws = showSplit ? drawFrom(p2Buckets, manualP2) : null
+
                 return (
                   <div style={{
                     marginTop: 20, border: '1px solid var(--bd)', borderRadius: 12,
@@ -1864,22 +1891,43 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                           {MONTH_NAMES[navMonth - 1]} {navYear}
                         </div>
                       </div>
-                      <button
-                        onClick={toggleHierarchy}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 6,
-                          padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
-                          background: useHierarchy ? 'var(--accent-bg)' : 'transparent',
-                          border: `1px solid ${useHierarchy ? 'var(--accent-bd)' : 'var(--bd)'}`,
-                        }}
-                      >
-                        <span style={{
-                          fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.05em',
-                          color: useHierarchy ? 'var(--accent)' : 'var(--tx-3)', textTransform: 'uppercase',
-                        }}>
-                          Hierarchy {useHierarchy ? 'ON' : 'OFF'}
-                        </span>
-                      </button>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={toggleHierarchy}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
+                            background: useHierarchy ? 'var(--accent-bg)' : 'transparent',
+                            border: `1px solid ${useHierarchy ? 'var(--accent-bd)' : 'var(--bd)'}`,
+                          }}
+                        >
+                          <span style={{
+                            fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.05em',
+                            color: useHierarchy ? 'var(--accent)' : 'var(--tx-3)', textTransform: 'uppercase',
+                          }}>
+                            Hierarchy {useHierarchy ? 'ON' : 'OFF'}
+                          </span>
+                        </button>
+                        {useHierarchy && (
+                          <button
+                            onClick={toggleSplitAutoManual}
+                            title="Show the auto amount as one lump transfer from the top of the hierarchy, and break the manual amount down the hierarchy separately."
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
+                              background: splitAutoManual ? 'var(--accent-bg)' : 'transparent',
+                              border: `1px solid ${splitAutoManual ? 'var(--accent-bd)' : 'var(--bd)'}`,
+                            }}
+                          >
+                            <span style={{
+                              fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.05em',
+                              color: splitAutoManual ? 'var(--accent)' : 'var(--tx-3)', textTransform: 'uppercase',
+                            }}>
+                              Split Auto/Manual
+                            </span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div style={{ padding: '16px 18px' }}>
@@ -1930,9 +1978,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                       {/* Period 1 / Period 2 panels */}
                       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 14 }}>
                         {[
-                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, bal: p1CheckingBal, gap: gapP1, draws: p1Draws },
-                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, bal: p2CheckingBal, gap: gapP2, draws: p2Draws },
-                        ].map(({ key, label, auto, manual, bal, gap, draws }) => (
+                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, bal: p1CheckingBal, gap: gapP1, draws: p1Draws, manualDraws: p1ManualDraws },
+                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, bal: p2CheckingBal, gap: gapP2, draws: p2Draws, manualDraws: p2ManualDraws },
+                        ].map(({ key, label, auto, manual, bal, gap, draws, manualDraws }) => (
                           <div key={key} style={{
                             border: '1px solid var(--bd)', borderRadius: 8,
                             padding: '12px 14px', background: 'var(--bg-app)',
@@ -1942,7 +1990,77 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                               color: 'var(--tx-4)', marginBottom: 10,
                             }}>{label}</div>
 
-                            {!useHierarchy ? (
+                            {showSplit ? (
+                              <div>
+                                <div style={{
+                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  padding: '10px 12px', borderRadius: 7, marginBottom: 12,
+                                  background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
+                                }}>
+                                  <div>
+                                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--tx-1)' }}>
+                                      Auto — from {savingsAccounts[0]?.name ?? '—'}
+                                    </div>
+                                    <div style={{ fontSize: 9.5, color: 'var(--tx-3)', marginTop: 2, lineHeight: 1.4 }}>
+                                      One advance transfer covers every autopay bill this period.
+                                    </div>
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, fontWeight: 600, color: 'var(--accent)' }}>
+                                    {fmt(auto)}
+                                  </div>
+                                </div>
+
+                                <div style={{
+                                  fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em',
+                                  color: 'var(--tx-4)', textTransform: 'uppercase', marginBottom: 6,
+                                }}>
+                                  Manual — down the hierarchy, after auto is set aside
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '4px 10px' }}>
+                                  {['BUCKET', 'AVAIL', 'DRAW', 'LEFT'].map((h, i) => (
+                                    <div key={h} style={{
+                                      fontFamily: "'DM Mono', monospace", fontSize: 7.5,
+                                      color: 'var(--tx-4)', letterSpacing: '0.06em',
+                                      textAlign: i > 0 ? 'right' : 'left',
+                                      paddingBottom: 4, borderBottom: '1px solid var(--bd)',
+                                    }}>{h}</div>
+                                  ))}
+                                  {savingsAccounts.map((sa, i) => {
+                                    const d = manualDraws[i]
+                                    const left = Math.max(0, d.avail - d.draw)
+                                    return [
+                                      <div key={`${sa.id}-mn`} style={{ fontSize: 11, color: 'var(--tx-1)', fontWeight: 500, padding: '3px 0' }}>
+                                        {sa.name}
+                                      </div>,
+                                      <div key={`${sa.id}-ma`} style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textAlign: 'right', color: 'var(--tx-2)', fontVariantNumeric: 'tabular-nums', padding: '3px 0' }}>{fmt(d.avail)}</div>,
+                                      <div key={`${sa.id}-md`} style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textAlign: 'right', fontVariantNumeric: 'tabular-nums', padding: '3px 0', color: d.draw > 0 ? 'var(--accent)' : 'var(--tx-3)' }}>{d.draw > 0 ? fmt(d.draw) : '—'}</div>,
+                                      <div key={`${sa.id}-ml`} style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textAlign: 'right', color: 'var(--tx-2)', fontVariantNumeric: 'tabular-nums', padding: '3px 0' }}>{fmt(left)}</div>,
+                                    ]
+                                  })}
+                                  <div style={{ fontSize: 11, color: 'var(--tx-1)', fontWeight: 600, padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    TOTAL MANUAL
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(manualDraws.reduce((s, b) => s + b.avail, 0))}
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--accent)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(manualDraws.reduce((s, b) => s + b.draw, 0))}
+                                  </div>
+                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, fontWeight: 600, textAlign: 'right', color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums', padding: '5px 0 0', borderTop: '1px solid var(--bd)', marginTop: 2 }}>
+                                    {fmt(manualDraws.reduce((s, b) => s + Math.max(0, b.avail - b.draw), 0))}
+                                  </div>
+                                </div>
+                                <div style={{ marginTop: 8, borderTop: '1px solid var(--bd)', paddingTop: 6, textAlign: 'right' }}>
+                                  {manual === 0 ? (
+                                    <span style={{ fontSize: 11, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>no manual transfer needed</span>
+                                  ) : manualDraws.reduce((s, b) => s + b.draw, 0) >= manual ? (
+                                    <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ Covered {fmt(manual)}</span>
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: 'var(--warn)' }}>⚠ Shortfall {fmt(manual - manualDraws.reduce((s, b) => s + b.draw, 0))}</span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : !useHierarchy ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                 {[
                                   { name: 'Total Due',       val: auto + manual },
