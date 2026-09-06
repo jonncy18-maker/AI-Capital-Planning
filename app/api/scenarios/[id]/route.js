@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
+import { rebuildForecastStatements } from '../../../../src/lib/neon/scenarioForecast.js'
 
 const ALLOWED_STATES = ['modeled', 'committed', 'idea']
 const UPDATABLE_FIELDS = ['name', 'description', 'state', 'parent_baseline']
@@ -87,6 +88,11 @@ export async function PATCH(request, context) {
     // those tagged rows again, reverting the forecast cleanly.
     const enteringCommitted = merged.state === 'committed' && existing.state !== 'committed'
     const leavingCommitted = existing.state === 'committed' && merged.state !== 'committed'
+    // The materialized labels embed the scenario name, so renaming a scenario
+    // that stays committed has to rebuild them or the forecast keeps showing
+    // the old name.
+    const renamedWhileCommitted =
+      merged.state === 'committed' && existing.state === 'committed' && merged.name !== existing.name
 
     const statements = [
       sql`
@@ -107,19 +113,16 @@ export async function PATCH(request, context) {
         sql`DELETE FROM forecast_line_items WHERE source_scenario_id = ${id} AND user_id = ${userId}`
       )
     }
-    if (enteringCommitted) {
-      statements.push(sql`
-        INSERT INTO forecast_line_items
-          (user_id, budget_year, category_id, month, amount, label, note, source, source_scenario_id)
-        SELECT
-          ${userId}, sa.year, sa.category_id, sa.month, sa.delta_amount,
-          CASE WHEN COALESCE(sa.label, '') <> '' THEN ${existing.name} || ' — ' || sa.label ELSE ${existing.name} END,
-          'Committed scenario: ' || ${existing.name},
-          'scenario',
-          ${id}
-        FROM scenario_adjustments sa
-        WHERE sa.scenario_id = ${id} AND sa.user_id = ${userId}
-      `)
+    if (enteringCommitted || renamedWhileCommitted) {
+      // merged.name, not existing.name: a commit that renames in the same
+      // request must label the rows with the new name.
+      statements.push(
+        ...rebuildForecastStatements(sql, {
+          userId,
+          scenarioId: id,
+          scenarioName: merged.name,
+        })
+      )
     }
 
     const results = await sql.transaction(statements)
