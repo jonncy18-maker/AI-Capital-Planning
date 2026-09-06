@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../../../src/lib/neon/apiAuth.js'
+import { resyncCommittedScenario } from '../../../../../src/lib/neon/scenarioForecast.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/scenarios.js#getAdjustments/#addAdjustment return via the original
@@ -110,6 +111,12 @@ export async function POST(request, context) {
         (${userId}, ${scenarioId}, ${category_id}, ${month}, ${year}, ${delta_amount}, ${label})
       RETURNING id
     `
+
+    // An already-committed scenario has its adjustments mirrored into
+    // forecast_line_items; rebuild them so the new adjustment reaches the
+    // forecast (and the bills linked to it) instead of silently applying only
+    // the amounts present at commit time.
+    await resyncCommittedScenario(sql, { userId, scenarioId })
 
     const [row] = await sql`
       SELECT

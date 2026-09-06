@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../../../src/lib/neon/apiAuth.js'
+import { resyncCommittedScenario } from '../../../../../src/lib/neon/scenarioForecast.js'
 
 // Flatter sibling of app/api/scenarios/[id]/adjustments/[adjustmentId]/route.js
 // DELETE, for src/lib/db/scenarios.js#deleteAdjustment(adjustmentId), whose
@@ -24,12 +25,18 @@ export async function DELETE(request, context) {
     const rows = await sql`
       DELETE FROM scenario_adjustments
       WHERE id = ${adjustmentId} AND user_id = ${userId}
-      RETURNING id
+      RETURNING id, scenario_id
     `
 
     if (rows.length === 0) {
       return Response.json({ error: 'Adjustment not found.' }, { status: 404 })
     }
+
+    // Drop the deleted adjustment out of the forecast too when its scenario is
+    // committed — otherwise its materialized row keeps applying. The parent id
+    // comes from the deleted row, since this route is not given one.
+    await resyncCommittedScenario(sql, { userId, scenarioId: rows[0].scenario_id })
+
     return new Response(null, { status: 204 })
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 })
