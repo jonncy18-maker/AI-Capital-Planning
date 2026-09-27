@@ -465,8 +465,9 @@ When debugging unexpected AI behavior, check the layers in order: is the persona
 
 #### 5.2.2 MCP Connector (added 2026-08-22)
 
-A remote MCP server at `app/api/mcp` exposes the same 39-tool registry
-(§5.2.0) to Claude Code, authenticated by a personal access token instead of
+A remote MCP server at `app/api/mcp` exposes the same tool registry
+(§5.2.0 — grown past 100 tools since this was written; see §5.2.4) to Claude
+Code, authenticated by a personal access token instead of
 the browser's Neon Auth session cookie — Claude chat/Cowork support is a
 deliberately deferred phase 2 (they generally require the server to speak
 OAuth; a static bearer token is enough for Claude Code's connector config).
@@ -559,6 +560,84 @@ and the MCP route's own token check needed zero changes.
 consent/token management screen — revoking or auditing an OAuth-issued
 token today means going to `personal_access_tokens` directly, same as any
 other token from this feature.
+
+#### 5.2.4 Full tool coverage + ChatGPT reachability (added 2026-09-27)
+
+Audited every `app/api/*` route against `src/lib/ai/tools/*.tools.js` to check
+the goal "the MCP should be able to do everything a user can do manually."
+Found and closed six real gaps (the tool count in §5.2.2 above — "39" — is
+now stale; the catalog has grown past 100 tools since):
+
+- **`sync_monarch` was deliberately NOT added.** `POST /api/monarch-sync`
+  takes the user's raw Monarch email/password (+ optional MFA code) and logs
+  in server-side — there's no stored session to trigger a sync against, only
+  a login flow. Turning that into an MCP tool would mean the user typing
+  their Monarch password into a Claude or ChatGPT chat, which then travels
+  through that provider's tool-call plumbing as plain text. That's a real
+  credential-exposure regression versus today's Settings-page form, not a
+  capability gap worth closing the same way as the others. Left as a UI-only
+  action; revisit only if a token-based Monarch auth path exists later.
+- **`delete_budget_category`** (`budget.tools.js`) — the only budget-category
+  action that had a route (`DELETE /api/budget-categories/[id]`) but no tool
+  or `db/` wrapper. Added `deleteCategory()` to `src/lib/db/budgetCategories.js`.
+  Marked `destructive: true`; its preview names the cascade (also removes the
+  category's budget/forecast lines, forecast overrides and scenario
+  adjustments, and unlinks any bill pointed at it) since the route's own
+  DELETE does exactly that.
+- **`seed_default_budget_categories`** and **`import_budget_category_mapping`**
+  (`budget.tools.js`) — the onboarding wizard's bulk category setup
+  (`/api/budget-categories/seed`, `/import`) had no assistant-facing
+  equivalent; a user could ask for it but the assistant could only create
+  categories one at a time via `save_budget_category`.
+- **`lookup_data` gained two resources**: `transaction_accounts` (wraps the
+  already-exported `getDistinctTransactionAccounts()` in
+  `src/lib/db/creditCards.js`, used when linking a card to its real
+  transaction-account name) and `tax_brackets` (a new `getAllTaxBrackets()`
+  export in `src/lib/db/taxBrackets.js` that exposes the module's private,
+  already-cached `loadAll()` — the raw federal/FICA/state reference rows the
+  forecast's take-home calc resolves against, previously invisible to the
+  assistant).
+- **`delete_card_earn_rate`** (`creditcards.tools.js`) — `deleteEarnRate()`
+  already existed in `src/lib/db/creditCards.js` (used by the Credit Cards
+  page) but had no tool; `save_card_earn_rate` could set a rate but nothing
+  could remove one back to the card's base rate.
+
+**Deliberately left uncovered:** `bills/forecast-amounts`,
+`income-actuals/transactions`, and the four `transactions/analysis|by-category|
+by-month|recent` aggregation routes are derived-view helpers the UI computes
+for its own display, not distinct actions a user takes — `lookup_data(transactions)`
+already gives an MCP client equivalent raw data. `ai-briefings` is the app's
+own AI-narrative cache, not user-editable data. Onboarding-only `profile`
+fields (`focuses`, `taxProfile`, `savingsGoal*`, `payFrequency`,
+`planningHorizon`, `periodOptions`/`periodDefault`, `dataPath`) stay out of
+`update_planning_profile` for now — the UI itself only ever writes them once,
+during onboarding, so there's no ongoing "what a user can do manually" this
+closes; flag if that's wanted later.
+
+**ChatGPT reachability needed no new code.** ChatGPT's custom-connector setup
+has the same undocumented-feeling requirement Personal Dashboard's build hit
+first: the server URL must literally end in `/mcp`. This project's route is
+already `/api/mcp` — no alias route needed, unlike Personal Dashboard's
+`/api/mcp/app` → `/api/chatgpt/mcp` re-export. And `resolveToken()`
+(`app/api/mcp/route.js`) already accepts any valid `personal_access_tokens`
+row by bearer header alone, independent of whether it was minted by the OAuth
+flow or `scripts/create-mcp-token.js` directly — which is exactly what
+ChatGPT's connector "Access token / API key" auth mode sends, no OAuth
+handshake required on that side. Setup: ChatGPT → Settings → Apps &
+Connectors → Developer mode (Plus plan or above) → Create → URL
+`https://<production-alias>.vercel.app/api/mcp` → auth "Access token / API
+key" → paste a token from `scripts/create-mcp-token.js`. Claude's side is
+unchanged — the OAuth 2.1 + PKCE + DCR flow in §5.2.3 already serves
+claude.ai / Cowork / Claude Code Remote.
+
+Verified: `npm run build` clean (102-tool catalog, all routes registered); a
+scratch harness (mocked `apiFetch`, no real DB) exercised all six new/changed
+tools — `lookup_data(transaction_accounts|tax_brackets)`,
+`delete_budget_category`, `seed_default_budget_categories`,
+`import_budget_category_mapping`, `delete_card_earn_rate` — confirming each
+resolves names to ids correctly and calls the expected route. Not verified:
+a live ChatGPT connector (no way to drive ChatGPT's UI from this sandbox);
+John still needs to mint a token and add the connector on his end.
 
 ### 5.3 Deduplication Logic
 

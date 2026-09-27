@@ -11,6 +11,7 @@ import { getBills, getAccounts, getAccountBalances, getBillAmountsRange } from '
 import { getCommitments } from '../../db/commitments.js'
 import {
   getCreditCards, getEarnRates, getPointsBalances, getPointRedemptions, getCCSettings,
+  getDistinctTransactionAccounts,
 } from '../../db/creditCards.js'
 import { getWealthSnapshots } from '../../db/wealthSnapshots.js'
 import { getBudgetCategories } from '../../db/budgetCategories.js'
@@ -23,6 +24,7 @@ import { getIncomeActualsRange } from '../../db/income.js'
 import { getProfile } from '../../db/profile.js'
 import { getAIPreferences } from '../../db/aiPreferences.js'
 import { getImportHistory } from '../../db/importLog.js'
+import { getAllTaxBrackets } from '../../db/taxBrackets.js'
 import { thisYear, toYear, toMonth, resolveByName } from './helpers.js'
 
 // Row ceiling per lookup. Enough for a full year of line items; small enough
@@ -33,12 +35,13 @@ const RESOURCES = [
   'bills', 'bill_amounts', 'accounts', 'account_balances',
   'commitments',
   'credit_cards', 'earn_rates', 'points_balances', 'redemptions', 'credit_card_settings',
+  'transaction_accounts',
   'wealth_snapshots',
   'budget_categories', 'budget_line_items', 'budget_years',
   'forecast_line_items', 'forecast_overrides',
   'scenarios', 'scenario_adjustments',
   'transactions', 'income_actuals',
-  'profile', 'ai_preferences', 'import_history',
+  'profile', 'ai_preferences', 'import_history', 'tax_brackets',
 ]
 
 export const LOOKUP_TOOL = {
@@ -48,7 +51,8 @@ export const LOOKUP_TOOL = {
     'current values, exact names, or ids — the financial context in the system prompt is a ' +
     'session summary and may be stale or incomplete. Returns rows as JSON. ' +
     'Also use it to answer questions about modules the context brief does not cover ' +
-    '(bills, accounts, credit cards, forecast, income actuals, import history).',
+    '(bills, accounts, credit cards, forecast, income actuals, import history, ' +
+    'transaction accounts, tax brackets).',
   input_schema: {
     type: 'object',
     properties: {
@@ -104,6 +108,7 @@ async function fetchResource(userId, input) {
       const s = await getCCSettings(userId)
       return [s ?? {}]
     }
+    case 'transaction_accounts': return getDistinctTransactionAccounts(userId)
     case 'wealth_snapshots': return getWealthSnapshots(userId, 24)
     case 'budget_categories': return getBudgetCategories(userId)
     case 'budget_line_items': {
@@ -169,6 +174,7 @@ async function fetchResource(userId, input) {
       return [p ?? {}]
     }
     case 'import_history': return getImportHistory(userId)
+    case 'tax_brackets': return getAllTaxBrackets()
     default:
       throw new Error(`Unknown resource: ${input.resource}`)
   }
