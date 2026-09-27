@@ -1,6 +1,8 @@
 // Annual Budget Builder: category structure and the month-by-month schedule.
 
-import { getBudgetCategories, upsertCategory } from '../../db/budgetCategories.js'
+import {
+  getBudgetCategories, upsertCategory, deleteCategory, seedDefaultCategories, importCategoryMappings,
+} from '../../db/budgetCategories.js'
 import {
   getBudgetLineItems, insertBudgetLineItem, updateLineItemAmount, deleteLineItem,
 } from '../../db/budgetLineItems.js'
@@ -237,6 +239,126 @@ export const budgetTools = [
         summary: `Deleted ${doomed.length} budget line${doomed.length === 1 ? '' : 's'} for ${cat.category} in ${year}`,
         result: { year, deleted: doomed.length },
       }
+    },
+  },
+
+  {
+    name: 'delete_budget_category',
+    group: 'budget',
+    write: true,
+    schema: {
+      name: 'delete_budget_category',
+      description:
+        'Delete a budget category entirely, by name. This also removes every budget line, ' +
+        'forecast line, forecast override and scenario adjustment on that category, and unlinks ' +
+        'any bill pointed at it — not just this category\'s own row. Prefer set_budget_amount with ' +
+        'amount 0, or is_active: false via save_budget_category, when you only mean to zero it out.',
+      input_schema: {
+        type: 'object',
+        properties: { category: { type: 'string' } },
+        required: ['category'],
+      },
+    },
+    async preview(input, ctx) {
+      const target = findCategory(await getBudgetCategories(ctx.userId), input.category)
+      return {
+        title: `Delete category · ${target?.category ?? input.category}`,
+        subtitle: target ? 'Also removes its budget/forecast lines, overrides and scenario adjustments.' : 'No category with that name was found.',
+        rows: target ? [row('Group', target.group), row('Type', target.type)] : [],
+        destructive: true,
+      }
+    },
+    async execute(userId, input) {
+      const target = findCategory(await getBudgetCategories(userId), requireField(input, 'category'))
+      if (!target) throw new Error(`No budget category named "${input.category}".`)
+      await deleteCategory(target.id)
+      return { summary: `Deleted category "${target.category}" and everything linked to it`, result: { id: target.id } }
+    },
+  },
+
+  {
+    name: 'seed_default_budget_categories',
+    group: 'budget',
+    write: true,
+    schema: {
+      name: 'seed_default_budget_categories',
+      description:
+        'Create the standard Monarch-style set of budget categories for a user who has none yet. ' +
+        'Safe to call more than once — it only adds categories the user doesn\'t already have and ' +
+        'never overwrites a category they\'ve customized.',
+      input_schema: { type: 'object', properties: {} },
+    },
+    async preview(input, ctx) {
+      const existing = await getBudgetCategories(ctx.userId)
+      return {
+        title: 'Seed default budget categories',
+        subtitle: existing.length
+          ? `${existing.length} categor${existing.length === 1 ? 'y' : 'ies'} already exist — only missing ones will be added.`
+          : 'No categories yet — this creates the full default set.',
+        rows: [],
+      }
+    },
+    async execute(userId) {
+      const before = await getBudgetCategories(userId)
+      const beforeNames = new Set(before.map(c => c.category))
+      await seedDefaultCategories(userId)
+      const after = await getBudgetCategories(userId)
+      const added = after.filter(c => !beforeNames.has(c.category)).length
+      return { summary: `Seeded ${added} new default categor${added === 1 ? 'y' : 'ies'}`, result: { added } }
+    },
+  },
+
+  {
+    name: 'import_budget_category_mapping',
+    group: 'budget',
+    write: true,
+    schema: {
+      name: 'import_budget_category_mapping',
+      description:
+        'Bulk-set category → group/type/monthly-target mappings in one call, e.g. from a budget ' +
+        'mapping CSV the user describes or pastes. Each row upserts by category name — a row missing ' +
+        '`category` or `group` is skipped. For a single category, use save_budget_category instead.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          rows: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                category: { type: 'string' },
+                group: { type: 'string' },
+                type: { type: 'string', enum: CATEGORY_TYPES },
+                monthly_target: { type: 'number' },
+              },
+              required: ['category', 'group'],
+            },
+          },
+        },
+        required: ['rows'],
+      },
+    },
+    async preview(input) {
+      const rows = Array.isArray(input?.rows) ? input.rows : []
+      const { rows: previewed, overflow } = previewRows(
+        rows.map(r => row(r.category, `${r.group}${r.type ? ` · ${r.type}` : ''}`))
+      )
+      return {
+        title: `Import ${rows.length} category mapping${rows.length === 1 ? '' : 's'}`,
+        rows: previewed,
+        footer: overflow ? `…and ${overflow} more` : '',
+      }
+    },
+    async execute(userId, input) {
+      const rows = Array.isArray(input?.rows) ? input.rows : []
+      if (!rows.length) throw new Error('Field "rows" must be a non-empty array.')
+      const result = await importCategoryMappings(userId, rows.map(r => ({
+        category: r.category,
+        group: r.group,
+        type: r.type ?? null,
+        monthlyTarget: r.monthly_target ?? null,
+      })))
+      return { summary: `Imported ${result?.imported ?? 0} category mapping${(result?.imported ?? 0) === 1 ? '' : 's'}`, result }
     },
   },
 ]

@@ -22,6 +22,13 @@ async function loadAll() {
 // Test/refresh hook.
 export function clearTaxCache() { _cache = null }
 
+// Raw table rows (federal brackets, FICA constants, state rates), unresolved
+// for any particular year — for callers (the AI read tool) that want to show
+// what's seeded rather than the year-resolved shape getTaxData returns.
+export async function getAllTaxBrackets() {
+  return loadAll()
+}
+
 function find(rows, year, jurisdiction, filingStatus = 'all') {
   return rows.find(
     r => r.year === year && r.jurisdiction === jurisdiction && r.filing_status === filingStatus

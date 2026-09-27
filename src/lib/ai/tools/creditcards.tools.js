@@ -3,7 +3,7 @@
 import {
   getCreditCards, upsertCreditCard, deleteCreditCard,
   upsertPointsBalance, getPointRedemptions, upsertPointRedemption, deletePointRedemption,
-  upsertEarnRate,
+  upsertEarnRate, getEarnRates, deleteEarnRate,
 } from '../../db/creditCards.js'
 import {
   money, resolveByName, row, toMonth, toNumber, toNullableNumber, toYear, thisYear,
@@ -273,6 +273,44 @@ export const creditCardTools = [
       await upsertEarnRate(userId, target.id, requireField(input, 'cc_category'), toNumber(input.earn_rate))
       return {
         summary: `Set ${toNumber(input.earn_rate)}x on "${target.name}" for ${input.cc_category}`,
+        result: { cardId: target.id },
+      }
+    },
+  },
+
+  {
+    name: 'delete_card_earn_rate',
+    group: 'creditcards',
+    write: true,
+    schema: {
+      name: 'delete_card_earn_rate',
+      description: 'Remove a card\'s earn rate for a spending category, so it falls back to the card\'s base rate.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          card: { type: 'string', description: 'Card name or id.' },
+          cc_category: { type: 'string' },
+        },
+        required: ['card', 'cc_category'],
+      },
+    },
+    async preview(input, ctx) {
+      const target = resolveByName(await getCreditCards(ctx.userId), input.card)
+      const rates = target ? await getEarnRates(ctx.userId) : []
+      const existing = rates.find(r => r.card_id === target?.id && r.cc_category === input.cc_category)
+      return {
+        title: `Remove earn rate · ${target?.name ?? input.card}`,
+        subtitle: existing ? '' : 'No earn rate found for that card and category.',
+        rows: existing ? [row('Category', input.cc_category), row('Current rate', `${toNumber(existing.earn_rate)}x`, 'bad')] : [],
+        destructive: true,
+      }
+    },
+    async execute(userId, input) {
+      const target = resolveByName(await getCreditCards(userId), requireField(input, 'card'))
+      if (!target) throw new Error(`No credit card named "${input.card}".`)
+      await deleteEarnRate(target.id, requireField(input, 'cc_category'))
+      return {
+        summary: `Removed the ${input.cc_category} earn rate on "${target.name}"`,
         result: { cardId: target.id },
       }
     },

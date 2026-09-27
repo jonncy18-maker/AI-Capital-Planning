@@ -12,7 +12,40 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-08-23 (Tool registry — scenario editing + lookup_data pagination, both found via real MCP usage)
+**Last updated:** 2026-09-27 (MCP full coverage + ChatGPT reachability)
+
+- **Closed the "MCP should do everything a user can do manually" gap
+  (2026-09-27):** audited every `app/api/*` route against
+  `src/lib/ai/tools/*.tools.js` (see `ARCHITECTURE.md` §5.2.4 for the full
+  route-by-route table) and added the real gaps found: `delete_budget_category`,
+  `seed_default_budget_categories`, `import_budget_category_mapping`,
+  `delete_card_earn_rate`, and two new `lookup_data` resources
+  (`transaction_accounts`, `tax_brackets`). Deliberately did NOT add a
+  `sync_monarch` tool — `/api/monarch-sync` takes the user's raw Monarch
+  email/password, and turning that into an MCP tool means typing a real
+  password into a Claude/ChatGPT chat, a materially worse exposure than
+  today's Settings-page form. A handful of other routes
+  (`bills/forecast-amounts`, `income-actuals/transactions`, the four
+  `transactions/*` aggregation views, `ai-briefings`) are internal
+  derived-view helpers, not user actions, and stayed out on purpose.
+  - **ChatGPT connector reachability needed zero new code.** Modeled on
+    Personal Dashboard's own ChatGPT alias fix: ChatGPT's connector UI
+    requires the server URL to literally end in `/mcp` (this project's route
+    already is `/api/mcp` — no alias route needed) and its "Access token /
+    API key" auth mode just sends a bearer header, which
+    `personal_access_tokens` already accepts regardless of how the token was
+    minted (OAuth or `scripts/create-mcp-token.js` directly). Claude's OAuth
+    2.1 + DCR flow (§5.2.3) is unchanged.
+  - **Verified:** `npm run build` clean; a scratch harness against a mocked
+    `apiFetch` (no live DB) exercised all six new/changed tools end to end.
+    Not verified: a live ChatGPT connector — needs a minted token and
+    someone driving ChatGPT's own UI, neither available from this sandbox.
+  - **Not done:** minting the actual ChatGPT token against production
+    (needs `DATABASE_URL` or the Neon MCP connection pointed at the real
+    project) and confirming the connector in ChatGPT's UI — both are next
+    steps for John.
+
+**Last updated (previous):** 2026-08-23 (Tool registry — scenario editing + lookup_data pagination, both found via real MCP usage)
 
 - **OAuth confirmed fully working end to end (2026-08-23):** connector added
   successfully from both Claude Code Remote (cloud) and Claude Desktop after

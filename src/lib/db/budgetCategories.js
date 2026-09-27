@@ -74,6 +74,20 @@ export async function getUserGroups(_userId) {
   return [...new Set((data ?? []).map(r => r.group).filter(Boolean))].sort()
 }
 
+// Delete a budget category by id. Cascades server-side: the route also
+// removes every budget/forecast line, forecast override and scenario
+// adjustment on this category, and clears it from any bill's
+// forecast_category_id — see app/api/budget-categories/[id]/route.js.
+export async function deleteCategory(id) {
+  const res = await apiFetch(`/api/budget-categories/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (res.status === 204) return
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Request failed (${res.status})`)
+}
+
 // Bulk upsert category → { group, type, monthly_target } mappings, e.g. from a
 // budget/mapping CSV the user already maintains. This is authoritative: it seeds
 // the user's own buckets so subsequent imports map cleanly without AI guessing.
