@@ -44,7 +44,7 @@ function replaceLast(messages, next) {
   return [...messages.slice(0, -1), next]
 }
 
-export default function AppRoot({ children }) {
+function AppShell({ children }) {
   const { session, loading: authLoading, user } = useAuth()
   const [profile, setProfile] = useState(null)
   // Starts true: the fetch effect below only flips it after the first render,
@@ -538,4 +538,13 @@ export default function AppRoot({ children }) {
       </div>
     </ShellContext.Provider>
   )
+}
+
+// Routes that render without the signed-in shell (no auth gate, sidebar or AI command bar).
+const PUBLIC_PATHS = ['/welcome']
+
+export default function AppRoot({ children }) {
+  const pathname = usePathname()
+  if (PUBLIC_PATHS.includes(pathname?.replace(/\/$/, ''))) return children
+  return <AppShell>{children}</AppShell>
 }

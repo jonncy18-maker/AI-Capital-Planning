@@ -50,7 +50,7 @@ export default function RootLayout({ children }) {
         <title>AI Capital Planning OS</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:ital,wght@0,400;0,500&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:ital,wght@0,400;0,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
       </head>
       <body>
         <ErrorBoundary>

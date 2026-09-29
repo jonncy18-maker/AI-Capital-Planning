@@ -76,6 +76,15 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
   Because `@serwist/next` bundles the SW with a webpack plugin, production builds
   run `next build --webpack` (Next 16's Turbopack default would silently skip
   the SW). See `docs/PWA.md`.
+- **Public landing page (added 2026-09-29):** `/welcome`
+  (`app/welcome/page.jsx` → `src/modules/landing/`). Every other route renders
+  inside `AppShell` (auth gate, sidebar, AI command bar); `AppRoot` skips the
+  shell for paths in `PUBLIC_PATHS` so this page needs no session. Its CSS is
+  scoped under `.lp` with `lp-`-prefixed class names because `App.css` sets a
+  global `body { overflow: hidden }` and defines names like `.app`/`.sidebar`;
+  `body:has(.lp)` restores page scrolling only while the landing page is
+  mounted. Tour video is served from `public/landing/`. `/` still redirects to
+  `/dashboard` (PWA `start_url` is `/`).
 - **Future:** React Native native app (planned migration, not V1 scope)
 
 ---
