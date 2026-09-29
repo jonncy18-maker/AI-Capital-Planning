@@ -12,7 +12,31 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-09-27 (MCP full coverage + ChatGPT reachability)
+**Last updated:** 2026-09-29 (public landing page at `/welcome`)
+
+- **Built the public landing page (2026-09-29):** `/welcome`, rendered outside
+  the signed-in shell. Design came from an approved mockup; the page follows the
+  saved app theme via `tokens.css`. Scroll-driven motion (a pinned dashboard that
+  breaks apart and recalculates, a scrubbed tour video, a pinned scenario
+  picker, module cards that assemble) lives in
+  `src/modules/landing/landingMotion.js`. Video files are in `public/landing/`.
+  - **`/` deliberately still redirects to `/dashboard`.** The installed PWA's
+    `start_url` is `/`, so pointing `/` at the landing page would open marketing
+    instead of the app on every launch. Making `/` the landing page for
+    signed-out visitors is a separate decision (needs `start_url` moved to
+    `/dashboard`).
+  - **Verified:** `npm run build` clean (with placeholder env vars, since the
+    build needs `NEON_AUTH_COOKIE_SECRET` etc.); `next start` served
+    `/welcome` (200, no app-shell nodes, body scrolls), `/dashboard` still shows
+    the sign-in screen, video served with Range (206). A headless browser
+    scrolled the page and read the values the animations write. **Not
+    verified:** video playback and scrubbing (the test browser cannot decode
+    H.264), Safari/Firefox, phone widths in a real device, and the Google Fonts
+    faces (blocked in the sandbox, fallback fonts rendered). No sample figures on
+    the page are real; they are labeled "EXAMPLE DATA".
+  - Audit was a single-agent self-check against the mockup, not the loop's
+    separate audit agent.
+
 
 - **Closed the "MCP should do everything a user can do manually" gap
   (2026-09-27):** audited every `app/api/*` route against
