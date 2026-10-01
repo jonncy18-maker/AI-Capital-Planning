@@ -9,6 +9,14 @@
 //
 // Routing rationale (see PR discussion): cheap classification → Haiku,
 // reasoning → Sonnet. Opus is intentionally not used here.
+// Text-only Haiku-class tasks that may run on GPT-6 Luna instead (opt-in by env;
+// see luna.js). Callers pass one of these as `task` alongside `modelFamily`; the
+// route ignores a task that isn't flipped, so the Anthropic family still applies.
+export const AI_TASKS = {
+  suggestBuckets: 'suggest-buckets',
+  suggestTabMatches: 'suggest-tab-matches',
+}
+
 export const AI_MODEL_FAMILIES = {
   groupMapping: 'haiku', // classification: import category → budget group
   assistant: 'sonnet',   // reasoning: command bar + AI briefing
