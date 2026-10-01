@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+        env:
+          # Neon Auth's SDK validates these at module load during page-data
+          # collection; the build never talks to Neon, so placeholders suffice.
+          NEON_AUTH_BASE_URL: https://ci.invalid/auth
+          NEON_AUTH_COOKIE_SECRET: ci-placeholder-cookie-secret-not-used-at-runtime
+      - name: No new lint errors in changed files
+        run: scripts/lint-ratchet.sh ${{ github.event.pull_request.base.sha }}
