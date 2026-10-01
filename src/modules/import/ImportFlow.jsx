@@ -196,7 +196,7 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
         lineHeight: '1.6',
       }}>
         {aiAssisted
-          ? 'Claude pre-filled these groupings from your transaction history. Review and adjust, or skip any you\'d like to leave uncategorized.'
+          ? 'The AI pre-filled these groupings from your transaction history. Review and adjust, or skip any you\'d like to leave uncategorized.'
           : 'These Monarch categories aren\'t in our default map. Assign each to a group, or skip to leave them uncategorized.'}
       </div>
 
