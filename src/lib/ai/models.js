@@ -20,5 +20,5 @@ export const AI_TASKS = {
 
 export const AI_MODEL_FAMILIES = {
   groupMapping: 'haiku', // classification: import category → budget group
-  assistant: 'sonnet',   // reasoning: command bar + AI briefing
+  assistant: 'sonnet', // reasoning: command bar + AI briefing
 }

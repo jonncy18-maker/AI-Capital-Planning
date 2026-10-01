@@ -45,7 +45,7 @@ async function resolveModel(family) {
     if (res.ok) {
       const { data } = await res.json()
       const newest = (data ?? [])
-        .filter(m => typeof m.id === 'string' && m.id.includes(fam))
+        .filter((m) => typeof m.id === 'string' && m.id.includes(fam))
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       if (newest?.id) {
         modelCache[fam] = { id: newest.id, at: Date.now() }
@@ -71,7 +71,8 @@ export async function POST(request) {
     return Response.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const { messages, system, maxTokens, model, modelFamily, cacheSystem, tools, task } = payload || {}
+  const { messages, system, maxTokens, model, modelFamily, cacheSystem, tools, task } =
+    payload || {}
   if (!Array.isArray(messages) || messages.length === 0) {
     return Response.json({ error: 'messages[] is required.' }, { status: 400 })
   }
@@ -85,13 +86,19 @@ export async function POST(request) {
         const text = await callLuna({ system, input, maxTokens })
         return Response.json({ text, content: [{ type: 'text', text }], stop_reason: 'end_turn' })
       } catch (err) {
-        console.error(`[ai-chat:${task}] Luna failed, falling back to Anthropic:`, err?.message || err)
+        console.error(
+          `[ai-chat:${task}] Luna failed, falling back to Anthropic:`,
+          err?.message || err
+        )
       }
     }
   }
 
   if (!ANTHROPIC_API_KEY) {
-    return Response.json({ error: 'ANTHROPIC_API_KEY is not configured on this deployment.' }, { status: 500 })
+    return Response.json(
+      { error: 'ANTHROPIC_API_KEY is not configured on this deployment.' },
+      { status: 500 }
+    )
   }
 
   const resolvedModel = model ?? (await resolveModel(modelFamily ?? DEFAULT_FAMILY))
@@ -130,8 +137,8 @@ export async function POST(request) {
     const data = await res.json()
     const content = Array.isArray(data?.content) ? data.content : []
     const text = content
-      .filter(b => b?.type === 'text')
-      .map(b => b.text ?? '')
+      .filter((b) => b?.type === 'text')
+      .map((b) => b.text ?? '')
       .join('\n')
       .trim()
     return Response.json({ text, content, stop_reason: data?.stop_reason ?? 'end_turn' })
