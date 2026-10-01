@@ -1,4 +1,5 @@
 import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
+import { callLuna, lunaEnabledFor, toLunaInput } from '../../../src/lib/ai/luna.js'
 
 // Next.js port of db/functions/ai-chat (Deno edge function). Server-side
 // proxy to the Anthropic API — the ANTHROPIC_API_KEY secret lives only in this
@@ -63,10 +64,6 @@ export async function POST(request) {
     return Response.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
-  if (!ANTHROPIC_API_KEY) {
-    return Response.json({ error: 'ANTHROPIC_API_KEY is not configured on this deployment.' }, { status: 500 })
-  }
-
   let payload
   try {
     payload = await request.json()
@@ -74,9 +71,27 @@ export async function POST(request) {
     return Response.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const { messages, system, maxTokens, model, modelFamily, cacheSystem, tools } = payload || {}
+  const { messages, system, maxTokens, model, modelFamily, cacheSystem, tools, task } = payload || {}
   if (!Array.isArray(messages) || messages.length === 0) {
     return Response.json({ error: 'messages[] is required.' }, { status: 400 })
+  }
+
+  // Opt-in Luna path for plain-text, tool-free tasks (src/lib/ai/luna.js). Any
+  // failure, or a request Luna can't take as-is, falls through to Anthropic.
+  if (typeof task === 'string' && !tools?.length && !model && lunaEnabledFor(task)) {
+    const input = toLunaInput(messages)
+    if (input) {
+      try {
+        const text = await callLuna({ system, input, maxTokens })
+        return Response.json({ text, content: [{ type: 'text', text }], stop_reason: 'end_turn' })
+      } catch (err) {
+        console.error(`[ai-chat:${task}] Luna failed, falling back to Anthropic:`, err?.message || err)
+      }
+    }
+  }
+
+  if (!ANTHROPIC_API_KEY) {
+    return Response.json({ error: 'ANTHROPIC_API_KEY is not configured on this deployment.' }, { status: 500 })
   }
 
   const resolvedModel = model ?? (await resolveModel(modelFamily ?? DEFAULT_FAMILY))

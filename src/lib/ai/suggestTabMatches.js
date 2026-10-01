@@ -7,7 +7,7 @@
 // { error } so callers can fall back to the manual selections.
 
 import { invokeAIChatRaw } from './aiChatRaw.js'
-import { AI_MODEL_FAMILIES } from './models.js'
+import { AI_MODEL_FAMILIES, AI_TASKS } from './models.js'
 
 // Returns { matches: [{ category, tab, confidence }] } or { error }.
 // `tab` is always one of `tabNames` or null.
@@ -38,6 +38,7 @@ Rules:
     messages: [{ role: 'user', content: userMessage }],
     maxTokens: 1200,
     modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
+    task: AI_TASKS.suggestTabMatches, // Luna instead when OPENAI_API_KEY is set (luna.js)
   })
 
   if (error || data?.error) {

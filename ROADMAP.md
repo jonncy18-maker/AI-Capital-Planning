@@ -12,7 +12,14 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-09-29 (public landing page at `/welcome`)
+**Last updated:** 2026-10-01 (Luna opt-in, wave 1)
+
+- **Luna opt-in for the two Haiku-class classification tasks (2026-10-01):** John asked to align every AI task on a model and start moving Haiku-class work to GPT-6 Luna (`gpt-6-luna`). This repo's wave 1 is `suggest-buckets` (`suggestBuckets.js`) and `suggest-tab-matches` (`suggestTabMatches.js`) — plain text in, JSON out, no tools. The other uses are deliberately untouched: the command bar, budget interview and scenario/tool agents stay on Sonnet; the spreadsheet importers and category mapper (Sonnet today, money figures) wait for a side-by-side on real files (wave 4).
+  - **Nothing changes on merge while the key is absent from Production.** `src/lib/ai/luna.js` + a branch in `app/api/ai-chat/route.js`: a request carrying a registered `task` goes to Luna whenever `OPENAI_API_KEY` is set (so the key's Vercel scope is the switch: Preview only to try it); `AI_FORCE_ANTHROPIC=1` overrides the key. Any Luna failure (HTTP error, truncation, empty reply), and any request with tools or non-text blocks, falls through to the existing Anthropic path. Plain `fetch`, `store: false`, `reasoning.effort: 'low'`, 600 tokens of `max_output_tokens` headroom because reasoning tokens count against the cap.
+  - The family-resolved Anthropic path is unchanged; the "version deliberately not pinned" rule still holds for it. `gpt-6-luna` is pinned (an API argument, not a family).
+  - **Verified:** a throwaway Node script (not committed — this repo has no test runner) checked provider selection, text-only message conversion, the Luna request shape, and that HTTP error, truncation and empty reply all throw; ESLint on the touched files matches the base; `npm run build` passes. **Not verified:** any real Luna call (no OpenAI key in the sandbox, OpenAI's docs unreachable from it); `reasoning.effort` and the response shape are from the documented Responses API and untested against `gpt-6-luna`. The bucket suggestions and tab matching prompts return JSON that the client parses strictly, so compare 10–20 real imports on a Preview before flipping Production.
+  - **Your steps after merge:** add `OPENAI_API_KEY` in Vercel scoped to Preview only, redeploy the preview, run a budget import, watch the logs for `[ai-chat:...] Luna failed`.
+  - Audit was a single-agent self-check, not the loop's separate audit agent. UI unchanged.
 
 - **Built the public landing page (2026-09-29):** `/welcome`, rendered outside
   the signed-in shell. Design came from an approved mockup; the page follows the
