@@ -32,8 +32,8 @@ export function toLunaInput(messages) {
     if (m?.role !== 'user' && m?.role !== 'assistant') return null
     let content = m.content
     if (Array.isArray(content)) {
-      if (!content.every(b => b?.type === 'text')) return null
-      content = content.map(b => b.text ?? '').join('\n')
+      if (!content.every((b) => b?.type === 'text')) return null
+      content = content.map((b) => b.text ?? '').join('\n')
     }
     if (typeof content !== 'string') return null
     input.push({ role: m.role, content })
@@ -70,10 +70,10 @@ export async function callLuna({ system, input, maxTokens }) {
     throw new Error(`OpenAI response incomplete (${data.incomplete_details?.reason || 'unknown'})`)
   }
   const text = (data.output || [])
-    .filter(item => item.type === 'message')
-    .flatMap(item => item.content || [])
-    .filter(part => part.type === 'output_text')
-    .map(part => part.text)
+    .filter((item) => item.type === 'message')
+    .flatMap((item) => item.content || [])
+    .filter((part) => part.type === 'output_text')
+    .map((part) => part.text)
     .join('')
     .trim()
   if (!text) throw new Error('OpenAI returned no text')

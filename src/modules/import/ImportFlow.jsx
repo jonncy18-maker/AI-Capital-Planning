@@ -1,8 +1,18 @@
 import { useState, useEffect } from 'react'
 import { parseMonarchCSV, detectMonarchFormat } from '../../lib/csv/monarchParser.js'
-import { findUnmappedCategories, applyMappings, ALL_GROUPS, GROUP_TYPE_DEFAULTS, getCategoryMapping } from '../../lib/csv/categoryMap.js'
+import {
+  findUnmappedCategories,
+  applyMappings,
+  ALL_GROUPS,
+  GROUP_TYPE_DEFAULTS,
+  getCategoryMapping,
+} from '../../lib/csv/categoryMap.js'
 import { importTransactions } from '../../lib/db/transactions.js'
-import { seedDefaultCategories, upsertCategory, getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import {
+  seedDefaultCategories,
+  upsertCategory,
+  getBudgetCategories,
+} from '../../lib/db/budgetCategories.js'
 import { logImport } from '../../lib/db/importLog.js'
 import { buildCategoryProfile } from '../../lib/ai/categoryProfiler.js'
 import { suggestBuckets } from '../../lib/ai/suggestBuckets.js'
@@ -11,15 +21,17 @@ import { suggestBuckets } from '../../lib/ai/suggestBuckets.js'
 
 function Spinner() {
   return (
-    <div style={{
-      width: '36px',
-      height: '36px',
-      border: '3px solid var(--bd)',
-      borderTop: '3px solid var(--accent)',
-      borderRadius: '50%',
-      animation: 'spin 0.8s linear infinite',
-      margin: '0 auto',
-    }} />
+    <div
+      style={{
+        width: '36px',
+        height: '36px',
+        border: '3px solid var(--bd)',
+        borderTop: '3px solid var(--accent)',
+        borderRadius: '50%',
+        animation: 'spin 0.8s linear infinite',
+        margin: '0 auto',
+      }}
+    />
   )
 }
 
@@ -29,66 +41,81 @@ function ParseError({ errors, onRetry, onSkip }) {
   return (
     <div style={{ textAlign: 'center', paddingTop: '24px' }}>
       <div style={{ fontSize: '32px', color: 'var(--warn)', lineHeight: 1 }}>⚠</div>
-      <div style={{
-        fontFamily: "'DM Serif Display', serif",
-        fontSize: '24px',
-        color: 'var(--tx-1)',
-        margin: '16px 0 8px',
-        letterSpacing: '-0.01em',
-      }}>
+      <div
+        style={{
+          fontFamily: "'DM Serif Display', serif",
+          fontSize: '24px',
+          color: 'var(--tx-1)',
+          margin: '16px 0 8px',
+          letterSpacing: '-0.01em',
+        }}
+      >
         CSV could not be parsed
       </div>
-      <div style={{
-        fontSize: '13px',
-        color: 'var(--tx-2)',
-        marginBottom: '20px',
-        lineHeight: '1.6',
-      }}>
+      <div
+        style={{
+          fontSize: '13px',
+          color: 'var(--tx-2)',
+          marginBottom: '20px',
+          lineHeight: '1.6',
+        }}
+      >
         The file may not be in Monarch Money format, or the export is corrupted.
       </div>
-      <div style={{
-        border: '1px solid var(--bd)',
-        borderRadius: '9px',
-        background: 'var(--bg-card)',
-        padding: '14px 16px',
-        textAlign: 'left',
-        marginBottom: '24px',
-      }}>
+      <div
+        style={{
+          border: '1px solid var(--bd)',
+          borderRadius: '9px',
+          background: 'var(--bg-card)',
+          padding: '14px 16px',
+          textAlign: 'left',
+          marginBottom: '24px',
+        }}
+      >
         {errors.map((e, i) => (
-          <div key={i} style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '11px',
-            color: 'var(--warn)',
-            marginBottom: i < errors.length - 1 ? '6px' : 0,
-          }}>
+          <div
+            key={i}
+            style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: '11px',
+              color: 'var(--warn)',
+              marginBottom: i < errors.length - 1 ? '6px' : 0,
+            }}
+          >
             {e}
           </div>
         ))}
       </div>
       <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-        <button onClick={onSkip} style={{
-          border: '1px solid var(--ghost-bd)',
-          background: 'none',
-          color: 'var(--ghost-txt)',
-          borderRadius: '8px',
-          padding: '11px 20px',
-          fontFamily: 'Inter, sans-serif',
-          fontSize: '13px',
-          cursor: 'pointer',
-        }}>
+        <button
+          onClick={onSkip}
+          style={{
+            border: '1px solid var(--ghost-bd)',
+            background: 'none',
+            color: 'var(--ghost-txt)',
+            borderRadius: '8px',
+            padding: '11px 20px',
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}
+        >
           Skip import
         </button>
-        <button onClick={onRetry} style={{
-          border: 'none',
-          background: 'var(--accent)',
-          color: 'var(--accent-tx-on)',
-          borderRadius: '8px',
-          padding: '11px 20px',
-          fontFamily: 'Inter, sans-serif',
-          fontSize: '13px',
-          fontWeight: 500,
-          cursor: 'pointer',
-        }}>
+        <button
+          onClick={onRetry}
+          style={{
+            border: 'none',
+            background: 'var(--accent)',
+            color: 'var(--accent-tx-on)',
+            borderRadius: '8px',
+            padding: '11px 20px',
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '13px',
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
           Go back
         </button>
       </div>
@@ -98,12 +125,21 @@ function ParseError({ errors, onRetry, onSkip }) {
 
 // ── Unmapped categories screen ─────────────────────────────────────────────────
 
-function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, initialMappings = {}, questions = [], userGroups = [] }) {
+function UnmappedScreen({
+  unmapped,
+  exampleRows,
+  onConfirm,
+  onSkipAll,
+  mobile,
+  initialMappings = {},
+  questions = [],
+  userGroups = [],
+}) {
   const aiAssisted = Object.keys(initialMappings).length > 0
 
   const [mappings, setMappings] = useState(() => {
     const m = {}
-    unmapped.forEach(cat => {
+    unmapped.forEach((cat) => {
       const ai = initialMappings[cat]
       m[cat] = {
         group: ai?.group ?? 'Uncategorized',
@@ -124,12 +160,16 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
   // Dropdown maps into the user's own groups first, then built-in defaults, plus
   // any new group the AI proposed. Per-card we also include the current value so
   // an AI-proposed group is always selectable.
-  const suggestedGroups = Object.values(initialMappings).map(s => s?.group).filter(Boolean)
+  const suggestedGroups = Object.values(initialMappings)
+    .map((s) => s?.group)
+    .filter(Boolean)
   const baseGroupOptions = [...new Set([...userGroups, ...ALL_GROUPS, ...suggestedGroups])]
-  const optionsFor = cat => [...new Set([...baseGroupOptions, mappings[cat]?.group].filter(Boolean))]
+  const optionsFor = (cat) => [
+    ...new Set([...baseGroupOptions, mappings[cat]?.group].filter(Boolean)),
+  ]
 
   function setGroup(cat, group) {
-    setMappings(m => ({
+    setMappings((m) => ({
       ...m,
       [cat]: {
         ...m[cat],
@@ -139,98 +179,114 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
         aiSuggested: false, // user made an explicit choice
       },
     }))
-    setCustomFor(c => ({ ...c, [cat]: false }))
+    setCustomFor((c) => ({ ...c, [cat]: false }))
   }
 
   function startCustom(cat) {
-    setCustomFor(c => ({ ...c, [cat]: true }))
-    setMappings(m => ({ ...m, [cat]: { ...m[cat], group: '', aiSuggested: false } }))
+    setCustomFor((c) => ({ ...c, [cat]: true }))
+    setMappings((m) => ({ ...m, [cat]: { ...m[cat], group: '', aiSuggested: false } }))
   }
 
   function setCustomGroup(cat, value) {
-    setMappings(m => ({ ...m, [cat]: { ...m[cat], group: value, skip: false, aiSuggested: false } }))
+    setMappings((m) => ({
+      ...m,
+      [cat]: { ...m[cat], group: value, skip: false, aiSuggested: false },
+    }))
   }
 
   function toggleSkip(cat) {
-    setMappings(m => ({
+    setMappings((m) => ({
       ...m,
       [cat]: { ...m[cat], skip: !m[cat].skip },
     }))
   }
 
-  const exampleFor = cat => {
-    const ex = exampleRows.filter(r => r.category === cat).slice(0, 2)
-    return ex.map(r => r.merchant).join(', ')
+  const exampleFor = (cat) => {
+    const ex = exampleRows.filter((r) => r.category === cat).slice(0, 2)
+    return ex.map((r) => r.merchant).join(', ')
   }
 
   // Filter questions to only those whose category is in the unmapped list
   const unmappedSet = new Set(unmapped)
-  const relevantQuestions = questions.filter(q => unmappedSet.has(q.category))
+  const relevantQuestions = questions.filter((q) => unmappedSet.has(q.category))
 
   return (
     <div>
-      <div style={{
-        fontFamily: "'DM Mono', monospace",
-        fontSize: 10,
-        color: 'var(--tx-3)',
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        marginBottom: 6,
-      }}>
+      <div
+        style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 10,
+          color: 'var(--tx-3)',
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginBottom: 6,
+        }}
+      >
         Unmapped categories
       </div>
-      <h1 style={{
-        fontFamily: "'DM Serif Display', serif",
-        fontSize: mobile ? 24 : 30,
-        fontWeight: 400,
-        color: 'var(--tx-1)',
-        margin: '0 0 8px',
-        lineHeight: 1.1,
-      }}>
+      <h1
+        style={{
+          fontFamily: "'DM Serif Display', serif",
+          fontSize: mobile ? 24 : 30,
+          fontWeight: 400,
+          color: 'var(--tx-1)',
+          margin: '0 0 8px',
+          lineHeight: 1.1,
+        }}
+      >
         {unmapped.length} {unmapped.length === 1 ? 'category needs' : 'categories need'} mapping
       </h1>
-      <div style={{
-        fontSize: '13px',
-        color: 'var(--tx-2)',
-        marginBottom: '22px',
-        lineHeight: '1.6',
-      }}>
+      <div
+        style={{
+          fontSize: '13px',
+          color: 'var(--tx-2)',
+          marginBottom: '22px',
+          lineHeight: '1.6',
+        }}
+      >
         {aiAssisted
-          ? 'The AI pre-filled these groupings from your transaction history. Review and adjust, or skip any you\'d like to leave uncategorized.'
-          : 'These Monarch categories aren\'t in our default map. Assign each to a group, or skip to leave them uncategorized.'}
+          ? "The AI pre-filled these groupings from your transaction history. Review and adjust, or skip any you'd like to leave uncategorized."
+          : "These Monarch categories aren't in our default map. Assign each to a group, or skip to leave them uncategorized."}
       </div>
 
       {/* Targeted clarifying questions from the AI */}
       {relevantQuestions.length > 0 && (
         <div style={{ marginBottom: '16px' }}>
-          <div style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '10px',
-            color: 'var(--tx-3)',
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            marginBottom: '8px',
-          }}>
+          <div
+            style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: '10px',
+              color: 'var(--tx-3)',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              marginBottom: '8px',
+            }}
+          >
             A few things to clarify
           </div>
-          {relevantQuestions.map(q => (
-            <div key={q.category} style={{
-              border: '1px solid var(--accent-bd)',
-              borderRadius: '10px',
-              padding: '12px 14px',
-              background: 'var(--accent-bg)',
-              marginBottom: '8px',
-            }}>
-              <div style={{
-                fontSize: '12.5px',
-                color: 'var(--tx-1)',
+          {relevantQuestions.map((q) => (
+            <div
+              key={q.category}
+              style={{
+                border: '1px solid var(--accent-bd)',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                background: 'var(--accent-bg)',
                 marginBottom: '8px',
-                lineHeight: 1.5,
-              }}>
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '12.5px',
+                  color: 'var(--tx-1)',
+                  marginBottom: '8px',
+                  lineHeight: 1.5,
+                }}
+              >
                 {q.question}
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {(q.options ?? []).map(opt => {
+                {(q.options ?? []).map((opt) => {
                   const selected = mappings[q.category]?.group === opt
                   return (
                     <button
@@ -258,78 +314,93 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
         </div>
       )}
 
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '10px',
-        marginBottom: '16px',
-        maxHeight: '55vh',
-        overflowY: 'auto',
-        paddingRight: '4px',
-      }}>
-        {unmapped.map(cat => {
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+          marginBottom: '16px',
+          maxHeight: '55vh',
+          overflowY: 'auto',
+          paddingRight: '4px',
+        }}
+      >
+        {unmapped.map((cat) => {
           const m = mappings[cat]
           return (
-            <div key={cat} style={{
-              border: m.skip ? '1px solid var(--bd-light)' : '1px solid var(--bd)',
-              borderRadius: '10px',
-              padding: '14px 16px',
-              background: m.skip ? 'transparent' : 'var(--bg-card)',
-              opacity: m.skip ? 0.5 : 1,
-              transition: 'opacity .15s',
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                gap: '12px',
-                marginBottom: m.skip ? 0 : '10px',
-              }}>
+            <div
+              key={cat}
+              style={{
+                border: m.skip ? '1px solid var(--bd-light)' : '1px solid var(--bd)',
+                borderRadius: '10px',
+                padding: '14px 16px',
+                background: m.skip ? 'transparent' : 'var(--bg-card)',
+                opacity: m.skip ? 0.5 : 1,
+                transition: 'opacity .15s',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  marginBottom: m.skip ? 0 : '10px',
+                }}
+              >
                 <div>
-                  <div style={{
-                    fontSize: '13.5px',
-                    fontWeight: 500,
-                    color: 'var(--tx-1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}>
+                  <div
+                    style={{
+                      fontSize: '13.5px',
+                      fontWeight: 500,
+                      color: 'var(--tx-1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
                     {cat}
                     {m.aiSuggested && (
-                      <span style={{
-                        background: 'var(--accent-bg)',
-                        color: 'var(--accent)',
-                        border: '1px solid var(--accent-bd)',
-                        borderRadius: '4px',
-                        padding: '1px 5px',
-                        fontFamily: "'DM Mono', monospace",
-                        fontSize: '9px',
-                        letterSpacing: '0.05em',
-                        lineHeight: 1,
-                      }}>
+                      <span
+                        style={{
+                          background: 'var(--accent-bg)',
+                          color: 'var(--accent)',
+                          border: '1px solid var(--accent-bd)',
+                          borderRadius: '4px',
+                          padding: '1px 5px',
+                          fontFamily: "'DM Mono', monospace",
+                          fontSize: '9px',
+                          letterSpacing: '0.05em',
+                          lineHeight: 1,
+                        }}
+                      >
                         AI
                       </span>
                     )}
                   </div>
                   {exampleFor(cat) && (
-                    <div style={{
-                      fontFamily: "'DM Mono', monospace",
-                      fontSize: '10px',
-                      color: 'var(--tx-3)',
-                      marginTop: '3px',
-                      letterSpacing: '0.02em',
-                    }}>
+                    <div
+                      style={{
+                        fontFamily: "'DM Mono', monospace",
+                        fontSize: '10px',
+                        color: 'var(--tx-3)',
+                        marginTop: '3px',
+                        letterSpacing: '0.02em',
+                      }}
+                    >
                       e.g. {exampleFor(cat)}
                     </div>
                   )}
                   {m.aiSuggested && m.note && m.confidence !== 'high' && (
-                    <div style={{
-                      fontFamily: "'DM Mono', monospace",
-                      fontSize: '9.5px',
-                      color: 'var(--tx-3)',
-                      marginTop: '4px',
-                      fontStyle: 'italic',
-                    }}>
+                    <div
+                      style={{
+                        fontFamily: "'DM Mono', monospace",
+                        fontSize: '9.5px',
+                        color: 'var(--tx-3)',
+                        marginTop: '4px',
+                        fontStyle: 'italic',
+                      }}
+                    >
                       {m.note}
                     </div>
                   )}
@@ -354,86 +425,97 @@ function UnmappedScreen({ unmapped, exampleRows, onConfirm, onSkipAll, mobile, i
                 </button>
               </div>
 
-              {!m.skip && (customFor[cat] ? (
-                <input
-                  autoFocus
-                  value={m.group}
-                  onChange={e => setCustomGroup(cat, e.target.value)}
-                  placeholder="New group name…"
-                  style={{
-                    width: '100%',
-                    background: 'var(--field)',
-                    border: '1px solid var(--accent)',
-                    borderRadius: '7px',
-                    padding: '9px 10px',
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: '13px',
-                    color: 'var(--tx-1)',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
-              ) : (
-                <select
-                  value={m.group}
-                  onChange={e => {
-                    if (e.target.value === '__new__') startCustom(cat)
-                    else setGroup(cat, e.target.value)
-                  }}
-                  style={{
-                    width: '100%',
-                    background: 'var(--field)',
-                    border: '1px solid var(--bd)',
-                    borderRadius: '7px',
-                    padding: '9px 10px',
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: '13px',
-                    color: 'var(--tx-1)',
-                    cursor: 'pointer',
-                    outline: 'none',
-                  }}
-                >
-                  {optionsFor(cat).map(g => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                  <option value="__new__">+ New group…</option>
-                </select>
-              ))}
+              {!m.skip &&
+                (customFor[cat] ? (
+                  <input
+                    autoFocus
+                    value={m.group}
+                    onChange={(e) => setCustomGroup(cat, e.target.value)}
+                    placeholder="New group name…"
+                    style={{
+                      width: '100%',
+                      background: 'var(--field)',
+                      border: '1px solid var(--accent)',
+                      borderRadius: '7px',
+                      padding: '9px 10px',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '13px',
+                      color: 'var(--tx-1)',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                ) : (
+                  <select
+                    value={m.group}
+                    onChange={(e) => {
+                      if (e.target.value === '__new__') startCustom(cat)
+                      else setGroup(cat, e.target.value)
+                    }}
+                    style={{
+                      width: '100%',
+                      background: 'var(--field)',
+                      border: '1px solid var(--bd)',
+                      borderRadius: '7px',
+                      padding: '9px 10px',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '13px',
+                      color: 'var(--tx-1)',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    {optionsFor(cat).map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                    <option value="__new__">+ New group…</option>
+                  </select>
+                ))}
             </div>
           )
         })}
       </div>
 
-      <div style={{
-        borderTop: '1px solid var(--bd)',
-        paddingTop: '16px',
-        display: 'flex',
-        gap: '12px',
-        justifyContent: 'space-between',
-      }}>
-        <button onClick={onSkipAll} style={{
-          border: '1px solid var(--ghost-bd)',
-          background: 'none',
-          color: 'var(--ghost-txt)',
-          borderRadius: '8px',
-          padding: '11px 18px',
-          fontFamily: 'Inter, sans-serif',
-          fontSize: '13px',
-          cursor: 'pointer',
-        }}>
+      <div
+        style={{
+          borderTop: '1px solid var(--bd)',
+          paddingTop: '16px',
+          display: 'flex',
+          gap: '12px',
+          justifyContent: 'space-between',
+        }}
+      >
+        <button
+          onClick={onSkipAll}
+          style={{
+            border: '1px solid var(--ghost-bd)',
+            background: 'none',
+            color: 'var(--ghost-txt)',
+            borderRadius: '8px',
+            padding: '11px 18px',
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}
+        >
           Skip all unmapped
         </button>
-        <button onClick={() => onConfirm(mappings)} style={{
-          border: 'none',
-          background: 'var(--accent)',
-          color: 'var(--accent-tx-on)',
-          borderRadius: '8px',
-          padding: '11px 22px',
-          fontFamily: 'Inter, sans-serif',
-          fontSize: '13px',
-          fontWeight: 500,
-          cursor: 'pointer',
-        }}>
+        <button
+          onClick={() => onConfirm(mappings)}
+          style={{
+            border: 'none',
+            background: 'var(--accent)',
+            color: 'var(--accent-tx-on)',
+            borderRadius: '8px',
+            padding: '11px 22px',
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '13px',
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
           Apply & import →
         </button>
       </div>
@@ -448,21 +530,25 @@ function ImportingScreen({ filename }) {
   return (
     <div style={{ textAlign: 'center', paddingTop: '48px' }}>
       <Spinner />
-      <div style={{
-        fontFamily: "'DM Serif Display', serif",
-        fontSize: '22px',
-        color: 'var(--tx-1)',
-        margin: '24px 0 8px',
-        letterSpacing: '-0.01em',
-      }}>
+      <div
+        style={{
+          fontFamily: "'DM Serif Display', serif",
+          fontSize: '22px',
+          color: 'var(--tx-1)',
+          margin: '24px 0 8px',
+          letterSpacing: '-0.01em',
+        }}
+      >
         Importing transactions…
       </div>
-      <div style={{
-        fontFamily: "'DM Mono', monospace",
-        fontSize: '11px',
-        color: 'var(--tx-3)',
-        letterSpacing: '0.04em',
-      }}>
+      <div
+        style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: '11px',
+          color: 'var(--tx-3)',
+          letterSpacing: '0.04em',
+        }}
+      >
         {filename ?? 'Processing CSV'}
       </div>
     </div>
@@ -476,97 +562,119 @@ function SummaryScreen({ result, onDone }) {
 
   return (
     <div>
-      <div style={{
-        fontFamily: "'DM Mono', monospace",
-        fontSize: '10px',
-        color: 'var(--tx-3)',
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        marginBottom: '10px',
-      }}>
+      <div
+        style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: '10px',
+          color: 'var(--tx-3)',
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginBottom: '10px',
+        }}
+      >
         Import complete
       </div>
-      <div style={{
-        fontFamily: "'DM Serif Display', serif",
-        fontSize: '26px',
-        lineHeight: '1.25',
-        color: 'var(--tx-1)',
-        marginBottom: '22px',
-        letterSpacing: '-0.01em',
-      }}>
+      <div
+        style={{
+          fontFamily: "'DM Serif Display', serif",
+          fontSize: '26px',
+          lineHeight: '1.25',
+          color: 'var(--tx-1)',
+          marginBottom: '22px',
+          letterSpacing: '-0.01em',
+        }}
+      >
         {importError ? 'Import encountered an error' : 'Transactions imported'}
       </div>
 
       {importError ? (
-        <div style={{
-          border: '1px solid var(--warn)',
-          borderRadius: '9px',
-          background: 'var(--warn-bg)',
-          padding: '16px',
-          marginBottom: '20px',
-        }}>
-          <div style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '11px',
-            color: 'var(--warn)',
-          }}>
+        <div
+          style={{
+            border: '1px solid var(--warn)',
+            borderRadius: '9px',
+            background: 'var(--warn-bg)',
+            padding: '16px',
+            marginBottom: '20px',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: '11px',
+              color: 'var(--warn)',
+            }}
+          >
             {importError}
           </div>
         </div>
       ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '12px',
-          marginBottom: '20px',
-        }}>
-          <div style={{
-            border: '1px solid var(--accent-bd)',
-            borderRadius: '10px',
-            background: 'var(--accent-bg)',
-            padding: '18px',
-            textAlign: 'center',
-          }}>
-            <div style={{
-              fontFamily: "'DM Serif Display', serif",
-              fontSize: '32px',
-              color: 'var(--accent)',
-              lineHeight: 1,
-            }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '12px',
+            marginBottom: '20px',
+          }}
+        >
+          <div
+            style={{
+              border: '1px solid var(--accent-bd)',
+              borderRadius: '10px',
+              background: 'var(--accent-bg)',
+              padding: '18px',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "'DM Serif Display', serif",
+                fontSize: '32px',
+                color: 'var(--accent)',
+                lineHeight: 1,
+              }}
+            >
               {inserted.toLocaleString()}
             </div>
-            <div style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '10px',
-              color: 'var(--tx-3)',
-              marginTop: '6px',
-              letterSpacing: '0.06em',
-            }}>
+            <div
+              style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '10px',
+                color: 'var(--tx-3)',
+                marginTop: '6px',
+                letterSpacing: '0.06em',
+              }}
+            >
               ADDED
             </div>
           </div>
-          <div style={{
-            border: '1px solid var(--bd)',
-            borderRadius: '10px',
-            background: 'var(--bg-card)',
-            padding: '18px',
-            textAlign: 'center',
-          }}>
-            <div style={{
-              fontFamily: "'DM Serif Display', serif",
-              fontSize: '32px',
-              color: 'var(--tx-2)',
-              lineHeight: 1,
-            }}>
+          <div
+            style={{
+              border: '1px solid var(--bd)',
+              borderRadius: '10px',
+              background: 'var(--bg-card)',
+              padding: '18px',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "'DM Serif Display', serif",
+                fontSize: '32px',
+                color: 'var(--tx-2)',
+                lineHeight: 1,
+              }}
+            >
               {skipped.toLocaleString()}
             </div>
-            <div style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '10px',
-              color: 'var(--tx-3)',
-              marginTop: '6px',
-              letterSpacing: '0.06em',
-            }}>
+            <div
+              style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '10px',
+                color: 'var(--tx-3)',
+                marginTop: '6px',
+                letterSpacing: '0.06em',
+              }}
+            >
               DUPLICATES SKIPPED
             </div>
           </div>
@@ -574,12 +682,14 @@ function SummaryScreen({ result, onDone }) {
       )}
 
       {!importError && (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1px',
-          marginBottom: '22px',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1px',
+            marginBottom: '22px',
+          }}
+        >
           <StatRow label="File" value={filename ?? '—'} />
           <StatRow label="Total rows in CSV" value={totalRows?.toLocaleString() ?? '—'} />
           <StatRow label="New transactions" value={inserted.toLocaleString()} accent />
@@ -588,38 +698,47 @@ function SummaryScreen({ result, onDone }) {
       )}
 
       {parseErrors?.length > 0 && (
-        <div style={{
-          border: '1px solid var(--bd)',
-          borderRadius: '9px',
-          padding: '12px 14px',
-          background: 'var(--bg-card)',
-          marginBottom: '20px',
-        }}>
-          <div style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '9.5px',
-            color: 'var(--tx-3)',
-            letterSpacing: '0.05em',
-            marginBottom: '8px',
-          }}>
+        <div
+          style={{
+            border: '1px solid var(--bd)',
+            borderRadius: '9px',
+            padding: '12px 14px',
+            background: 'var(--bg-card)',
+            marginBottom: '20px',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: '9.5px',
+              color: 'var(--tx-3)',
+              letterSpacing: '0.05em',
+              marginBottom: '8px',
+            }}
+          >
             {parseErrors.length} ROW{parseErrors.length === 1 ? '' : 'S'} SKIPPED DURING PARSE
           </div>
           {parseErrors.slice(0, 5).map((e, i) => (
-            <div key={i} style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '10px',
-              color: 'var(--tx-3)',
-              marginBottom: '3px',
-            }}>
+            <div
+              key={i}
+              style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '10px',
+                color: 'var(--tx-3)',
+                marginBottom: '3px',
+              }}
+            >
               {e}
             </div>
           ))}
           {parseErrors.length > 5 && (
-            <div style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '10px',
-              color: 'var(--tx-3)',
-            }}>
+            <div
+              style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '10px',
+                color: 'var(--tx-3)',
+              }}
+            >
               …and {parseErrors.length - 5} more
             </div>
           )}
@@ -649,20 +768,24 @@ function SummaryScreen({ result, onDone }) {
 
 function StatRow({ label, value, accent }) {
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '10px 0',
-      borderBottom: '0.5px solid var(--bd-light)',
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '10px 0',
+        borderBottom: '0.5px solid var(--bd-light)',
+      }}
+    >
       <span style={{ fontSize: '13px', color: 'var(--tx-2)' }}>{label}</span>
-      <span style={{
-        fontFamily: "'DM Mono', monospace",
-        fontSize: '13px',
-        color: accent ? 'var(--accent)' : 'var(--tx-1)',
-        fontWeight: accent ? 500 : 400,
-      }}>
+      <span
+        style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: '13px',
+          color: accent ? 'var(--accent)' : 'var(--tx-1)',
+          fontWeight: accent ? 500 : 400,
+        }}
+      >
         {value}
       </span>
     </div>
@@ -709,8 +832,8 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
       } catch {
         // Non-fatal — fall back to the built-in defaults
       }
-      const knownNames = userCats.map(c => c.category)
-      const groups = [...new Set(userCats.map(c => c.group).filter(Boolean))].sort()
+      const knownNames = userCats.map((c) => c.category)
+      const groups = [...new Set(userCats.map((c) => c.group).filter(Boolean))].sort()
       setUserGroups(groups)
 
       const catMap = {}
@@ -770,7 +893,7 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
       const { inserted, skipped } = await importTransactions(userId, mappedRows)
 
       // Log the import
-      const unmappedCount = Object.values(customMappings).filter(m => m.skip).length
+      const unmappedCount = Object.values(customMappings).filter((m) => m.skip).length
       try {
         await logImport(userId, {
           filename: csvName,
@@ -809,29 +932,34 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
 
   function handleSkipAllUnmapped() {
     const skipMappings = {}
-    unmapped.forEach(cat => { skipMappings[cat] = { skip: true } })
+    unmapped.forEach((cat) => {
+      skipMappings[cat] = { skip: true }
+    })
     runImport(parseResult.rows, parseResult.errors, skipMappings)
   }
 
   return (
-    <div style={{
-      fontFamily: 'Inter, sans-serif',
-      color: 'var(--tx-1)',
-      WebkitFontSmoothing: 'antialiased',
-    }}>
+    <div
+      style={{
+        fontFamily: 'Inter, sans-serif',
+        color: 'var(--tx-1)',
+        WebkitFontSmoothing: 'antialiased',
+      }}
+    >
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       <div style={{ maxWidth: '520px' }}>
-
         {screen === 'parsing' && (
           <div style={{ textAlign: 'center', paddingTop: '48px' }}>
             <Spinner />
-            <div style={{
-              fontFamily: "'DM Serif Display', serif",
-              fontSize: '22px',
-              color: 'var(--tx-1)',
-              margin: '24px 0 8px',
-              letterSpacing: '-0.01em',
-            }}>
+            <div
+              style={{
+                fontFamily: "'DM Serif Display', serif",
+                fontSize: '22px',
+                color: 'var(--tx-1)',
+                margin: '24px 0 8px',
+                letterSpacing: '-0.01em',
+              }}
+            >
               Reading your CSV…
             </div>
           </div>
@@ -848,21 +976,25 @@ export default function ImportFlow({ csvRaw, csvName, userId, onComplete, mobile
         {screen === 'suggesting' && (
           <div style={{ textAlign: 'center', paddingTop: '48px' }}>
             <Spinner />
-            <div style={{
-              fontFamily: "'DM Serif Display', serif",
-              fontSize: '22px',
-              color: 'var(--tx-1)',
-              margin: '24px 0 8px',
-              letterSpacing: '-0.01em',
-            }}>
+            <div
+              style={{
+                fontFamily: "'DM Serif Display', serif",
+                fontSize: '22px',
+                color: 'var(--tx-1)',
+                margin: '24px 0 8px',
+                letterSpacing: '-0.01em',
+              }}
+            >
               Analyzing your history…
             </div>
-            <div style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '11px',
-              color: 'var(--tx-3)',
-              letterSpacing: '0.04em',
-            }}>
+            <div
+              style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: '11px',
+                color: 'var(--tx-3)',
+                letterSpacing: '0.04em',
+              }}
+            >
               Claude is pre-filling category groupings
             </div>
           </div>

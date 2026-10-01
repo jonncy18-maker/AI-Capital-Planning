@@ -30,8 +30,8 @@ Rules:
 - Do not invent tabs. Do not match two categories to the same tab unless clearly correct.`
 
   const userMessage =
-    `Categories:\n${categories.map(c => `- ${c}`).join('\n')}\n\n` +
-    `Available tabs:\n${tabNames.map(t => `- ${t}`).join('\n')}`
+    `Categories:\n${categories.map((c) => `- ${c}`).join('\n')}\n\n` +
+    `Available tabs:\n${tabNames.map((t) => `- ${t}`).join('\n')}`
 
   const { data, error } = await invokeAIChatRaw({
     system,
@@ -46,7 +46,10 @@ Rules:
   }
 
   try {
-    const raw = (data.text ?? '').replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/, '').trim()
+    const raw = (data.text ?? '')
+      .replace(/^```[a-z]*\n?/i, '')
+      .replace(/\n?```$/, '')
+      .trim()
     const parsed = JSON.parse(raw)
     return { matches: Array.isArray(parsed.matches) ? parsed.matches : [] }
   } catch {

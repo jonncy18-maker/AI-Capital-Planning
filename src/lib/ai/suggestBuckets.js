@@ -24,16 +24,18 @@ import { buildBucketSystemPrompt } from './suggestBuckets.prompts.js'
 export async function suggestBuckets(unmappedCats, profile, groups) {
   const groupList = groups && groups.length ? groups : ALL_GROUPS
   const unmappedSet = new Set(unmappedCats)
-  const profiled = profile.categories.filter(c => unmappedSet.has(c.category))
+  const profiled = profile.categories.filter((c) => unmappedSet.has(c.category))
 
-  const profileLines = profiled.map(c => {
-    const merchants = c.topMerchants.length ? ` [e.g. ${c.topMerchants.join(', ')}]` : ''
-    return (
-      `- "${c.category}"${merchants}: ` +
-      `$${c.monthlyAvg}/mo avg, ${c.frequencyPct}% of months, ` +
-      `${c.inferredType} pattern, ${c.shareOfSpend}% of total spend`
-    )
-  }).join('\n')
+  const profileLines = profiled
+    .map((c) => {
+      const merchants = c.topMerchants.length ? ` [e.g. ${c.topMerchants.join(', ')}]` : ''
+      return (
+        `- "${c.category}"${merchants}: ` +
+        `$${c.monthlyAvg}/mo avg, ${c.frequencyPct}% of months, ` +
+        `${c.inferredType} pattern, ${c.shareOfSpend}% of total spend`
+      )
+    })
+    .join('\n')
 
   const system = buildBucketSystemPrompt(groupList)
 
@@ -55,7 +57,10 @@ export async function suggestBuckets(unmappedCats, profile, groups) {
 
   try {
     // Strip any accidental markdown fences before parsing
-    const raw = (data.text ?? '').replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/, '').trim()
+    const raw = (data.text ?? '')
+      .replace(/^```[a-z]*\n?/i, '')
+      .replace(/\n?```$/, '')
+      .trim()
     const parsed = JSON.parse(raw)
     return {
       suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
