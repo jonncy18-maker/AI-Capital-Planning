@@ -38,7 +38,7 @@ Rules:
     messages: [{ role: 'user', content: userMessage }],
     maxTokens: 1200,
     modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
-    task: AI_TASKS.suggestTabMatches, // Luna instead, when flipped on (luna.js)
+    task: AI_TASKS.suggestTabMatches, // Luna instead when OPENAI_API_KEY is set (luna.js)
   })
 
   if (error || data?.error) {

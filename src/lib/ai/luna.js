@@ -1,11 +1,11 @@
 /* global process */
 // Server-only: imported by app/api/ai-chat/route.js, never by client code.
 //
-// Opt-in GPT-6 Luna path for the text-only Haiku-class tasks named in
-// AI_TASKS (models.js). Everything stays on Anthropic until a task is listed in
-// AI_LUNA_TASKS (comma list, or `all`) AND OPENAI_API_KEY is set;
-// AI_FORCE_ANTHROPIC=1 overrides both. Env-driven so a Vercel Preview can try
-// Luna while Production stays put. The model ID is an API argument, so it stays
+// GPT-6 Luna path for the text-only Haiku-class tasks named in AI_TASKS
+// (models.js). A registered task runs on Luna whenever OPENAI_API_KEY is set and
+// on Anthropic otherwise, so the key's Vercel scope is the switch: add it to
+// Preview only to try Luna while Production stays put. AI_FORCE_ANTHROPIC=1
+// overrides it. The model ID is an API argument, so it stays
 // pinned to an exact ID (CLAUDE.md-style "IDs in code, families in prose").
 import { AI_TASKS } from './models.js'
 
@@ -20,12 +20,7 @@ const TIMEOUT_MS = 25000
 
 export function lunaEnabledFor(task, env = process.env) {
   if (!LUNA_TASKS.includes(task)) return false
-  if (env.AI_FORCE_ANTHROPIC === '1' || !env.OPENAI_API_KEY) return false
-  const flipped = (env.AI_LUNA_TASKS || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-  return flipped.includes('all') || flipped.includes(task)
+  return env.AI_FORCE_ANTHROPIC !== '1' && Boolean(env.OPENAI_API_KEY)
 }
 
 // Luna takes plain text only here: tool calls and image/document blocks stay on

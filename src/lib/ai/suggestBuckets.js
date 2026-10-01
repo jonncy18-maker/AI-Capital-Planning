@@ -46,7 +46,7 @@ export async function suggestBuckets(unmappedCats, profile, groups) {
     messages: [{ role: 'user', content: userMessage }],
     maxTokens: 1500,
     modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
-    task: AI_TASKS.suggestBuckets, // Luna instead, when flipped on (luna.js)
+    task: AI_TASKS.suggestBuckets, // Luna instead when OPENAI_API_KEY is set (luna.js)
   })
 
   if (error || data?.error) {
