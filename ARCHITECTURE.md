@@ -744,10 +744,10 @@ The founding architecture held. These are the notable implementation details tha
 **Budget schedule grid matches forecast grid.** `ScheduleGrid` now mirrors `ForecastGrid` in layout: sticky column and row headers, scrollable max-height, groups expanded by default with a collapse toggle, per-category drill-down toggle (▸) that expands into individual named sub-rows (↳) at 54px indent. Sub-rows come from `budget_line_items` rows whose `label` field is populated (either from the Upload Budget xlsx parser or from commitment names).
 
 **Known hardening backlog** (in order of leverage):
-1. Add Vitest + unit tests for pure modeling functions
-2. Add React error boundary
-3. Strengthen CI (lint + tests, not just build)
-4. Preview-before-write for AI scenario creation
+1. ~~Add Vitest + unit tests for pure modeling functions~~ — completed 2026-10-03 (31 unit tests across 4 core modeling files). ✓
+2. ~~Add React error boundary~~ — completed Phase 11 (`src/modules/common/ErrorBoundary.jsx`). ✓
+3. ~~Strengthen CI (lint + tests, not just build)~~ — completed 2026-10-03 (`npm test` gate in `ci.yml`). ✓
+4. ~~Preview-before-write for AI scenario creation~~ — completed. ✓
 5. Move currency math to integer cents
 6. Surface errors instead of swallowing them
 

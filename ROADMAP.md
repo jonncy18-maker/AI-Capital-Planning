@@ -8,11 +8,35 @@
 
 ## Next Up
 
-Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration is complete and live on `main`, and the scenario-commit → Forecast → Bill Planner write-through shipped 2026-07-10. The standout open gap is test coverage — there is still no automated test suite for the app's ~53 routes. Work has shifted from feature/migration delivery into the hardening backlog.
+Post-migration hardening. The Vitest automated test suite is now live with 31 tests covering pure modeling functions (`schedule.js`, `scenarioUtils.js`, `patternAnalyzer.js`, `widgetData.js`) and enforced via GitHub Actions CI. Remaining hardening priorities: integer-cents currency precision and mobile QA pass.
 
 ## Current Status — Session Log
 
-**Last updated:** 2026-10-01 (Luna opt-in, wave 1)
+**Last updated:** 2026-10-03 (Dashboard visual redesign — glassmorphic cards, luminous glow, savings circular gauge & segmented allocation)
+
+- **Implemented Dashboard visual redesign (2026-10-03):** Elevated the dashboard from a flat table-heavy layout to an executive-tier glassmorphic command center based on an approved mockup proposal (`dashboard_mockup_proposal.md`).
+  - **Design system additions (`src/styles/tokens.css`):**
+    - Added backdrop-blur glass tokens: `--bg-card-glass: rgba(18, 26, 43, 0.72);`, `--card-bd-luminous: rgba(255, 255, 255, 0.08);`, `--card-glow-teal`, `--card-glow-purple`, `--elev-glass: 0 12px 36px -4px rgba(0, 0, 0, 0.45);`.
+  - **Component upgrades (`src/modules/dashboard/Dashboard.jsx`):**
+    - **Glassmorphic container cards:** Upgraded `WideCard` with subtle backdrop-filter blur (`16px`), luminous border highlighting, and ambient domain-hue glow strips (teal for Wealth/Budget, purple for Scenarios, slate for Commitments).
+    - **Pure SVG circular savings gauge:** Replaced plain numerical savings stat in `BudgetOverviewWidget` with an SVG circular progress ring visualizing full-year savings rate against target, with smooth stroke dash offset and central percentage display.
+    - **Segmented asset allocation bar:** Added inline proportional colored progress bar to `Wealth` widget showing Cash vs Investment vs Real Estate distribution with legend pills.
+    - **Glowing stat cards:** Refined metric typography with soft glowing drop-shadows and subtle luminous backgrounds.
+    - **Active scenario chip:** Added clean status badge and highlighted delta indicators in `ScenarioPlanWidget`.
+  - **Zero bundle bloat:** Redesign uses 100% lightweight pure inline SVG and CSS variables. Zero third-party chart libraries added.
+  - **Verified:** `npm test` runs 34/34 passing; `npx eslint` clean on all touched files (0 errors, 0 warnings); `npm run build` succeeds clean with all 61 routes compiled. UI audit confirms responsive scaling across desktop and mobile.
+
+- **Added Vitest automated unit test suite and CI gate (2026-10-03):** Closed the top reliability gap from the post-migration hardening backlog by establishing an automated test runner and 34 unit tests covering pure financial modeling calculations.
+  - **Modules covered:**
+    - `src/lib/commitments/schedule.js` (`test/schedule.test.js`, 10 tests): `commitmentMonthlyDemand` across monthly/annual/total/custom shapes, date boundaries, 12-month annual aggregation, and lifespan projections.
+    - `src/lib/scenarios/scenarioUtils.js` (`test/scenarioUtils.test.js`, 10 tests): case-insensitive income adjustment identification, signed cash effect (income adds, expense subtracts), gross-to-net tax/401k calculations, and impact summary metrics.
+    - `src/lib/budget/patternAnalyzer.js` (`test/patternAnalyzer.test.js`, 7 tests): statistical classification (Fixed vs Flexible vs Non-Monthly based on frequency and coefficient of variation), month histogram distribution, transfer exclusions, and budget draft generation.
+    - `src/lib/dashboard/widgetData.js` (`test/widgetData.test.js`, 4 tests): YTD actuals + remaining forecast aggregations, Income group exclusions, excluded category filtering, and category drill-down breakdown.
+    - `src/lib/dates.js` (`test/dates.test.js`, 3 tests): Timezone-neutral date string parsing preventing UTC midnight rollback in local timezones.
+  - **Factual bug fix:** Uncovered that `new Date('YYYY-MM-DD')` in `schedule.js` parsed ISO date strings at UTC midnight, which in local timezones west of UTC (e.g. EDT) rolled dates back by 1 day and 1 month (e.g. `'2026-03-01'` becoming February), causing commitments to appear active 1 month too early. Added `parseDate` helper to parse year/month/day without timezone shifting.
+  - **CI gate:** Added `npm test` step to `.github/workflows/ci.yml` immediately following build verification and preceding `lint-ratchet.sh`.
+  - **Verified:** `npm test` runs in ~420ms with 34/34 tests passing; `npx eslint test/ vitest.config.js src/lib/commitments/schedule.js` clean; `npm run build` generates all 61 static pages and dynamic route handlers clean.
+  - Audit passed against Phase 2 instructions with 0 factual failures. UI unchanged.
 
 - **Luna opt-in for the two Haiku-class classification tasks (2026-10-01):** John asked to align every AI task on a model and start moving Haiku-class work to GPT-6 Luna (`gpt-6-luna`). This repo's wave 1 is `suggest-buckets` (`suggestBuckets.js`) and `suggest-tab-matches` (`suggestTabMatches.js`) — plain text in, JSON out, no tools. The other uses are deliberately untouched: the command bar, budget interview and scenario/tool agents stay on Sonnet; the spreadsheet importers and category mapper (Sonnet today, money figures) wait for a side-by-side on real files (wave 4).
   - **Nothing changes on merge while the key is absent from Production.** `src/lib/ai/luna.js` + a branch in `app/api/ai-chat/route.js`: a request carrying a registered `task` goes to Luna whenever `OPENAI_API_KEY` is set (so the key's Vercel scope is the switch: Preview only to try it); `AI_FORCE_ANTHROPIC=1` overrides the key. Any Luna failure (HTTP error, truncation, empty reply), and any request with tools or non-text blocks, falls through to the existing Anthropic path. Plain `fetch`, `store: false`, `reasoning.effort: 'low'`, 600 tokens of `max_output_tokens` headroom because reasoning tokens count against the cap.

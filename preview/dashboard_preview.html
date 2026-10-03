@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Capital Planning — Executive Dashboard Mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      
+      --bg-base: #080c14;
+      --bg-surface: #0e1422;
+      --bg-card-glass: rgba(18, 26, 43, 0.72);
+      --card-bd-luminous: rgba(255, 255, 255, 0.08);
+      
+      --card-glow-teal: rgba(45, 212, 191, 0.45);
+      --card-glow-purple: rgba(168, 85, 247, 0.45);
+      --card-glow-slate: rgba(148, 163, 184, 0.35);
+      --card-glow-gold: rgba(251, 191, 36, 0.45);
+
+      --color-text-primary: #f8fafc;
+      --color-text-muted: #94a3b8;
+      --color-text-dim: #64748b;
+
+      --accent-teal: #2dd4bf;
+      --accent-purple: #c084fc;
+      --accent-gold: #fbbf24;
+      --accent-emerald: #34d399;
+      --accent-rose: #f43f5e;
+      --accent-blue: #38bdf8;
+
+      --elev-glass: 0 16px 40px -8px rgba(0, 0, 0, 0.55);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(45, 212, 191, 0.07) 0%, transparent 40%),
+        radial-gradient(circle at 85% 20%, rgba(168, 85, 247, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 50% 80%, rgba(56, 189, 248, 0.05) 0%, transparent 50%);
+      color: var(--color-text-primary);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Nav Header */
+    header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: rgba(14, 20, 34, 0.65);
+      padding: 1rem 2rem;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #0d9488, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.1rem;
+      box-shadow: 0 0 15px rgba(45, 212, 191, 0.3);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-badge {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(45, 212, 191, 0.12);
+      color: var(--accent-teal);
+      border: 1px solid rgba(45, 212, 191, 0.25);
+      padding: 2px 7px;
+      border-radius: 9999px;
+      font-weight: 700;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      color: #34d399;
+      padding: 0.35rem 0.8rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      background: #34d399;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #34d399;
+    }
+
+    /* Container */
+    main {
+      flex: 1;
+      max-width: 1360px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Header Greeting Banner */
+    .dashboard-hero {
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .hero-title {
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.35rem;
+    }
+
+    .hero-subtitle {
+      color: var(--color-text-muted);
+      font-size: 0.95rem;
+    }
+
+    .hero-period-selector {
+      background: var(--bg-surface);
+      border: 1px solid var(--card-bd-luminous);
+      border-radius: var(--radius-sm);
+      color: var(--color-text-primary);
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+      font-family: inherit;
+    }
+
+    /* Main Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 1.5rem;
+    }
+
+    /* Cards */
+    .glass-card {
+      background: var(--bg-card-glass);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--card-bd-luminous);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      box-shadow: var(--elev-glass);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .glass-card:hover {
+      border-color: rgba(255, 255, 255, 0.14);
+      transform: translateY(-2px);
+    }
+
+    /* Ambient Glow Strips */
+    .glass-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      opacity: 0.85;
+      background: var(--card-glow-teal);
+    }
+
+    .glass-card.purple::before {
+      background: var(--card-glow-purple);
+    }
+
+    .glass-card.slate::before {
+      background: var(--card-glow-slate);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+    }
+
+    .card-title-group {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .card-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .card-link {
+      color: var(--accent-teal);
+      font-size: 0.8rem;
+      text-decoration: none;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      transition: opacity 0.2s;
+    }
+
+    .card-link:hover {
+      opacity: 0.8;
+    }
+
+    /* Column Spans */
+    .col-6 { grid-column: span 6; }
+    .col-12 { grid-column: span 12; }
+
+    @media (max-width: 960px) {
+      .col-6 { grid-column: span 12; }
+    }
+
+    /* Stat Typography */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-item {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.35rem;
+    }
+
+    .stat-value {
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      font-family: var(--font-mono);
+      text-shadow: 0 0 16px rgba(255, 255, 255, 0.1);
+    }
+
+    .stat-value.teal {
+      color: var(--accent-teal);
+      text-shadow: 0 0 20px rgba(45, 212, 191, 0.25);
+    }
+
+    .stat-value.purple {
+      color: var(--accent-purple);
+      text-shadow: 0 0 20px rgba(192, 132, 252, 0.25);
+    }
+
+    .stat-delta {
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-top: 0.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .stat-delta.up { color: var(--accent-emerald); }
+    .stat-delta.down { color: var(--accent-rose); }
+
+    /* Segmented Progress Bar */
+    .allocation-container {
+      margin-top: 0.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .allocation-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--color-text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .segmented-bar {
+      height: 10px;
+      border-radius: 9999px;
+      display: flex;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.05);
+      gap: 2px;
+      margin-bottom: 0.75rem;
+    }
+
+    .segment {
+      height: 100%;
+      transition: width 0.6s ease;
+    }
+
+    .segment.cash { background: var(--accent-teal); }
+    .segment.investments { background: var(--accent-purple); }
+    .segment.realestate { background: var(--accent-gold); }
+
+    .allocation-legend {
+      display: flex;
+      gap: 1.25rem;
+      font-size: 0.75rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--color-text-muted);
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+    }
+
+    .legend-val {
+      font-weight: 600;
+      color: var(--color-text-primary);
+      font-family: var(--font-mono);
+    }
+
+    /* Circular Savings Gauge Layout */
+    .budget-layout {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+    }
+
+    .gauge-wrapper {
+      position: relative;
+      width: 140px;
+      height: 140px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .gauge-wrapper svg {
+      transform: rotate(-90deg);
+      overflow: visible;
+    }
+
+    .gauge-bg {
+      stroke: rgba(255, 255, 255, 0.08);
+      stroke-width: 9;
+      fill: none;
+    }
+
+    .gauge-progress {
+      stroke: var(--accent-teal);
+      stroke-width: 9;
+      stroke-linecap: round;
+      fill: none;
+      stroke-dasharray: 377;
+      stroke-dashoffset: 140; /* ~63% */
+      filter: drop-shadow(0 0 8px rgba(45, 212, 191, 0.4));
+      transition: stroke-dashoffset 1s ease;
+    }
+
+    .gauge-center-text {
+      position: absolute;
+      text-align: center;
+    }
+
+    .gauge-number {
+      font-size: 1.6rem;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      color: #fff;
+    }
+
+    .gauge-label {
+      font-size: 0.65rem;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .budget-stats-flex {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .budget-bar-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .budget-bar-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+    }
+
+    .budget-bar-track {
+      height: 6px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .budget-bar-fill {
+      height: 100%;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, var(--accent-teal), #0ea5e9);
+    }
+
+    /* Scenario Card Specifics */
+    .scenario-active-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(168, 85, 247, 0.08);
+      border: 1px solid rgba(168, 85, 247, 0.2);
+      border-radius: var(--radius-md);
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .scenario-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .scenario-badge {
+      background: rgba(168, 85, 247, 0.25);
+      color: var(--accent-purple);
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-weight: 700;
+    }
+
+    .scenario-pill-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .scenario-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: var(--radius-sm);
+      padding: 0.6rem 0.8rem;
+      font-size: 0.85rem;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--color-text-dim);
+      font-size: 0.8rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">AI</div>
+      <div>
+        <span class="brand-title">Capital Planning</span>
+      </div>
+      <span class="brand-badge">Executive View</span>
+    </div>
+
+    <div class="header-actions">
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        Neon Engine Connected
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main>
+    <div class="dashboard-hero">
+      <div>
+        <h1 class="hero-title">Portfolio Overview</h1>
+        <p class="hero-subtitle">High-fidelity capital projection & liquidity forecast for 2026</p>
+      </div>
+      <div>
+        <select class="hero-period-selector">
+          <option selected>Full Year 2026 (YTD + Forecast)</option>
+          <option>Next 12 Months Rolling</option>
+          <option>Year 2027 Projections</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      
+      <!-- Wealth & Balance Sheet Widget -->
+      <section class="glass-card col-6">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-teal);">🏛️</div>
+            <h2 class="card-title">Wealth & Balance Sheet</h2>
+          </div>
+          <a href="#wealth" class="card-link">View Ledger →</a>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat-item">
+            <div class="stat-label">Net Worth</div>
+            <div class="stat-value teal">$1,485,250</div>
+            <div class="stat-delta up">↑ +14.2% YTD</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Liquid Assets</div>
+            <div class="stat-value">$324,800</div>
+            <div class="stat-delta up">↑ +$12.5k mo</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Total Debt</div>
+            <div class="stat-value" style="color: var(--accent-rose);">$210,400</div>
+            <div class="stat-delta down">↓ -$2.1k mo</div>
+          </div>
+        </div>
+
+        <!-- Segmented Allocation Bar -->
+        <div class="allocation-container">
+          <div class="allocation-header">
+            <span>Asset Allocation</span>
+            <span>$1,695,650 Total Assets</span>
+          </div>
+          <div class="segmented-bar">
+            <div class="segment cash" style="width: 25%;" title="Cash & Equivalents: 25%"></div>
+            <div class="segment investments" style="width: 55%;" title="Equities & Retirement: 55%"></div>
+            <div class="segment realestate" style="width: 20%;" title="Real Estate Equity: 20%"></div>
+          </div>
+          <div class="allocation-legend">
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--accent-teal);"></span>
+              <span>Cash: <span class="legend-val">25%</span> ($424k)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--accent-purple);"></span>
+              <span>Equities: <span class="legend-val">55%</span> ($932k)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--accent-gold);"></span>
+              <span>Real Estate: <span class="legend-val">20%</span> ($339k)</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Budget & Savings Rate Widget -->
+      <section class="glass-card col-6">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-teal);">📊</div>
+            <h2 class="card-title">Budget Performance & Savings Rate</h2>
+          </div>
+          <a href="#budget" class="card-link">Review Spending →</a>
+        </div>
+
+        <div class="budget-layout">
+          <!-- Circular Savings Rate Gauge -->
+          <div class="gauge-wrapper">
+            <svg width="130" height="130" viewBox="0 0 130 130">
+              <circle class="gauge-bg" cx="65" cy="65" r="50"></circle>
+              <circle class="gauge-progress" cx="65" cy="65" r="50"></circle>
+            </svg>
+            <div class="gauge-center-text">
+              <div class="gauge-number">62.8%</div>
+              <div class="gauge-label">Savings Rate</div>
+            </div>
+          </div>
+
+          <div class="budget-stats-flex">
+            <div class="budget-bar-row">
+              <div class="budget-bar-meta">
+                <span style="color: var(--color-text-muted);">Annual Target: 60.0%</span>
+                <span style="color: var(--accent-teal); font-weight: 600;">+2.8% Ahead</span>
+              </div>
+              <div class="budget-bar-track">
+                <div class="budget-bar-fill" style="width: 63%;"></div>
+              </div>
+            </div>
+
+            <div class="stat-row" style="margin-bottom: 0; grid-template-columns: repeat(2, 1fr);">
+              <div class="stat-item" style="padding: 0.75rem;">
+                <div class="stat-label">YTD Net Inflows</div>
+                <div class="stat-value" style="font-size: 1.15rem; color: var(--accent-emerald);">+$148,200</div>
+              </div>
+              <div class="stat-item" style="padding: 0.75rem;">
+                <div class="stat-label">YTD Total Spend</div>
+                <div class="stat-value" style="font-size: 1.15rem; color: #fff;">$87,600</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Active Scenario Planning Widget -->
+      <section class="glass-card purple col-6">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-purple);">⚡</div>
+            <h2 class="card-title">Scenario Projections</h2>
+          </div>
+          <a href="#scenarios" class="card-link" style="color: var(--accent-purple);">Model Scenarios →</a>
+        </div>
+
+        <div class="scenario-active-banner">
+          <div class="scenario-title">
+            <span>Primary Scenario: 2026 Accelerated Growth</span>
+            <span class="scenario-badge">Active</span>
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent-purple);">+$42.5k Delta</div>
+        </div>
+
+        <div class="scenario-pill-list">
+          <div class="scenario-item">
+            <span>PE Advisory Bonus Target (Q4)</span>
+            <span style="color: var(--accent-emerald); font-family: var(--font-mono); font-weight: 600;">+$35,000 net</span>
+          </div>
+          <div class="scenario-item">
+            <span>Tech Stack / Workstation Upgrades</span>
+            <span style="color: var(--accent-rose); font-family: var(--font-mono); font-weight: 600;">-$4,200</span>
+          </div>
+          <div class="scenario-item">
+            <span>Tax Bracket Optimization (401k Max Out)</span>
+            <span style="color: var(--accent-teal); font-family: var(--font-mono); font-weight: 600;">+$8,400 saved</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Capital Commitments & Pay Periods Widget -->
+      <section class="glass-card slate col-6">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon" style="color: var(--accent-blue);">📅</div>
+            <h2 class="card-title">Commitments & Liquidity Horizon</h2>
+          </div>
+          <a href="#commitments" class="card-link" style="color: var(--accent-blue);">Schedule View →</a>
+        </div>
+
+        <div class="stat-row" style="margin-bottom: 1rem;">
+          <div class="stat-item">
+            <div class="stat-label">Next Payday</div>
+            <div class="stat-value" style="font-size: 1.25rem;">Oct 15</div>
+            <div class="stat-delta up">In 12 days</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Upcoming Bills (14d)</div>
+            <div class="stat-value" style="font-size: 1.25rem; color: var(--accent-rose);">$3,840</div>
+            <div class="stat-delta">5 payments</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Safe to Allocate</div>
+            <div class="stat-value" style="font-size: 1.25rem; color: var(--accent-teal);">$14,250</div>
+            <div class="stat-delta up">Uncommitted</div>
+          </div>
+        </div>
+
+        <div class="scenario-pill-list">
+          <div class="scenario-item">
+            <span>Capital Call: Growth Fund III</span>
+            <span style="font-family: var(--font-mono); color: var(--color-text-muted);">Due Nov 01 • $10,000</span>
+          </div>
+          <div class="scenario-item">
+            <span>Annual Insurance Escrow</span>
+            <span style="font-family: var(--font-mono); color: var(--color-text-muted);">Due Dec 15 • $2,400</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer>
+    AI Capital Planning Operating System • Pure SVG & Glassmorphic CSS Implementation
+  </footer>
+
+</body>
+</html>

@@ -10,6 +10,17 @@
 //   { kind: 'total',   amount }                 — spread evenly across the span
 //   { kind: 'custom',  schedule: { '1': 100 }}  — explicit per-month amounts (1-12)
 
+function parseDate(val) {
+  if (!val) return null
+  if (val instanceof Date) return val
+  const str = String(val).trim()
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  }
+  return new Date(val)
+}
+
 function monthsBetween(start, end) {
   // inclusive count of calendar months between two Date objects
   return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1
@@ -20,8 +31,8 @@ function isActiveInMonth(commitment, year, month) {
   if (commitment.status === 'completed') {
     // completed commitments still count for past months, not future
   }
-  const start = commitment.start_date ? new Date(commitment.start_date) : null
-  const end = commitment.end_date ? new Date(commitment.end_date) : null
+  const start = parseDate(commitment.start_date)
+  const end = parseDate(commitment.end_date)
   const pointer = new Date(year, month - 1, 15) // mid-month probe
   if (start && pointer < new Date(start.getFullYear(), start.getMonth(), 1)) return false
   if (end && pointer > new Date(end.getFullYear(), end.getMonth() + 1, 0)) return false
@@ -42,8 +53,8 @@ export function commitmentMonthlyDemand(commitment, year, month) {
       return month === hitMonth ? (Number(cs.amount ?? cs.annual_total ?? 0) || 0) : 0
     }
     case 'total': {
-      const start = commitment.start_date ? new Date(commitment.start_date) : null
-      const end = commitment.end_date ? new Date(commitment.end_date) : null
+      const start = parseDate(commitment.start_date)
+      const end = parseDate(commitment.end_date)
       if (!start || !end) return 0
       const span = Math.max(monthsBetween(start, end), 1)
       return (Number(cs.amount ?? 0) || 0) / span
@@ -68,8 +79,8 @@ export function commitmentYearSchedule(commitment, year) {
 
 // Total projected cost across the commitment's whole lifespan.
 export function commitmentTotalProjected(commitment) {
-  const start = commitment.start_date ? new Date(commitment.start_date) : null
-  const end = commitment.end_date ? new Date(commitment.end_date) : null
+  const start = parseDate(commitment.start_date)
+  const end = parseDate(commitment.end_date)
   const cs = commitment.cost_structure || {}
   const kind = cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
 

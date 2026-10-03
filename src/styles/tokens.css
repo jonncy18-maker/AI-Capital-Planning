@@ -16,11 +16,17 @@ html, body { margin: 0; padding: 0; height: 100%; }
   /* Surfaces — the card sits ABOVE the page ground, not below it. */
   --bg-app: #080B0D;
   --bg-card: #131A1E;
+  --bg-card-glass: rgba(19, 26, 30, 0.78);
+  --bg-card-glass-hi: rgba(24, 33, 38, 0.88);
   --bg-card-2: #182126;
   --bd: #1F2A2F;
   --bd-light: #182126;
-  --card-hi: rgba(255, 255, 255, 0.045);
+  --card-hi: rgba(255, 255, 255, 0.05);
+  --card-bd-luminous: rgba(255, 255, 255, 0.085);
+  --card-glow-teal: rgba(34, 211, 187, 0.14);
+  --card-glow-purple: rgba(168, 124, 246, 0.14);
   --elev-1: inset 0 1px 0 var(--card-hi), 0 10px 22px -14px rgba(0, 0, 0, 0.9);
+  --elev-glass: inset 0 1px 0 var(--card-bd-luminous), 0 16px 36px -12px rgba(0, 0, 0, 0.92);
 
   --tx-1: #EAF2F4;
   --tx-2: #93A7AE;

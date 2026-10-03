@@ -1,3 +1,4 @@
+import { parseLocalDate } from '../../lib/dates.js'
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { getBudgetLineItems, getBudgetYears } from '../../lib/db/budgetLineItems.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
@@ -1029,7 +1030,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
       const cat = t.category || 'Uncategorized'
       if (excluded.has(cat)) continue
       if (!m[cat]) m[cat] = Array(12).fill(0)
-      const d = new Date(t.date)
+      const d = parseLocalDate(t.date)
       if (!isNaN(d.getTime())) m[cat][d.getMonth()] += amt
     }
     return m
@@ -1042,7 +1043,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
       if (amt >= 0) continue
       const cat = t.category || 'Uncategorized'
       if (!m[cat]) m[cat] = Array(12).fill(0)
-      const d = new Date(t.date)
+      const d = parseLocalDate(t.date)
       if (!isNaN(d.getTime())) m[cat][d.getMonth()] += Math.abs(amt)
     }
     return m

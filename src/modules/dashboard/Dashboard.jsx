@@ -74,12 +74,6 @@ function fmtK(n) {
   if (abs >= 1000) return '$' + Math.round(n / 1000) + 'k'
   return '$' + Math.round(n || 0)
 }
-function fmtK1(n) {
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) return '$' + (n / 1_000_000).toFixed(1) + 'M'
-  if (abs >= 1000) return '$' + (n / 1000).toFixed(1) + 'k'
-  return '$' + Math.round(n || 0)
-}
 
 // ── widget primitives ────────────────────────────────────────────────────────
 
@@ -115,8 +109,19 @@ function Delta({ tone = 'flat', children }) {
 function Stat({ value, label, accent = true, delta, deltaTone }) {
   return (
     <div>
-      <div style={{ ...figureStyle, fontSize: 27, color: accent ? 'var(--accent)' : 'var(--tx-1)' }}>{value}</div>
-      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 8 }}>{label}</div>
+      <div style={{
+        ...figureStyle,
+        fontSize: 28,
+        fontWeight: 600,
+        color: accent ? 'var(--accent)' : 'var(--tx-1)',
+        textShadow: accent ? '0 0 24px rgba(34, 211, 187, 0.22)' : 'none',
+        lineHeight: 1.1,
+      }}>
+        {value}
+      </div>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.06em', marginTop: 7, textTransform: 'uppercase' }}>
+        {label}
+      </div>
       {delta && <Delta tone={deltaTone}>{delta}</Delta>}
     </div>
   )
@@ -133,24 +138,103 @@ function Empty({ text }) {
   return <div style={{ fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.5 }}>{text}</div>
 }
 
+function CircularSavingsGauge({ value = 0, size = 68, strokeWidth = 5.5, deltaText, deltaColor }) {
+  const radius = (size - strokeWidth) / 2
+  const circumference = 2 * Math.PI * radius
+  const validVal = typeof value === 'number' && !isNaN(value) ? value : 0
+  const clamped = Math.max(0, Math.min(100, validVal))
+  const strokeDashoffset = circumference - (clamped / 100) * circumference
+  const isGood = validVal >= 20
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="transparent"
+            stroke="rgba(255, 255, 255, 0.08)"
+            strokeWidth={strokeWidth}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="transparent"
+            stroke={isGood ? 'var(--accent)' : 'var(--warn)'}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+          />
+        </svg>
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 15,
+          color: 'var(--tx-1)', fontVariantNumeric: 'tabular-nums',
+        }}>
+          {Math.round(validVal)}%
+        </div>
+      </div>
+      <div>
+        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', textTransform: 'uppercase' }}>
+          SAVINGS RATE
+        </div>
+        {deltaText && (
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: deltaColor || 'var(--tx-3)', marginTop: 4 }}>
+            {deltaText}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Shared full-width card wrapper ───────────────────────────────────────────
 
 function WideCard({ title, subtitle, children, onCollapse, isCollapsed, hue }) {
   return (
-    <div style={{ border: '1px solid var(--bd)', borderRadius: 14, background: 'var(--bg-card)', boxShadow: 'var(--elev-1)', padding: isCollapsed ? '13px 22px' : '20px 22px' }}>
+    <div style={{
+      border: '1px solid var(--card-bd-luminous, rgba(255, 255, 255, 0.085))',
+      borderRadius: 14,
+      background: 'var(--bg-card-glass, rgba(19, 26, 30, 0.78))',
+      backdropFilter: 'blur(12px)',
+      WebkitBackdropFilter: 'blur(12px)',
+      boxShadow: 'var(--elev-glass, 0 16px 36px -12px rgba(0, 0, 0, 0.92))',
+      padding: isCollapsed ? '14px 22px' : '22px 24px',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Subtle top ambient glow strip matching domain hue */}
+      {hue && (
+        <div style={{
+          position: 'absolute', top: 0, left: '15%', right: '15%', height: 1,
+          background: `linear-gradient(90deg, transparent, ${hue}, transparent)`,
+          opacity: 0.55,
+          pointerEvents: 'none',
+        }} />
+      )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: isCollapsed ? 0 : 18, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <HueDot hue={hue} />
-          <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-1)' }}>{title}</span>
+          <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-1)', letterSpacing: '-0.01em' }}>{title}</span>
           {subtitle && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: 'var(--tx-3)' }}>{subtitle}</span>}
         </div>
         {onCollapse && (
           <button
             onClick={onCollapse}
             title={isCollapsed ? 'Expand' : 'Collapse'}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-4)', fontSize: 13, padding: '0 0 0 4px', lineHeight: 1, flexShrink: 0 }}
+            style={{
+              background: 'rgba(255,255,255,0.03)', border: '1px solid var(--bd)',
+              borderRadius: 6, cursor: 'pointer', color: 'var(--tx-3)',
+              fontSize: 12, padding: '3px 8px', lineHeight: 1, flexShrink: 0,
+            }}
           >
-            {isCollapsed ? '▸' : '▾'}
+            {isCollapsed ? '▸ Expand' : '▾'}
           </button>
         )}
       </div>
@@ -361,61 +445,82 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
 
       {/* ── KPIs below chart ── */}
       <IveDivider />
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: mobile ? 14 : 20 }}>
-        {/* Full-year savings rate */}
-        <div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
-            FULL YEAR SAVINGS RATE
-          </div>
-          <div style={{ ...figureStyle, fontSize: 24, color: ive.fullYearSavingsRate != null ? (ive.fullYearSavingsRate >= 0 ? 'var(--good)' : 'var(--warn)') : 'var(--tx-3)' }}>
-            {ive.fullYearSavingsRate != null ? Math.round(ive.fullYearSavingsRate) + '%' : '—'}
-          </div>
-          {ive.priorYearSavingsRate != null && ive.fullYearSavingsRate != null && (() => {
-            const delta = Math.round(ive.fullYearSavingsRate) - Math.round(ive.priorYearSavingsRate)
-            const c = delta > 0 ? 'var(--accent)' : delta < 0 ? 'var(--warn)' : 'var(--tx-3)'
-            const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→'
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'auto 1fr 1fr 1.3fr', gap: mobile ? 14 : 20, alignItems: 'center' }}>
+        {/* Full-year savings rate with Circular Gauge */}
+        <div style={{ minWidth: 160 }}>
+          {ive.fullYearSavingsRate != null ? (() => {
+            let deltaText = null
+            let deltaColor = 'var(--tx-3)'
+            if (ive.priorYearSavingsRate != null) {
+              const delta = Math.round(ive.fullYearSavingsRate) - Math.round(ive.priorYearSavingsRate)
+              deltaColor = delta > 0 ? 'var(--accent)' : delta < 0 ? 'var(--warn)' : 'var(--tx-3)'
+              const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→'
+              deltaText = `${arrow}${Math.abs(delta)}pp vs last yr`
+            }
             return (
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: c, marginTop: 4 }}>
-                {arrow}{Math.abs(delta)}pp vs. last yr
-              </div>
+              <CircularSavingsGauge
+                value={ive.fullYearSavingsRate}
+                deltaText={deltaText}
+                deltaColor={deltaColor}
+              />
             )
-          })()}
+          })() : (
+            <div>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
+                SAVINGS RATE
+              </div>
+              <div style={{ ...figureStyle, fontSize: 24, color: 'var(--tx-3)' }}>—</div>
+            </div>
+          )}
         </div>
 
         {/* Full-year income */}
         {(hasActualIncome || hasForecastIncome) && (
-          <div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid rgba(255, 255, 255, 0.05)',
+            borderRadius: 10, padding: '10px 14px',
+          }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
               FULL YEAR INCOME
             </div>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, color: 'var(--tx-1)', lineHeight: 1 }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 20, color: 'var(--tx-1)', lineHeight: 1, fontWeight: 500 }}>
               {fmtK(ive.fullYearIncome)}
             </div>
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-3)', marginTop: 4 }}>
-              {hasForecastIncome ? 'act + salary fcst' : 'act + avg fcst'}
+              {hasForecastIncome ? 'actual + salary fcst' : 'actual + avg fcst'}
             </div>
           </div>
         )}
 
         {/* Full-year expenses */}
-        <div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.02)',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          borderRadius: 10, padding: '10px 14px',
+        }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
             FULL YEAR EXPENSES
           </div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, color: 'var(--tx-1)', lineHeight: 1 }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 20, color: 'var(--tx-1)', lineHeight: 1, fontWeight: 500 }}>
             {fmtK(ive.fullYearExpenses)}
           </div>
           <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: 'var(--tx-3)', marginTop: 4 }}>
-            act + budget fcst
+            actual + budget fcst
           </div>
         </div>
 
         {/* Full-year net */}
-        <div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
-            FULL YEAR NET
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: `1px solid ${ive.fullYearNet >= 0 ? 'rgba(34, 211, 187, 0.28)' : 'rgba(240, 180, 41, 0.28)'}`,
+          borderRadius: 10, padding: '10px 16px',
+          boxShadow: `0 4px 18px -4px ${ive.fullYearNet >= 0 ? 'rgba(34, 211, 187, 0.12)' : 'rgba(240, 180, 41, 0.12)'}`,
+        }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em', color: 'var(--tx-3)', marginBottom: 4 }}>
+            FULL YEAR NET CASH FLOW
           </div>
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, color: netColor, lineHeight: 1 }}>
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 22, color: netColor, lineHeight: 1, fontWeight: 600 }}>
             {(ive.fullYearNet >= 0 ? '+' : '') + fmtK(ive.fullYearNet)}
           </div>
           <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 8.5, color: netColor, marginTop: 4, lineHeight: 1.3 }}>
@@ -788,24 +893,37 @@ function ScenarioPlanWidget({ si }) {
 
   return (
     <>
-      <Stat value={sign(si.committedAnnualNet)} label={`COMMITTED NET · ${new Date().getFullYear()}`} accent={si.committedAnnualNet >= 0} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <Stat value={sign(si.committedAnnualNet)} label={`COMMITTED NET · ${new Date().getFullYear()}`} accent={si.committedAnnualNet >= 0} />
+        <span style={{
+          fontSize: 9.5, fontFamily: "'DM Mono', monospace", padding: '2px 8px', borderRadius: 12,
+          background: 'var(--card-glow-purple)', color: 'var(--dom-scenarios)', border: '1px solid var(--forecast-bd)',
+          letterSpacing: '0.04em', fontWeight: 600,
+        }}>
+          COMMITTED
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 14 }}>
         {displayCommitted.map((c, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+          <div key={i} style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+            padding: '7px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 7,
+            border: '1px solid rgba(255,255,255,0.03)',
+          }}>
             <span style={{ fontSize: 11.5, color: 'var(--tx-1)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
               {c.name}
             </span>
-            <span style={{ fontSize: 11, color: deltaColor(c.netTotal), fontVariantNumeric: 'tabular-nums', fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>
+            <span style={{ fontSize: 11, color: deltaColor(c.netTotal), fontVariantNumeric: 'tabular-nums', fontFamily: "'DM Mono', monospace", flexShrink: 0, fontWeight: 500 }}>
               {sign(c.netTotal)}
             </span>
           </div>
         ))}
         {overflowCount > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--tx-3)' }}>+{overflowCount} more</div>
+          <div style={{ fontSize: 10.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>+{overflowCount} more committed</div>
         )}
         {si.modeled.length > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 2 }}>
-            {si.modeled.length} modeled (not committed)
+          <div style={{ fontSize: 10.5, color: 'var(--tx-3)', marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+            {si.modeled.length} modeled decisions active
           </div>
         )}
       </div>
@@ -1168,8 +1286,21 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
       subtitle: 'Net worth from latest snapshot',
       render: () => ws.hasData ? (
         <>
-          <Stat value={fmtK(ws.netWorth)} label="NET WORTH" />
-          <div style={{ marginTop: 14 }}><MiniStat value={fmtK(ws.investable)} label="investable" /></div>
+          <Stat value={fmtK(ws.netWorth)} label="NET WORTH" accent={true} />
+          <div style={{ marginTop: 12 }}>
+            <MiniStat value={fmtK(ws.investable)} label="investable assets" />
+          </div>
+          {/* Segmented allocation bar */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', background: 'rgba(255,255,255,0.06)' }}>
+              <div style={{ width: `${Math.min(100, Math.round(((ws.investable || 0) / (ws.netWorth || 1)) * 100))}%`, background: 'var(--dom-wealth)', borderRadius: '3px 0 0 3px' }} title="Investable" />
+              <div style={{ flex: 1, background: 'var(--dom-payperiods)' }} title="Other / Liquid" />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, fontFamily: "'DM Mono', monospace", color: 'var(--tx-3)', marginTop: 5 }}>
+              <span>Investable ({Math.round(((ws.investable || 0) / (ws.netWorth || 1)) * 100)}%)</span>
+              <span>Other</span>
+            </div>
+          </div>
         </>
       ) : <Empty text="Add a net worth snapshot to track your trajectory." />,
     },
@@ -1480,15 +1611,30 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
               key={b.id}
               {...dragProps}
               style={{
-                border: dragId === b.id ? '1px solid var(--accent)' : '1px solid var(--bd)',
-                borderRadius: 13, background: 'var(--bg-card)', boxShadow: 'var(--elev-1)',
-                padding: isCollapsed ? '13px 20px' : 20,
-                minHeight: isCollapsed ? 0 : 128,
+                border: dragId === b.id ? '1px solid var(--accent)' : '1px solid var(--card-bd-luminous, rgba(255, 255, 255, 0.085))',
+                borderRadius: 14,
+                background: 'var(--bg-card-glass, rgba(19, 26, 30, 0.78))',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                boxShadow: 'var(--elev-glass, 0 16px 36px -12px rgba(0, 0, 0, 0.92))',
+                padding: isCollapsed ? '14px 20px' : '20px 22px',
+                minHeight: isCollapsed ? 0 : 138,
                 cursor: configure ? 'grab' : 'default',
                 opacity: dragId === b.id ? 0.5 : isHidden ? 0.4 : 1,
-                transition: 'border-color .15s, opacity .15s',
+                position: 'relative',
+                overflow: 'hidden',
+                transition: 'border-color .15s, opacity .15s, box-shadow .15s',
               }}
             >
+              {/* Subtle top ambient glow strip matching domain hue */}
+              {BLOCK_HUE[b.id] && (
+                <div style={{
+                  position: 'absolute', top: 0, left: '15%', right: '15%', height: 1,
+                  background: `linear-gradient(90deg, transparent, ${BLOCK_HUE[b.id]}, transparent)`,
+                  opacity: 0.55,
+                  pointerEvents: 'none',
+                }} />
+              )}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: isCollapsed ? 0 : 14 }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
