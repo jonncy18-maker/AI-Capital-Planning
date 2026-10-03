@@ -6,7 +6,7 @@
 // on Anthropic otherwise, so the key's Vercel scope is the switch: add it to
 // Preview only to try Luna while Production stays put. AI_FORCE_ANTHROPIC=1
 // overrides it. The model ID is an API argument, so it stays
-// pinned to an exact ID (CLAUDE.md-style "IDs in code, families in prose").
+// pinned to an exact ID (AGENTS.md rule: model IDs in code stay pinned to exact IDs).
 import { AI_TASKS } from './models.js'
 
 export const LUNA_MODEL = 'gpt-6-luna'
