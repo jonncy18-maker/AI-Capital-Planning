@@ -6,7 +6,6 @@ import {
   getForecastLineItems,
   insertForecastLineItem,
   updateForecastLineItem,
-  deleteForecastLineItem,
   deleteForecastItemsByLabel,
   setForecastRate,
   seedForecastFromBudget,
@@ -22,7 +21,6 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const CUR_YEAR = new Date().getFullYear()
 const CUR_MONTH = new Date().getMonth() // 0-indexed
 
-const SCENARIO_COLORS = ['#a864ff', '#ff6b4a', '#00d4aa', '#ff3d71', '#f5a623', '#4fc3f7', '#7ed321']
 
 function fmt(n) {
   const abs = Math.abs(Math.round(n))
@@ -641,9 +639,6 @@ function ForecastChart({ year, actualTotals, forecastTotals, budgetTotals, combi
 
   const tooltipLeft = hoverM != null && hoverM < 7
   const tooltipPct = hoverM != null ? (PL + (hoverM / 11) * CW) / W * 100 : 0
-  const scenarioStartM = lastActM >= 0 ? lastActM : 0
-  // Forecast line starts at today for current year; full year for past/future
-  const forecastStartM = curMonth >= 0 ? curMonth : 0
 
   return (
     <div
@@ -1314,29 +1309,11 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     }
   }
 
-  async function handleAddLine(catId, { label, month, amount }) {
-    const row = await insertForecastLineItem(userId, { year, categoryId: catId, month, amount, label })
-    upsertForecastLocal(row)
-    onDataChange?.()
-  }
-
   async function handleUpdateLine(id, amount) {
     const prev = forecastItems
     setForecastItems(prev.map(li => li.id === id ? { ...li, amount } : li))
     try {
       await updateForecastLineItem(id, { amount })
-      onDataChange?.()
-    } catch (e) {
-      setForecastItems(prev)
-      setError(e.message)
-    }
-  }
-
-  async function handleDeleteLine(id) {
-    const prev = forecastItems
-    setForecastItems(prev.filter(li => li.id !== id))
-    try {
-      await deleteForecastLineItem(id)
       onDataChange?.()
     } catch (e) {
       setForecastItems(prev)
