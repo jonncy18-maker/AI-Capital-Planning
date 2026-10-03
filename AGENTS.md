@@ -148,3 +148,5 @@ When the 3-iteration cap is reached without a satisfactory audit, stop and repor
 ## Cross-Cutting Rules
 
 Model IDs in code stay pinned to exact IDs deliberately (e.g. `claude-haiku-4-5`, `claude-sonnet-4-6` in `app/api/ai-chat/route.js`) — never swap them for a family name.
+
+**Where things go.** Anything only Claude Code needs goes in `CLAUDE.md`. Never put agent permissions (push, merge, deploy) in this file: every agent reads it.

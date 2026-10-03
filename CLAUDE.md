@@ -4,7 +4,7 @@
 
 Everything shared with other agents is in `AGENTS.md` (imported above). This file holds what applies to Claude Code alone.
 
-Also, John maintains a dated personal-context doc (background, constraints, review
+John maintains a dated personal-context doc (background, constraints, review
 priorities as the builder) in this Google Drive folder:
 https://drive.google.com/drive/folders/1cjNFhY6ZnN5xB4PSDhz7FA24KGl92NTy — titles are
 date-stamped (e.g. `Personal_Context_YYYY-MM-DD.md`). At session start, or whenever
