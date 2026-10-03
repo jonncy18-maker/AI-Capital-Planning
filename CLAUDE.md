@@ -152,3 +152,15 @@ When the 3-iteration cap is reached without a satisfactory audit, stop and repor
 
 **Decision needed from you:** [the specific question or choice that would unblock this]
 ```
+
+---
+
+## Cross-Cutting Rules
+
+**Subagent model selection — name the family, never a version; choose by how checkable the output is.** The main session picks the model per task. This is a default, not an allowlist — when it reports back it says which model it used and why.
+- **Haiku** — anything with a clear spec whose output gets checked: file/usage sweeps, summarizing output, mechanical edits, formatting, small tests, docs written to a spec, parallel fan-out searches. It's the smallest tier, so "simple" alone isn't enough: a trivial job nothing will catch (a security-sensitive edit, a verbatim move across many files) goes to Sonnet.
+- **Sonnet** — the default when unsure: building features, tracing bugs, refactors, UI work, reviews.
+- **Opus** — when a subtle mistake would be expensive or the problem is ambiguous, whatever its size: architecture and scoping decisions, audits whose misses are costly.
+- **Escalate, don't patch around.** If a cheaper model's result looks thin or fails a check, rerun it one tier up rather than trusting or hand-fixing it.
+
+Write model families here ("Sonnet", never "Sonnet 5.5"), so the rule keeps meaning the current tier without an edit. This is about which model Claude Code's subagents use — it does not change any model IDs pinned in application code, which stay pinned to exact IDs deliberately.
