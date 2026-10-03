@@ -1,3 +1,4 @@
+import { parseLocalDate } from '../../lib/dates.js'
 import { useState, useEffect, useCallback } from 'react'
 import { getTransactionsByMonth } from '../../lib/db/transactions.js'
 import { getExcludedCategoryNames } from '../../lib/db/budgetCategories.js'
@@ -54,7 +55,7 @@ function aggregateByMonth(transactions, monthRange, excluded) {
   return monthRange.map(({ year, month, label }) => {
     const rows = transactions.filter(t => {
       if (excluded && excluded.has(t.category)) return false
-      const d = new Date(t.date)
+      const d = parseLocalDate(t.date)
       return d.getFullYear() === year && d.getMonth() + 1 === month
     })
     const totalOut = rows.filter(r => r.amount < 0).reduce((s, r) => s + r.amount, 0)

@@ -2,6 +2,7 @@
 // (TRENDS outflow chart and CASH FLOW inflow-vs-outflow chart). Centralising this
 // keeps the outflow numbers identical across both tabs.
 
+import { parseLocalDate } from '../dates.js'
 import {
   getBillAmountsRange, getForecastAmountsForBills, splitBillsByPeriod,
 } from '../db/bills.js'
@@ -106,7 +107,7 @@ export async function loadOutflowSeries({
     const cats = [...new Set(actualsLinkedBills.map(b => b.actuals_category))]
     const txns = await getExpenseActualsByCategories(userId, cats, startYear, endYear)
     for (const t of txns) {
-      const d = new Date(t.date)
+      const d = parseLocalDate(t.date)
       const y = d.getFullYear(), m = d.getMonth() + 1
       if (!categoryActualsIndex[y]) categoryActualsIndex[y] = {}
       if (!categoryActualsIndex[y][m]) categoryActualsIndex[y][m] = {}
@@ -204,7 +205,7 @@ export async function loadInflowSeries({ userId, profile, budgetCategories = [],
     const txns = await getIncomeTransactions(userId, startDate, endDate)
     for (const t of txns) {
       if (excludedSet.has(t.category)) continue
-      const d = new Date(t.date)
+      const d = parseLocalDate(t.date)
       const y = d.getFullYear(), m = d.getMonth() + 1
       if (!liveIndex[y]) liveIndex[y] = {}
       liveIndex[y][m] = (liveIndex[y][m] ?? 0) + Number(t.amount)

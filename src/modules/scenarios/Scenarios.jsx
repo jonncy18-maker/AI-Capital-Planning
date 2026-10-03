@@ -1,3 +1,4 @@
+import { parseLocalDate } from '../../lib/dates.js'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   getScenarios,
@@ -1060,7 +1061,7 @@ function BaselinePanel({ ctx }) {
     const amt = Number(t.amount) || 0
     if (amt >= 0) continue
     if (excluded.has(t.category)) continue
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (isNaN(d.getTime()) || d.getFullYear() !== year) continue
     monthlyActual[d.getMonth()] += Math.abs(amt)
   }
@@ -1087,7 +1088,7 @@ function BaselinePanel({ ctx }) {
     const amt = Number(t.amount) || 0
     if (amt >= 0) continue
     if (excluded.has(t.category)) continue
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (isNaN(d.getTime()) || d.getFullYear() !== year || d.getMonth() >= CUR_MONTH) continue
     const group = t.group || 'Other'
     actualByGroup[group] = (actualByGroup[group] || 0) + Math.abs(amt)
