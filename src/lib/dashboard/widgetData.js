@@ -1,6 +1,7 @@
 // Derives dashboard widget data from the loaded AI context. Pure functions so
 // widgets render deterministically from database data with zero AI token cost.
 
+import { parseLocalDate } from '../dates.js'
 import { aggregateCommitmentsForYear, commitmentMonthlyDemand } from '../commitments/schedule.js'
 import { cashEffect, isIncomeAdjustment } from '../scenarios/scenarioUtils.js'
 
@@ -67,7 +68,7 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
     const amt = Number(t.amount) || 0
     if (amt >= 0) continue // expenses only
     if (excluded.has(t.category)) continue
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     const g = t.group || 'Uncategorized'
     const m = d.getMonth()
@@ -218,7 +219,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
     const amt = Number(t.amount) || 0
     if (amt >= 0) continue // expenses only
     if (excluded.has(t.category)) continue // transfers / credit-card payments
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     const m = d.getMonth()
     actual[m] += Math.abs(amt)
@@ -385,7 +386,7 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
 
   const ytd = yearTxns.filter(t => {
     if (excluded.has(t.category)) return false
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     return !isNaN(d.getTime()) && d <= now
   })
 
@@ -420,7 +421,7 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     const amt = Number(t.amount) || 0
     if (amt === 0) continue
     if (excluded.has(t.category)) continue
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== now.getFullYear()) continue
     if (amt > 0) incomeByMonth[d.getMonth()] += amt
     else expensesByMonth[d.getMonth()] += Math.abs(amt)
@@ -596,7 +597,7 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
     if (amt >= 0) continue
     if (excluded.has(t.category)) continue
     if ((t.group || 'Uncategorized') !== groupName) continue
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     const m = d.getMonth()
     if (!actualByCatMonth[t.category]) actualByCatMonth[t.category] = Array(12).fill(0)
@@ -669,7 +670,7 @@ export function cashFlowForecast(ctx, yearTxns = []) {
     const amt = Number(t.amount) || 0
     if (amt === 0) continue
     if (excluded.has(t.category)) continue
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     netByMonth[d.getMonth()] += amt
   }

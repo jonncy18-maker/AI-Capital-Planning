@@ -1,3 +1,4 @@
+import { parseLocalDate } from '../dates.js'
 import { getRecentTransactions } from '../db/transactions.js'
 import { getBudgetCategories } from '../db/budgetCategories.js'
 import { getCommitments } from '../db/commitments.js'
@@ -142,7 +143,7 @@ export function buildContextBrief(ctx, yearTxns) {
   // Prefer the freshly-fetched yearTxns (same dataset the dashboard widgets use);
   // fall back to filtering ctx.transactions when yearTxns isn't passed.
   const currentYearTxns = yearTxns ?? (ctx?.transactions ?? []).filter(t => {
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     return !Number.isNaN(d.getTime()) && d.getFullYear() === ctx?.thisYear
   })
   const ivs = incomeVsExpenses(ctx, currentYearTxns)

@@ -1,3 +1,4 @@
+import { parseLocalDate } from '../dates.js'
 // Historical pattern analyzer for the Annual Budget Builder.
 //
 // Ingests raw transactions + budget_categories and classifies each spending
@@ -29,7 +30,7 @@ function buildCategoryMonthlyTotals(transactions, excluded) {
     if (amount >= 0) continue // outflow only
     const category = t.category || 'Uncategorized'
     if (excluded && excluded.has(category)) continue // not a real expense
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (isNaN(d)) continue
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     byCategory[category] = byCategory[category] || {}
@@ -43,7 +44,7 @@ function buildCategoryMonthlyTotals(transactions, excluded) {
 function countSpanMonths(transactions) {
   const keys = new Set()
   for (const t of transactions) {
-    const d = new Date(t.date)
+    const d = parseLocalDate(t.date)
     if (isNaN(d)) continue
     keys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }

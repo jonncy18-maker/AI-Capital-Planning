@@ -1,3 +1,4 @@
+import { parseLocalDate } from '../../lib/dates.js'
 import { useState, useMemo, useEffect, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { spendByCategoryForGroup } from '../../lib/dashboard/widgetData.js'
@@ -221,7 +222,7 @@ function TransactionList({ category, yearTxns }) {
         TRANSACTIONS
       </div>
       {visible.map((t, i) => {
-        const d = new Date(t.date)
+        const d = parseLocalDate(t.date)
         const dateStr = Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         const name = t.merchant_name || t.name || t.description || '—'
         const amt = Math.abs(Number(t.amount))
@@ -506,7 +507,7 @@ export default function SpendGroupDetail({ group, ctx, yearTxns, priorYearTxns, 
       const amt = Number(t.amount) || 0
       if (amt >= 0) continue
       if ((t.group || 'Uncategorized') !== group) continue
-      const d = new Date(t.date)
+      const d = parseLocalDate(t.date)
       if (Number.isNaN(d.getTime())) continue
       res[t.category] = (res[t.category] || 0) + Math.abs(amt)
     }
