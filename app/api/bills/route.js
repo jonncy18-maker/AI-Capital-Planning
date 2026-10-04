@@ -1,5 +1,13 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
+import {
+  ownsAllAccounts,
+  ownsAllCategories,
+  ownsAllCreditCards,
+  UNOWNED_ACCOUNT,
+  UNOWNED_CATEGORY,
+  UNOWNED_CREDIT_CARD,
+} from '../../../src/lib/neon/ownership.js'
 
 const ALLOWED_BILL_TYPES = ['credit_card', 'loan', 'rent', 'investment', 'subscription', 'other']
 const ALLOWED_PAYMENT_METHODS = ['auto', 'manual']
@@ -105,6 +113,18 @@ export async function POST(request) {
       if (!bill_type) {
         return Response.json({ error: 'Field "bill_type" is required.' }, { status: 400 })
       }
+    }
+
+    // Linked ids must belong to the caller. Omitted fields arrive as null and
+    // are skipped by the helpers, so this only checks what was actually sent.
+    if (!(await ownsAllAccounts(sql, userId, [debits_from_account_id, auto_fund_account_id]))) {
+      return Response.json(UNOWNED_ACCOUNT, { status: 404 })
+    }
+    if (!(await ownsAllCreditCards(sql, userId, [credit_card_id]))) {
+      return Response.json(UNOWNED_CREDIT_CARD, { status: 404 })
+    }
+    if (!(await ownsAllCategories(sql, userId, [forecast_category_id]))) {
+      return Response.json(UNOWNED_CATEGORY, { status: 404 })
     }
 
     if (existing) {

@@ -29,5 +29,29 @@ export async function ownsAllCommitments(sql, userId, ids) {
   return rows.length === wanted.length
 }
 
+// True when every non-null id is an accounts row owned by userId.
+export async function ownsAllAccounts(sql, userId, ids) {
+  const wanted = distinctIds(ids)
+  if (wanted.length === 0) return true
+  const rows = await sql`
+    SELECT id FROM accounts
+    WHERE user_id = ${userId} AND id = ANY(${wanted}::uuid[])
+  `
+  return rows.length === wanted.length
+}
+
+// True when every non-null id is a credit_cards row owned by userId.
+export async function ownsAllCreditCards(sql, userId, ids) {
+  const wanted = distinctIds(ids)
+  if (wanted.length === 0) return true
+  const rows = await sql`
+    SELECT id FROM credit_cards
+    WHERE user_id = ${userId} AND id = ANY(${wanted}::uuid[])
+  `
+  return rows.length === wanted.length
+}
+
+export const UNOWNED_ACCOUNT = { error: 'Account not found.' }
+export const UNOWNED_CREDIT_CARD = { error: 'Credit card not found.' }
 export const UNOWNED_CATEGORY = { error: 'Category not found.' }
 export const UNOWNED_COMMITMENT = { error: 'Commitment not found.' }
