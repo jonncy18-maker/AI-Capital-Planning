@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import {
   getAccounts, upsertAccount, deleteAccount,
@@ -1085,17 +1085,23 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [amountsMap, setAmountsMap] = useState({})         // billId → manual amount (for current navMonth)
   const [amountRows, setAmountRows] = useState({})
   const [amountScope, setAmountScope] = useState(null)
-  const [amountsLoading, setAmountsLoading] = useState(true)
   const [scalarBusy, setScalarBusy] = useState({})
   const currentScope = `${userId}-${navYear}-${navMonth}`
   const activeScope = useRef(currentScope)
   const scopeGeneration = useRef(0)
-  if (activeScope.current !== currentScope) {
-    activeScope.current = currentScope
-    scopeGeneration.current++
-  }
   const pendingAmounts = useRef({})
   const amountMutationEpoch = useRef(0)
+  // Month/user switch: drop the previous scope's state in the same render so
+  // its items never display for the new scope (React re-renders immediately).
+  const [trackedScope, setTrackedScope] = useState(currentScope)
+  if (trackedScope !== currentScope) {
+    setTrackedScope(currentScope)
+    setAmountScope(null)
+    setAmountsMap({})
+    setAmountRows({})
+    setScalarBusy({})
+  }
+  const amountsLoading = amountScope !== currentScope
   const [forecastAmountsMap, setForecastAmountsMap] = useState({}) // billId → forecast-derived amount
   const [balancesMap, setBalancesMap] = useState({})       // `accountId-periodHalf` → balance
   const [loading, setLoading] = useState(true)
@@ -1210,15 +1216,17 @@ export default function PayPeriodPlanner({ userId, mobile }) {
 
   // Scope every response so a slow previous-month request cannot replace
   // the current month's items or aggregate.
+  // Layout effect so the refs are current before paint and before the fetch
+  // effect below; refs may not be written during render.
+  useLayoutEffect(() => {
+    activeScope.current = currentScope
+    scopeGeneration.current++
+    pendingAmounts.current = {}
+  }, [currentScope])
+
   useEffect(() => {
     let cancelled = false
     const scope = `${userId}-${navYear}-${navMonth}`
-    setAmountsLoading(true)
-    setAmountScope(null)
-    setAmountsMap({})
-    setAmountRows({})
-    setScalarBusy({})
-    pendingAmounts.current = {}
     if (!userId) return () => { cancelled = true }
     Promise.all([
       getBillAmounts(userId, navYear, navMonth),
@@ -1230,7 +1238,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
       setAmountScope(scope)
       setBalancesMap(buildBalancesMap(balances))
     }).catch(err => { if (!cancelled) setError(err.message) })
-      .finally(() => { if (!cancelled) setAmountsLoading(false) })
     return () => { cancelled = true }
   }, [userId, navYear, navMonth])
 
