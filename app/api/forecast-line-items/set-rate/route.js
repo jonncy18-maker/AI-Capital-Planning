@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
+import { ownsAllCategories, UNOWNED_CATEGORY } from '../../../../src/lib/neon/ownership.js'
 
 function shapeForecastLineItem(row) {
   const { cat_id, cat_category, cat_group, cat_type, ...rest } = row
@@ -53,6 +54,9 @@ export async function POST(request) {
 
   try {
     const sql = getNeonSql()
+    if (!(await ownsAllCategories(sql, userId, [categoryId]))) {
+      return Response.json(UNOWNED_CATEGORY, { status: 404 })
+    }
 
     if (rate <= 0) {
       await (label != null
@@ -143,7 +147,7 @@ export async function POST(request) {
         bc."group" AS cat_group,
         bc.type AS cat_type
       FROM forecast_line_items fli
-      LEFT JOIN budget_categories bc ON bc.id = fli.category_id
+      LEFT JOIN budget_categories bc ON bc.id = fli.category_id AND bc.user_id = fli.user_id
       WHERE fli.id = ANY(${ids})
       ORDER BY fli.month ASC
     `

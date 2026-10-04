@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
+import { ownsAllCategories, UNOWNED_CATEGORY } from '../../../src/lib/neon/ownership.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/forecastOverrides.js#getForecastOverrides returns via
@@ -43,7 +44,7 @@ export async function GET(request) {
         bc."group" AS cat_group,
         bc.type AS cat_type
       FROM forecast_overrides fo
-      LEFT JOIN budget_categories bc ON bc.id = fo.category_id
+      LEFT JOIN budget_categories bc ON bc.id = fo.category_id AND bc.user_id = fo.user_id
       WHERE fo.user_id = ${userId} AND fo.budget_year = ${year}
     `
     return Response.json(rows.map(shapeOverride))
@@ -90,6 +91,10 @@ export async function POST(request) {
 
   try {
     const sql = getNeonSql()
+    if (!(await ownsAllCategories(sql, userId, [categoryId]))) {
+      return Response.json(UNOWNED_CATEGORY, { status: 404 })
+    }
+
     const [row] = await sql`
       INSERT INTO forecast_overrides
         (user_id, category_id, budget_year, month, amount, note, updated_at)

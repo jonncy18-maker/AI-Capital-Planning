@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
+import { ownsAllCategories, UNOWNED_CATEGORY } from '../../../src/lib/neon/ownership.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/forecastLineItems.js's functions return via the original
@@ -59,7 +60,7 @@ export async function GET(request) {
         bc."group" AS cat_group,
         bc.type AS cat_type
       FROM forecast_line_items fli
-      LEFT JOIN budget_categories bc ON bc.id = fli.category_id
+      LEFT JOIN budget_categories bc ON bc.id = fli.category_id AND bc.user_id = fli.user_id
       WHERE fli.user_id = ${userId} AND fli.budget_year = ${year}
       ORDER BY fli.month ASC
     `
@@ -104,6 +105,10 @@ export async function POST(request) {
 
   try {
     const sql = getNeonSql()
+    if (!(await ownsAllCategories(sql, userId, [categoryId]))) {
+      return Response.json(UNOWNED_CATEGORY, { status: 404 })
+    }
+
     const [inserted] = await sql`
       INSERT INTO forecast_line_items
         (user_id, budget_year, category_id, month, amount, label, note, source)
@@ -120,7 +125,7 @@ export async function POST(request) {
         bc."group" AS cat_group,
         bc.type AS cat_type
       FROM forecast_line_items fli
-      LEFT JOIN budget_categories bc ON bc.id = fli.category_id
+      LEFT JOIN budget_categories bc ON bc.id = fli.category_id AND bc.user_id = fli.user_id
       WHERE fli.id = ${inserted.id}
     `
     return Response.json(shapeForecastLineItem(row), { status: 201 })

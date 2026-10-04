@@ -87,7 +87,7 @@ export async function PATCH(request, context) {
         bc."group" AS cat_group,
         bc.type AS cat_type
       FROM forecast_line_items fli
-      LEFT JOIN budget_categories bc ON bc.id = fli.category_id
+      LEFT JOIN budget_categories bc ON bc.id = fli.category_id AND bc.user_id = fli.user_id
       WHERE fli.id = ${id}
     `
     return Response.json(shapeForecastLineItem(full))
