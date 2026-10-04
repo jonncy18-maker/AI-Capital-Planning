@@ -4,7 +4,7 @@
 
 export const GRILL_PHASE_NAMES = ['Income', 'Life Events', 'Commitments', 'Non-Monthly', 'Category Targets', 'Envelope Check']
 
-export function buildGrillSystemPrompt({ phase, targetYear, profile, commitments, priorBudgetGroups, spendingGroups }) {
+export function buildGrillSystemPrompt({ phase, targetYear, profile, commitments, priorBudgetGroups, spendingGroups, outlookTargets }) {
   const phaseName = GRILL_PHASE_NAMES[(phase ?? 1) - 1] ?? 'Income'
 
   const incomeLines = []
@@ -29,6 +29,10 @@ export function buildGrillSystemPrompt({ phase, targetYear, profile, commitments
     .map(([k, v]) => `${k}: $${Math.round(v).toLocaleString()}`)
 
   const spendLines = Object.entries(spendingGroups ?? {})
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `${k}: $${Math.round(v).toLocaleString()}`)
+
+  const outlookLines = Object.entries(outlookTargets ?? {})
     .filter(([, v]) => v > 0)
     .map(([k, v]) => `${k}: $${Math.round(v).toLocaleString()}`)
 
@@ -69,6 +73,10 @@ export function buildGrillSystemPrompt({ phase, targetYear, profile, commitments
 
   if (spendLines.length) {
     sections.push(`Trailing 12-month actual spending by group: ${spendLines.join(', ')}`)
+  }
+
+  if (outlookLines.length) {
+    sections.push(`${targetYear} outlook targets by group (a rough starting point from the 5-year outlook, not a decision): ${outlookLines.join(', ')}`)
   }
 
   return sections.join('\n')

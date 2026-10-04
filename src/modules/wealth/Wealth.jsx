@@ -11,6 +11,8 @@ import {
   investableFromSnapshot,
 } from '../../lib/wealth/projection.js'
 import { commitmentYearSchedule } from '../../lib/commitments/schedule.js'
+import { loadOutlookInputs } from '../../lib/outlook/loadOutlook.js'
+import { buildOutlook, outlookNetSavingsMap, outlookContributionMaps } from '../../lib/outlook/outlookEngine.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
 
@@ -166,6 +168,10 @@ export default function Wealth({ userId, mobile }) {
   const [horizon, setHorizon] = useState(25)
   const [retirementTarget, setRetirementTarget] = useState(1_500_000)
   const [includeCommitments, setIncludeCommitments] = useState(true)
+  // null = follow the default (on whenever the outlook yields all five years)
+  const [useOutlookPref, setUseOutlookPref] = useState(null)
+  const [outlook, setOutlook] = useState(null)
+  const [outlookError, setOutlookError] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -185,6 +191,14 @@ export default function Wealth({ userId, mobile }) {
   }, [userId])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    let cancelled = false
+    loadOutlookInputs(userId, { curYear: CUR_YEAR })
+      .then(inputs => { if (!cancelled) setOutlook(buildOutlook(inputs)) })
+      .catch(e => { if (!cancelled) setOutlookError(e.message) })
+    return () => { cancelled = true }
+  }, [userId])
 
   async function handleSave(payload) {
     setSaving(true)
@@ -211,13 +225,29 @@ export default function Wealth({ userId, mobile }) {
     return commitments.reduce((s, c) => s + commitmentYearSchedule(c, CUR_YEAR).reduce((a, b) => a + b, 0), 0)
   }, [commitments, includeCommitments])
 
-  const comparison = useMemo(() => buildComparison(
-    { startBalance, monthlyContribution, annualReturn: annualReturn / 100, annualCommitmentDrain: 0 },
-    { startBalance, monthlyContribution, annualReturn: annualReturn / 100, annualCommitmentDrain },
-    horizon
-  ), [startBalance, monthlyContribution, annualReturn, horizon, annualCommitmentDrain])
+  // Outlook net savings for NEXT..NEXT+4 are projection years 1..5.
+  const outlookMap = useMemo(() => outlookNetSavingsMap(outlook), [outlook])
+  const outlookUnavailableReason = outlookMap ? null
+    : outlookError ? 'the outlook could not be loaded'
+    : !outlook ? 'the outlook is still loading'
+    : outlook.empty ? 'no budget to project from yet'
+    : 'income is missing, so net savings cannot be computed'
+  const useOutlook = !!outlookMap && (useOutlookPref ?? true)
+  const contributionMaps = useMemo(
+    () => (useOutlook ? outlookContributionMaps(outlook, CUR_YEAR) : null),
+    [useOutlook, outlook]
+  )
 
-  const activeSeries = includeCommitments && annualCommitmentDrain > 0 ? comparison.scenarioSeries : comparison.baseSeries
+  const comparison = useMemo(() => buildComparison(
+    { startBalance, monthlyContribution, annualReturn: annualReturn / 100, annualCommitmentDrain: 0, yearContributions: contributionMaps?.withoutCommitments ?? null },
+    { startBalance, monthlyContribution, annualReturn: annualReturn / 100, annualCommitmentDrain, yearContributions: contributionMaps?.withCommitments ?? null },
+    horizon
+  ), [startBalance, monthlyContribution, annualReturn, horizon, annualCommitmentDrain, contributionMaps])
+
+  // With the outlook in use, commitments can start after the current year, so
+  // the current-year drain alone can't tell whether any exist.
+  const showCommitmentSeries = contributionMaps ? includeCommitments : includeCommitments && annualCommitmentDrain > 0
+  const activeSeries = showCommitmentSeries ? comparison.scenarioSeries : comparison.baseSeries
   const yrsToTarget = yearsToTarget(activeSeries, retirementTarget)
   const finalBalance = activeSeries[activeSeries.length - 1].balance
 
@@ -266,7 +296,7 @@ export default function Wealth({ userId, mobile }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)' }}>Projected net worth</div>
                 <div style={{ display: 'flex', gap: 14, fontSize: 11 }}>
-                  {includeCommitments && annualCommitmentDrain > 0 && (
+                  {showCommitmentSeries && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--tx-3)' }}>
                       <span style={{ width: 14, height: 0, borderTop: '2px dashed var(--tx-3)' }} /> No commitments
                     </span>
@@ -282,8 +312,8 @@ export default function Wealth({ userId, mobile }) {
                 </div>
               </div>
               <TrajectoryChart
-                baseSeries={includeCommitments && annualCommitmentDrain > 0 ? comparison.baseSeries : activeSeries}
-                scenarioSeries={includeCommitments && annualCommitmentDrain > 0 ? comparison.scenarioSeries : null}
+                baseSeries={showCommitmentSeries ? comparison.baseSeries : activeSeries}
+                scenarioSeries={showCommitmentSeries ? comparison.scenarioSeries : null}
                 target={retirementTarget}
                 mobile={mobile}
               />
@@ -296,6 +326,17 @@ export default function Wealth({ userId, mobile }) {
               <Slider label="Annual return" value={annualReturn} min={0} max={12} step={0.5} onChange={setAnnualReturn} format={v => v + '%'} />
               <Slider label="Horizon" value={horizon} min={5} max={40} step={1} onChange={setHorizon} format={v => v + ' yrs'} />
               <Slider label="Retirement target" value={retirementTarget} min={250000} max={5_000_000} step={250000} onChange={setRetirementTarget} format={v => fmtM(v)} />
+              <div style={{ marginBottom: commitments.length > 0 ? 10 : 0 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: outlookMap ? 'var(--tx-2)' : 'var(--tx-3)', cursor: outlookMap ? 'pointer' : 'not-allowed' }}>
+                  <input type="checkbox" checked={useOutlook} disabled={!outlookMap} onChange={e => setUseOutlookPref(e.target.checked)} style={{ accentColor: 'var(--accent)', cursor: 'inherit' }} />
+                  Use 5-year outlook
+                </label>
+                <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 4, lineHeight: 1.5 }}>
+                  {outlookMap
+                    ? `${outlook.columns[0].year}–${outlook.columns[4].year} from the outlook; slider after ${outlook.columns[4].year}`
+                    : `Unavailable: ${outlookUnavailableReason}.`}
+                </div>
+              </div>
               {commitments.length > 0 && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--tx-2)', cursor: 'pointer', marginTop: 4 }}>
                   <input type="checkbox" checked={includeCommitments} onChange={e => setIncludeCommitments(e.target.checked)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />

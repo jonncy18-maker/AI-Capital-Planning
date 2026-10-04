@@ -1,8 +1,8 @@
 import { invokeAIChatRaw } from './aiChatRaw.js'
 import { buildGrillSystemPrompt } from './grillSession.prompts.js'
 
-export async function sendGrillMessage({ messages, phase, targetYear, profile, commitments, priorBudgetGroups, spendingGroups }) {
-  const systemPrompt = buildGrillSystemPrompt({ phase, targetYear, profile, commitments, priorBudgetGroups, spendingGroups })
+export async function sendGrillMessage({ messages, phase, targetYear, profile, commitments, priorBudgetGroups, spendingGroups, outlookTargets }) {
+  const systemPrompt = buildGrillSystemPrompt({ phase, targetYear, profile, commitments, priorBudgetGroups, spendingGroups, outlookTargets })
 
   // The interview opens with an empty history — the assistant is meant to ask
   // the first question, driven by the system prompt. Anthropic (and /api/ai-chat,
