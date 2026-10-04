@@ -14,6 +14,7 @@ import {
   outlookGroupTargets,
   outlookContributionMaps,
 } from '../src/lib/outlook/outlookEngine.js'
+import { summarizeOutlookAdjustments, outlookChip, formatSignedMoney } from '../src/lib/outlook/scenarioSummary.js'
 import { projectTrajectory } from '../src/lib/wealth/projection.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -246,6 +247,12 @@ async function routeHarness() {
   const sql = async (strings, ...values) => {
     const q = strings.join('?').replace(/\s+/g, ' ').trim()
     state.calls.push({ q, values })
+    if (q.startsWith('SELECT soa.*')) {
+      const [user_id, committedOnly] = values
+      return state.adjustments
+        .map(a => ({ ...a, scenario_state: state.scenarios.find(sc => sc.id === a.scenario_id)?.state }))
+        .filter(a => a.user_id === user_id && (!committedOnly || a.scenario_state === 'committed'))
+    }
     if (q.startsWith('SELECT id FROM scenarios')) return state.scenarios.filter(s => s.id === values[0] && s.user_id === values[1]).map(s => ({ id: s.id }))
     if (q.startsWith('SELECT * FROM outlook_assumptions')) { const r = state.assumptions.get(values[0]); return r ? [r] : [] }
     if (q.startsWith('INSERT INTO outlook_assumptions')) {
@@ -309,6 +316,7 @@ async function routeHarness() {
     event: 'app/api/outlook/events/[id]/route.js',
     adjustments: 'app/api/scenarios/[id]/outlook-adjustments/route.js',
     adjustment: 'app/api/scenarios/outlook-adjustments/[adjustmentId]/route.js',
+    allAdjustments: 'app/api/scenarios/outlook-adjustments/route.js',
   }
   for (const [name, path] of Object.entries(files)) {
     const m = await load(resolve(root, path)); await m.evaluate(); modules[name] = m.namespace
@@ -390,4 +398,43 @@ test('event create validates input and stamps the session user', async () => {
   for (const bad of [{ year: 2030, group_name: 'Housing', name: '', amount: 1 }, { year: 2030, group_name: 'Housing', name: 'x'.repeat(201), amount: 1 }, { year: 2030, group_name: 'Housing', name: 'x', amount: Infinity }, { year: 3000, group_name: 'Housing', name: 'x', amount: 1 }]) {
     assert.equal((await h.modules.events.POST(h.req('POST', bad))).status, 400)
   }
+})
+
+test('GET all outlook adjustments returns only the session user\'s rows; committed=1 filters', async () => {
+  const h = await routeHarness()
+  h.state.adjustments.push(
+    { id: webcryptoId(1), user_id: A, scenario_id: S_ALICE, year: 2029, group_name: 'Food', delta_amount: 5 },
+    { id: webcryptoId(2), user_id: B, scenario_id: S_BOB, year: 2029, group_name: 'Food', delta_amount: 7 },
+  )
+  const all = await (await h.modules.allAdjustments.GET(h.req('GET'))).json()
+  assert.deepEqual(all.map(a => a.id), [webcryptoId(1)])
+  const call = h.state.calls.at(-1)
+  assert.equal(call.values[0], A)
+  assert.equal((await (await h.modules.allAdjustments.GET(new Request('http://local/x?committed=1'))).json()).length, 0)
+  h.state.user = B
+  const bobCommitted = await (await h.modules.allAdjustments.GET(new Request('http://local/x?committed=1'))).json()
+  assert.deepEqual(bobCommitted.map(a => a.id), [webcryptoId(2)])
+  h.state.user = null
+  assert.equal((await h.modules.allAdjustments.GET(h.req('GET'))).status, 401)
+})
+
+test('scenario summary: per-year sort, net savings, chip text', () => {
+  assert.equal(summarizeOutlookAdjustments([]), null)
+  assert.equal(outlookChip(null), null)
+  const s = summarizeOutlookAdjustments([
+    { id: '3', year: 2031, group_name: 'Travel', delta_amount: -300 },
+    { id: '1', year: 2029, group_name: 'Travel', delta_amount: 1200 },
+    { id: '2', year: 2029, group_name: 'Food', delta_amount: '100' },
+  ])
+  assert.deepEqual(s.byYear.map(y => y.year), [2029, 2031])
+  assert.deepEqual(s.byYear[0].items.map(i => i.group_name), ['Food', 'Travel'])
+  assert.equal(s.byYear[0].net, -1300)
+  assert.equal(s.byYear[1].net, 300)
+  assert.equal(s.total, 1000)
+  assert.deepEqual(outlookChip(s), { text: '+$1,000 · 2029–2031 outlook', tone: 'bad' })
+  const one = summarizeOutlookAdjustments([{ id: '1', year: 2029, group_name: 'Travel', delta_amount: 1200 }])
+  assert.equal(outlookChip(one).text, '+$1,200 · 2029 outlook')
+  assert.equal(outlookChip(summarizeOutlookAdjustments([{ id: 'x', year: 2030, group_name: 'A', delta_amount: -50 }])).tone, 'good')
+  assert.equal(formatSignedMoney(-1200), '−$1,200')
+  assert.equal(formatSignedMoney(0), '$0')
 })

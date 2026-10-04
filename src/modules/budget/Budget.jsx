@@ -777,7 +777,7 @@ const ghostBtn = {
   border: '1px solid var(--bd)', borderRadius: 7, fontSize: 12.5, cursor: 'pointer',
 }
 
-export default function Budget({ userId, mobile }) {
+export default function Budget({ userId, mobile, initialView = 'detailed', initialScenarioId = null }) {
   const [year, setYear] = useState(CUR_YEAR)
   const [years, setYears] = useState([])
   const [lineItems, setLineItems] = useState([])
@@ -797,7 +797,7 @@ export default function Budget({ userId, mobile }) {
   const [showReopen, setShowReopen] = useState(false)
   const [statusBusy, setStatusBusy] = useState(false)
   const [grilling, setGrilling] = useState(false)
-  const [viewMode, setViewMode] = useState('detailed')
+  const [viewMode, setViewMode] = useState(initialView)
   const [outlookTargetsFor, setOutlookTargetsFor] = useState(null) // { year, targets }
   const fileRef = useRef(null)
 
@@ -1092,7 +1092,7 @@ export default function Budget({ userId, mobile }) {
       )}
 
       {viewMode === 'outlook' && !generating && !reviewing && !editing && !grilling ? (
-        <OutlookView userId={userId} mobile={mobile} />
+        <OutlookView userId={userId} mobile={mobile} initialScenarioId={initialScenarioId} />
       ) : loading ? (
         <div style={{ color: 'var(--tx-3)', fontSize: 14, padding: 32 }}>Loading budget…</div>
       ) : grilling ? (
