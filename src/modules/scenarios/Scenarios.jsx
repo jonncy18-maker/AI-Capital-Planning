@@ -2340,13 +2340,13 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
 
   async function loadOutlookAdjs(scenarioId) {
     if (outlookAdjs[scenarioId]) return
-    setOutlookError(null)
+    setOutlookError(prev => (prev?.id === scenarioId ? null : prev))
     try {
       const data = await getScenarioOutlookAdjustments(scenarioId)
       setOutlookAdjs(prev => ({ ...prev, [scenarioId]: data }))
     } catch (e) {
       // Not cached, so the next selection retries; non-fatal, so it doesn't use the page-level error.
-      setOutlookError(e.message)
+      setOutlookError({ id: scenarioId, message: e.message })
     }
   }
 
@@ -2635,7 +2635,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                       scenario={selected}
                       adjustments={selectedAdjs}
                       outlookAdjs={outlookAdjs[selectedId] ?? []}
-                      outlookError={outlookError}
+                      outlookError={outlookError?.id === selectedId ? outlookError.message : null}
                       categories={categories}
                       context={context}
                       userId={userId}

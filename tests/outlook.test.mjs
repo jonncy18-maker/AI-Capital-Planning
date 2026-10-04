@@ -12,6 +12,7 @@ import {
   resolveBaseYear,
   outlookNetSavingsMap,
   outlookGroupTargets,
+  outlookContributionMaps,
 } from '../src/lib/outlook/outlookEngine.js'
 import { projectTrajectory } from '../src/lib/wealth/projection.js'
 
@@ -191,6 +192,18 @@ test('helpers: net savings map needs all five years; group targets by year', () 
   assert.deepEqual(Object.keys(outlookNetSavingsMap(o)).map(Number), [2027, 2028, 2029, 2030, 2031])
   assert.equal(outlookGroupTargets(o, 2028).Housing, o.groups.find(g => g.name === 'Housing').cells[1].amount)
   assert.equal(outlookGroupTargets(o, 2040), null)
+})
+
+test('contribution maps: with = net savings, without = net + commitments, by projection year', () => {
+  const commitments = [{ id: 'b', name: 'Gym', start_date: '2025-01-01', end_date: null, cost_structure: { kind: 'monthly', amount: 10 } }]
+  const o = buildOutlook(base({ commitments }))
+  const m = outlookContributionMaps(o, 2026)
+  assert.deepEqual(Object.keys(m.withCommitments).map(Number), [1, 2, 3, 4, 5])
+  for (let i = 0; i < 5; i++) {
+    approx(m.withCommitments[i + 1], o.netSavings[i])
+    approx(m.withoutCommitments[i + 1], o.netSavings[i] + 120)
+  }
+  assert.equal(outlookContributionMaps(buildOutlook(base({ takeHomeBase: null })), 2026), null)
 })
 
 test('projectTrajectory: yearContributions skip the commitment drain in override years only', () => {
