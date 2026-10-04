@@ -177,6 +177,8 @@ Key behaviors:
 
 **Multi-year handling:** Long-Term Commitments with defined timespans automatically feed into the multi-year projection. The AI flags years where commitment profiles change (e.g., a scholarship ending, a lease expiring).
 
+**5-year outlook (added 2026-10-04):** Only the next budget year is detailed (category × month). The four years after it are an outlook: one annual number per budget group (Income/Transfers/`exclude_from_totals` excluded), computed live by the pure `src/lib/outlook/outlookEngine.js` — group base (base-year line items minus commitment-linked rows) × (1 + group rate or inflation default)^years, plus commitments by their real dates (never inflated), one-time planned events, and one-time scenario outlook adjustments. Take-home income (the Settings estimate) grows at its own rate; net savings = income − groups − commitments − events. Nothing is materialized: assumptions, events and scenario outlook adjustments are the only stored inputs. Committed scenarios' outlook adjustments are always in the baseline. Wealth can take outlook net savings as its contributions for projection years 1–5.
+
 ### 4.5 Long-Term Commitments
 First-class module for any financial obligation spanning more than one year.
 
@@ -300,6 +302,23 @@ year            integer
 delta_amount    numeric  -- adjustment vs. baseline
 label           text
 created_at      timestamptz
+```
+
+**outlook_assumptions** *(2026-10-04, one row per user)*
+```
+inflation_rate      numeric  -- default growth for every group (0.03 = 3%)
+income_growth_rate  numeric
+group_rates         jsonb    -- {"Travel": 0.06}; missing key = use inflation_rate
+```
+
+**outlook_events** *(2026-10-04)* — one-time planned outlook spending
+```
+year int, group_name text, name text, amount numeric
+```
+
+**scenario_outlook_adjustments** *(2026-10-04)* — year × group deltas (positive = more spending); never materialized into forecast_line_items
+```
+scenario_id uuid REFERENCES scenarios ON DELETE CASCADE, year int, group_name text, delta_amount numeric, label text
 ```
 
 **commitments**
