@@ -159,6 +159,17 @@ test('selected scenario shows as a delta; committed adjustments stay in the base
   approx(o.netSavings[1], buildOutlook(base({ adjustments: [{ year: 2028, group_name: 'Food', delta_amount: 100 }] })).netSavings[1])
 })
 
+test('adjustments on the detailed column are ignored; base=current keeps them', () => {
+  const adj = [{ year: 2027, group_name: 'Food', delta_amount: 900 }]
+  const o = buildOutlook(base({ adjustments: adj, selectedAdjustments: adj }))
+  assert.equal(group(o, 'Food').cells[0].amount, 500)
+  assert.equal(group(o, 'Food').cells[0].committedAdj, 0)
+  assert.equal(group(o, 'Food').cells[0].scenarioDelta, 0)
+  assert.equal(o.netSavings[0], 60000 - 2500)
+  const cur = buildOutlook(base({ baseYear: 2026, adjustments: adj }))
+  assert.equal(group(cur, 'Food').cells[0].committedAdj, 900)
+})
+
 test('an adjustment on an unseen group still gets a row so totals reconcile', () => {
   const o = buildOutlook(base({ adjustments: [{ year: 2028, group_name: 'Travel', delta_amount: 900 }] }))
   assert.equal(group(o, 'Travel').cells[1].amount, 900)
