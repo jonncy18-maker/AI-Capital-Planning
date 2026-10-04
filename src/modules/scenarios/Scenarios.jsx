@@ -14,10 +14,12 @@ import {
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import {
   getScenarioOutlookAdjustments,
+  getAllOutlookAdjustments,
   addScenarioOutlookAdjustment,
   deleteScenarioOutlookAdjustment,
 } from '../../lib/db/outlook.js'
 import { expenseGroups } from '../../lib/outlook/outlookEngine.js'
+import { summarizeOutlookAdjustments, outlookChip, formatSignedMoney } from '../../lib/outlook/scenarioSummary.js'
 import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario, runAdjustmentAgent, confirmPendingAdjustments, cancelPendingAdjustments } from '../../lib/ai/scenarioAgent.js'
 import { headerStyles } from '../common/headerStyles.js'
 import { moduleHue } from '../registry.js'
@@ -137,11 +139,13 @@ function StateBadge({ state }) {
 
 // ── Scenario list item ───────────────────────────────────────────────────────
 
-function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
+function ScenarioListItem({ scenario, selected, onClick, adjustments, outlookAdjustments }) {
   const adjs = adjustments ?? []
+  const oChip = outlookChip(summarizeOutlookAdjustments(outlookAdjustments))
   // Cash terms: positive = better off, so income scenarios read green.
   const netDelta = adjs.reduce((s, a) => s + cashEffect(a), 0)
   const hasData = adjs.length > 0
+  const anyData = hasData || !!oChip
 
   let span = null
   if (hasData) {
@@ -160,17 +164,17 @@ function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
       color: 'var(--tx-1)', cursor: 'pointer', borderRadius: '0 6px 6px 0',
       marginBottom: 2, transition: 'background 0.15s',
     }}>
-      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: hasData ? 5 : 3, color: selected ? 'var(--accent)' : 'var(--tx-1)' }}>
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: anyData ? 5 : 3, color: selected ? 'var(--accent)' : 'var(--tx-1)' }}>
         {scenario.name}
       </div>
-      {!hasData && scenario.description && (
+      {!anyData && scenario.description && (
         <div style={{ fontSize: 11, color: 'var(--tx-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 }}>
           {scenario.description}
         </div>
       )}
-      {hasData ? (
+      {anyData ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{
+          {hasData && <span style={{
             display: 'inline-block', padding: '2px 7px', borderRadius: 10,
             fontSize: 10.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
             background: netDelta > 0 ? 'rgba(46,204,113,0.1)' : netDelta < 0 ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
@@ -178,8 +182,19 @@ function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
             border: `1px solid ${netDelta > 0 ? 'rgba(46,204,113,0.2)' : netDelta < 0 ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
           }}>
             {netDelta === 0 ? '$0' : (netDelta < 0 ? '−' : '+') + fmtAbs(netDelta)}
-          </span>
+          </span>}
           {span && <span style={{ fontSize: 10, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>{span}</span>}
+          {oChip && (
+            <span style={{
+              display: 'inline-block', padding: '2px 7px', borderRadius: 10,
+              fontSize: 10.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+              background: oChip.tone === 'good' ? 'rgba(46,204,113,0.1)' : oChip.tone === 'bad' ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
+              color: oChip.tone === 'good' ? 'var(--green)' : oChip.tone === 'bad' ? 'var(--red)' : 'var(--tx-3)',
+              border: `1px solid ${oChip.tone === 'good' ? 'rgba(46,204,113,0.2)' : oChip.tone === 'bad' ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
+            }}>
+              {oChip.text}
+            </span>
+          )}
         </div>
       ) : (
         <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 4 }}>
@@ -514,6 +529,46 @@ function OutlookAdjustmentsList({ adjustments, onDelete, readOnly }) {
         </div>
       ))}
       {err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '8px 14px' }}>{err}</div>}
+    </div>
+  )
+}
+
+function OutlookImpactBlock({ adjustments, committed, onOpenOutlook, scenarioId }) {
+  const summary = summarizeOutlookAdjustments(adjustments)
+  if (!summary) return null
+  return (
+    <div style={{ marginTop: 20, border: '1px solid var(--bd)', borderRadius: 10, padding: '14px 16px', background: 'var(--bg-card)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-1)' }}>Outlook impact</span>
+          <OutlookBadge />
+        </div>
+        {onOpenOutlook && (
+          <button onClick={() => onOpenOutlook(scenarioId)} style={{
+            padding: '5px 12px', background: 'transparent', color: 'var(--accent)',
+            border: '1px solid var(--accent-bd)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          }}>
+            View in 5-year outlook
+          </button>
+        )}
+      </div>
+      {committed && (
+        <div style={{ fontSize: 11.5, color: 'var(--tx-3)', marginBottom: 10 }}>Included in baseline outlook</div>
+      )}
+      {summary.byYear.map(y => (
+        <div key={y.year} style={{ marginBottom: 10 }}>
+          {y.items.map(it => (
+            <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, padding: '3px 0' }}>
+              <span style={{ color: 'var(--tx-2)' }}>{y.year} · {it.group_name}{it.label ? ` · ${it.label}` : ''}</span>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: 'tabular-nums', color: 'var(--tx-1)' }}>{formatSignedMoney(it.delta)}</span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, padding: '5px 0 0', borderTop: '1px solid var(--bd-light)', fontWeight: 600 }}>
+            <span style={{ color: 'var(--tx-1)' }}>Net savings {y.year}</span>
+            <span style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: 'tabular-nums', color: y.net < 0 ? 'var(--red)' : y.net > 0 ? 'var(--green)' : 'var(--tx-2)' }}>{formatSignedMoney(y.net)}</span>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -1825,7 +1880,7 @@ function AiAdjustmentComposer({ userId, scenarioId, scenarioName, existingAdjust
 // ── Scenario detail panel ────────────────────────────────────────────────────
 
 function ScenarioDetail({
-  scenario, adjustments, outlookAdjs, outlookError, categories, context, userId,
+  scenario, adjustments, outlookAdjs, outlookError, onOpenOutlook, categories, context, userId,
   onPromote, onDelete, onAddAdj, onDeleteAdj, onAddOutlookAdj, onDeleteOutlookAdj, onClone, onAdjsRefresh, loading, onGoToForecast, mobile,
 }) {
   const [rightView, setRightView] = useState('forecast')
@@ -2008,9 +2063,14 @@ function ScenarioDetail({
             ))}
           </div>
         </div>
-        {rightView === 'forecast'
+        {adjustments.length === 0 && outlookAdjs.length > 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--tx-3)', fontSize: 13 }}>
+            No monthly adjustments — see outlook impact below.
+          </div>
+        ) : rightView === 'forecast'
           ? <ForecastImpactChart adjustments={scaledAdjs} ctx={context} />
           : <WaterfallChart adjustments={scaledAdjs} />}
+        <OutlookImpactBlock adjustments={outlookAdjs} committed={isCommitted} onOpenOutlook={onOpenOutlook} scenarioId={scenario.id} />
       </div>
 
       {/* Adjustments modal */}
@@ -2260,7 +2320,16 @@ const TAB_META = {
   idea:      { label: 'Ideas',      color: '#f59e0b' },
 }
 
-export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange, openScenarioId, onGoToForecast }) {
+// One request for every scenario's outlook adjustments (list cards need totals
+// for all of them); scenarios with none map to [] so they are not refetched.
+async function fetchOutlookByScenario(list) {
+  const rows = await getAllOutlookAdjustments()
+  const map = Object.fromEntries(list.map(sc => [sc.id, []]))
+  for (const row of rows) if (map[row.scenario_id]) map[row.scenario_id].push(row)
+  return map
+}
+
+export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange, openScenarioId, onGoToForecast, onOpenOutlook }) {
   const [scenarios, setScenarios] = useState([])
   const [adjustments, setAdjustments] = useState({}) // { [scenarioId]: adj[] }
   const [outlookError, setOutlookError] = useState(null)
@@ -2290,6 +2359,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     try {
       const data = await getScenarios(userId)
       setScenarios(data)
+      fetchOutlookByScenario(data).then(m => setOutlookAdjs(prev => ({ ...prev, ...m }))).catch(() => {})
     } catch (e) {
       setError(e.message)
     } finally {
@@ -2304,7 +2374,10 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
 
   useEffect(() => {
     if (!reloadSignal) return
-    getScenarios(userId).then(setScenarios).catch(() => {})
+    getScenarios(userId).then(list => {
+      setScenarios(list)
+      fetchOutlookByScenario(list).then(m => setOutlookAdjs(prev => ({ ...prev, ...m }))).catch(() => {})
+    }).catch(() => {})
     getBudgetCategories(userId).then(setCategories).catch(() => {})
   }, [reloadSignal]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2593,7 +2666,8 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                     <ScenarioListItem key={s.id} scenario={s}
                       selected={selectedId === s.id}
                       onClick={() => { handleSelect(s.id); setShowComposer(false) }}
-                      adjustments={adjustments[s.id]} />
+                      adjustments={adjustments[s.id]}
+                      outlookAdjustments={outlookAdjs[s.id]} />
                   ))}
                   {modeled.length === 0 && !showNewForm && (
                     <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.6 }}>
@@ -2635,6 +2709,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                       scenario={selected}
                       adjustments={selectedAdjs}
                       outlookAdjs={outlookAdjs[selectedId] ?? []}
+                      onOpenOutlook={onOpenOutlook}
                       outlookError={outlookError?.id === selectedId ? outlookError.message : null}
                       categories={categories}
                       context={context}

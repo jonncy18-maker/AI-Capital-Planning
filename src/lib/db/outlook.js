@@ -57,6 +57,12 @@ export async function getCommittedOutlookAdjustments() {
   return parseJsonOrThrow(res)
 }
 
+// Every outlook adjustment the user owns, across all scenarios (one request).
+export async function getAllOutlookAdjustments() {
+  const res = await apiFetch('/api/scenarios/outlook-adjustments', { credentials: 'include' })
+  return parseJsonOrThrow(res)
+}
+
 export async function getScenarioOutlookAdjustments(scenarioId) {
   const res = await apiFetch(`/api/scenarios/${scenarioId}/outlook-adjustments`, { credentials: 'include' })
   return parseJsonOrThrow(res)

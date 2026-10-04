@@ -133,7 +133,7 @@ function EventForm({ editing, years, groups, busy, onSubmit, onCancel }) {
   )
 }
 
-export default function OutlookView({ userId, mobile }) {
+export default function OutlookView({ userId, mobile, initialScenarioId = null }) {
   const [inputs, setInputs] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -145,6 +145,8 @@ export default function OutlookView({ userId, mobile }) {
   const [saving, setSaving] = useState(null) // key of the assumption being saved
   const [eventForm, setEventForm] = useState(null) // null | 'new' | event
   const [eventBusy, setEventBusy] = useState(false)
+
+  const pickSeq = useRef(0)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -160,14 +162,28 @@ export default function OutlookView({ userId, mobile }) {
   useEffect(() => {
     let cancelled = false
     loadOutlookInputs(userId, { curYear: CUR_YEAR })
-      .then(res => { if (!cancelled) setInputs(res) })
+      .then(async res => {
+        if (cancelled) return
+        setInputs(res)
+        // Deep link: preselect a modeled/idea scenario (committed ones are
+        // already in the baseline, so there is nothing to overlay).
+        const target = initialScenarioId && res.scenarios.find(s => s.id === initialScenarioId && (s.state === 'modeled' || s.state === 'idea'))
+        if (!target) return
+        const seq = ++pickSeq.current
+        setScenarioId(target.id)
+        try {
+          const rows = await getScenarioOutlookAdjustments(target.id)
+          if (!cancelled && seq === pickSeq.current) setSelectedAdjustments(rows)
+        } catch (e) {
+          if (!cancelled && seq === pickSeq.current) { setError(e.message); setScenarioId('') }
+        }
+      })
       .catch(e => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [userId])
+  }, [userId, initialScenarioId])
 
   // Only the latest pick's response may be applied; a slow earlier fetch is dropped.
-  const pickSeq = useRef(0)
   async function pickScenario(id) {
     const seq = ++pickSeq.current
     setScenarioId(id)
