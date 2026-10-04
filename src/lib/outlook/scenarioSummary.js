@@ -33,13 +33,13 @@ export function summarizeOutlookAdjustments(adjustments) {
   }
 }
 
-// "+$1,200 · 2029 outlook" / "−$300 · 2029–2031 outlook". tone is by cash
-// effect: more spending is 'bad', less is 'good'.
+// Net-savings (cash) terms, matching the monthly chip: positive = better off.
+// A +$1,200 spending delta reads "−$1,200 · 2029 outlook" (tone 'bad').
 export function outlookChip(summary) {
   if (!summary) return null
   const years = summary.minYear === summary.maxYear ? `${summary.minYear}` : `${summary.minYear}–${summary.maxYear}`
   return {
-    text: `${signed(summary.total)} · ${years} outlook`,
+    text: `${signed(-summary.total)} · ${years} outlook`,
     tone: summary.total > 0 ? 'bad' : summary.total < 0 ? 'good' : 'neutral',
   }
 }
