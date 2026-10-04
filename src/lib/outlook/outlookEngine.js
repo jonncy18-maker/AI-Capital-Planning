@@ -195,6 +195,23 @@ export function outlookNetSavingsMap(outlook) {
   return Object.fromEntries(outlook.columns.map((c, i) => [c.year, outlook.netSavings[i]]))
 }
 
+// Wealth projection inputs, keyed by projection year index (calendar year - curYear).
+// Outlook net savings already net out commitments, so the "with commitments"
+// series uses them as-is and the "without commitments" series adds that year's
+// commitment total back. null unless every year has a net savings number.
+export function outlookContributionMaps(outlook, curYear) {
+  const net = outlookNetSavingsMap(outlook)
+  if (!net) return null
+  const withCommitments = {}
+  const withoutCommitments = {}
+  outlook.columns.forEach((c, i) => {
+    const y = c.year - curYear
+    withCommitments[y] = net[c.year]
+    withoutCommitments[y] = net[c.year] + outlook.commitments[i]
+  })
+  return { withCommitments, withoutCommitments }
+}
+
 // { [group]: amount } for one year, for reference panels.
 export function outlookGroupTargets(outlook, year) {
   if (!outlook || outlook.empty) return null

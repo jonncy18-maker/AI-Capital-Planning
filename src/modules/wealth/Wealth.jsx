@@ -12,7 +12,7 @@ import {
 } from '../../lib/wealth/projection.js'
 import { commitmentYearSchedule } from '../../lib/commitments/schedule.js'
 import { loadOutlookInputs } from '../../lib/outlook/loadOutlook.js'
-import { buildOutlook, outlookNetSavingsMap } from '../../lib/outlook/outlookEngine.js'
+import { buildOutlook, outlookNetSavingsMap, outlookContributionMaps } from '../../lib/outlook/outlookEngine.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
 
@@ -233,18 +233,16 @@ export default function Wealth({ userId, mobile }) {
     : outlook.empty ? 'no budget to project from yet'
     : 'income is missing, so net savings cannot be computed'
   const useOutlook = !!outlookMap && (useOutlookPref ?? true)
-  const yearContributions = useMemo(() => {
-    if (!useOutlook) return null
-    const out = {}
-    for (const [yr, net] of Object.entries(outlookMap)) out[Number(yr) - CUR_YEAR] = net
-    return out
-  }, [useOutlook, outlookMap])
+  const contributionMaps = useMemo(
+    () => (useOutlook ? outlookContributionMaps(outlook, CUR_YEAR) : null),
+    [useOutlook, outlook]
+  )
 
   const comparison = useMemo(() => buildComparison(
-    { startBalance, monthlyContribution, annualReturn: annualReturn / 100, annualCommitmentDrain: 0, yearContributions },
-    { startBalance, monthlyContribution, annualReturn: annualReturn / 100, annualCommitmentDrain, yearContributions },
+    { startBalance, monthlyContribution, annualReturn: annualReturn / 100, annualCommitmentDrain: 0, yearContributions: contributionMaps?.withoutCommitments ?? null },
+    { startBalance, monthlyContribution, annualReturn: annualReturn / 100, annualCommitmentDrain, yearContributions: contributionMaps?.withCommitments ?? null },
     horizon
-  ), [startBalance, monthlyContribution, annualReturn, horizon, annualCommitmentDrain, yearContributions])
+  ), [startBalance, monthlyContribution, annualReturn, horizon, annualCommitmentDrain, contributionMaps])
 
   const activeSeries = includeCommitments && annualCommitmentDrain > 0 ? comparison.scenarioSeries : comparison.baseSeries
   const yrsToTarget = yearsToTarget(activeSeries, retirementTarget)
