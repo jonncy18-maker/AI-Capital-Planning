@@ -44,7 +44,7 @@ export async function GET(request, context) {
         bc."group" AS category_group,
         bc.type AS category_type
       FROM scenario_adjustments sa
-      JOIN budget_categories bc ON bc.id = sa.category_id
+      JOIN budget_categories bc ON bc.id = sa.category_id AND bc.user_id = sa.user_id
       WHERE sa.user_id = ${userId} AND sa.scenario_id = ${scenarioId}
       ORDER BY sa.year ASC, sa.month ASC
     `
@@ -125,7 +125,7 @@ export async function POST(request, context) {
         bc."group" AS category_group,
         bc.type AS category_type
       FROM scenario_adjustments sa
-      JOIN budget_categories bc ON bc.id = sa.category_id
+      JOIN budget_categories bc ON bc.id = sa.category_id AND bc.user_id = sa.user_id
       WHERE sa.id = ${inserted.id}
     `
     return Response.json(shapeAdjustment(row), { status: 201 })

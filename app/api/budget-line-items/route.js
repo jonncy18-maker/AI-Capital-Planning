@@ -1,5 +1,11 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
+import {
+  ownsAllCategories,
+  ownsAllCommitments,
+  UNOWNED_CATEGORY,
+  UNOWNED_COMMITMENT,
+} from '../../../src/lib/neon/ownership.js'
 
 // Reshapes the flat join result back into the nested shape
 // src/lib/db/budgetLineItems.js#getBudgetLineItems/#insertBudgetLineItem
@@ -42,7 +48,7 @@ export async function GET(request) {
         bc."group" AS cat_group,
         bc.type AS cat_type
       FROM budget_line_items bli
-      LEFT JOIN budget_categories bc ON bc.id = bli.category_id
+      LEFT JOIN budget_categories bc ON bc.id = bli.category_id AND bc.user_id = bli.user_id
       WHERE bli.user_id = ${userId}
         AND (${year}::int IS NULL OR bli.budget_year = ${year})
       ORDER BY bli.month ASC
@@ -105,6 +111,13 @@ export async function POST(request) {
     }
 
     try {
+      if (!(await ownsAllCategories(sql, userId, items.map(i => i.category_id)))) {
+        return Response.json(UNOWNED_CATEGORY, { status: 404 })
+      }
+      if (!(await ownsAllCommitments(sql, userId, items.map(i => i.commitment_id)))) {
+        return Response.json(UNOWNED_COMMITMENT, { status: 404 })
+      }
+
       if (items.length === 0) {
         // Matches the source's early return: delete existing rows, nothing to insert.
         await sql`
@@ -165,6 +178,10 @@ export async function POST(request) {
   }
 
   try {
+    if (!(await ownsAllCategories(sql, userId, [categoryId]))) {
+      return Response.json(UNOWNED_CATEGORY, { status: 404 })
+    }
+
     const [inserted] = await sql`
       INSERT INTO budget_line_items
         (user_id, budget_year, budget_version, category_id, month, amount, label)
@@ -181,7 +198,7 @@ export async function POST(request) {
         bc."group" AS cat_group,
         bc.type AS cat_type
       FROM budget_line_items bli
-      LEFT JOIN budget_categories bc ON bc.id = bli.category_id
+      LEFT JOIN budget_categories bc ON bc.id = bli.category_id AND bc.user_id = bli.user_id
       WHERE bli.id = ${inserted.id}
     `
     return Response.json(shapeLineItem(row), { status: 201 })
