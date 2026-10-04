@@ -3,7 +3,7 @@ import ModuleHeader from '../common/ModuleHeader.jsx'
 import {
   getAccounts, upsertAccount, deleteAccount,
   getBills, upsertBill, deleteBill,
-  getBillAmounts, upsertBillAmount,
+  getBillAmounts, upsertBillAmount, saveBillAmountItems,
   getAccountBalances, upsertAccountBalance,
   getForecastAmountsForBills,
   splitBillsByPeriod,
@@ -23,6 +23,8 @@ import { parseBillAmountsFromFile } from '../../lib/ai/billAmountsParser.js'
 import TrendsTab from './TrendsTab.jsx'
 import CashFlowTab from './CashFlowTab.jsx'
 import CCScheduleTab from './CCScheduleTab.jsx'
+import BillAmountItems from './BillAmountItems.jsx'
+import { isBillAmountItemsEligible } from '../../lib/payperiods/billAmountItems.js'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -150,7 +152,7 @@ function SplitChip({ label, value, accent = false }) {
   )
 }
 
-function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
+function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, scalarBusy, onItemsSave, period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
@@ -206,12 +208,13 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
             const cardProjected = bill.credit_card_id != null && cardStatementMap[bill.id] != null
             const showProjectedBadge = cardProjected && !hasManualOverride && !showForecastBadge
             const amount = bill.resolvedAmount
-            const showInput = !showForecastBadge && bill.fixed_amount == null
+            const amountRow = amountScope === currentScope ? amountRows[bill.id] : null
+            const showInput = !showForecastBadge && bill.fixed_amount == null && amountRow?.items == null
             return (
               <div
                 key={bill.id}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
+                  display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
                   padding: '11px 0', borderBottom: '0.5px solid var(--bd-light)',
                 }}
               >
@@ -255,6 +258,7 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
                       <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)' }}>$</span>
                       <input
                         type="number"
+                        disabled={amountsLoading || amountScope !== currentScope || scalarBusy[bill.id]}
                         min="0"
                         value={amount ?? ''}
                         placeholder="0"
@@ -273,6 +277,10 @@ function PeriodCard({ period, label, payDay, bills, amountsMap, forecastAmountsM
                   <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: 'var(--tx-1)' }}>
                     {fmt(amount)}
                   </div>
+                )}
+                {isBillAmountItemsEligible(bill) && amountScope === currentScope && !amountsLoading && (
+                  <BillAmountItems key={`${currentScope}-${bill.id}`} bill={bill} amountRow={amountRow}
+                    disabled={!!scalarBusy[bill.id]} onSave={onItemsSave} />
                 )}
               </div>
             )
@@ -1075,6 +1083,19 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   const [lineItems, setLineItems] = useState([])           // budget_line_items for navYear
   const [forecastLines, setForecastLines] = useState([])   // forecast_line_items for navYear
   const [amountsMap, setAmountsMap] = useState({})         // billId → manual amount (for current navMonth)
+  const [amountRows, setAmountRows] = useState({})
+  const [amountScope, setAmountScope] = useState(null)
+  const [amountsLoading, setAmountsLoading] = useState(true)
+  const [scalarBusy, setScalarBusy] = useState({})
+  const currentScope = `${userId}-${navYear}-${navMonth}`
+  const activeScope = useRef(currentScope)
+  const scopeGeneration = useRef(0)
+  if (activeScope.current !== currentScope) {
+    activeScope.current = currentScope
+    scopeGeneration.current++
+  }
+  const pendingAmounts = useRef({})
+  const amountMutationEpoch = useRef(0)
   const [forecastAmountsMap, setForecastAmountsMap] = useState({}) // billId → forecast-derived amount
   const [balancesMap, setBalancesMap] = useState({})       // `accountId-periodHalf` → balance
   const [loading, setLoading] = useState(true)
@@ -1187,16 +1208,30 @@ export default function PayPeriodPlanner({ userId, mobile }) {
     reload().finally(() => setLoading(false))
   }, [reload])
 
-  // Reload amounts, balances, and forecast-derived amounts when nav month changes
+  // Scope every response so a slow previous-month request cannot replace
+  // the current month's items or aggregate.
   useEffect(() => {
-    if (!userId) return
+    let cancelled = false
+    const scope = `${userId}-${navYear}-${navMonth}`
+    setAmountsLoading(true)
+    setAmountScope(null)
+    setAmountsMap({})
+    setAmountRows({})
+    setScalarBusy({})
+    pendingAmounts.current = {}
+    if (!userId) return () => { cancelled = true }
     Promise.all([
       getBillAmounts(userId, navYear, navMonth),
       getAccountBalances(userId, navYear, navMonth),
     ]).then(([amounts, balances]) => {
+      if (cancelled || activeScope.current !== scope) return
       setAmountsMap(buildAmountsMap(amounts))
+      setAmountRows(Object.fromEntries(amounts.map(value => [value.bill_id, value])))
+      setAmountScope(scope)
       setBalancesMap(buildBalancesMap(balances))
-    }).catch(() => {})
+    }).catch(err => { if (!cancelled) setError(err.message) })
+      .finally(() => { if (!cancelled) setAmountsLoading(false) })
+    return () => { cancelled = true }
   }, [userId, navYear, navMonth])
 
   // Reload forecast amounts whenever bills or nav month changes.
@@ -1255,7 +1290,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   // Bills marked exclude_from_schedule are omitted — they still appear in the
   // Cash Flow and Trends tabs as outflows but don't need a planned pay date.
   const scheduleBills = bills.filter(b => !b.exclude_from_schedule)
-  const { period1, period2 } = splitBillsByPeriod(scheduleBills, amountsMap, payDay2 - 1, forecastAmountsMap, cardStatementMap)
+  const { period1, period2 } = splitBillsByPeriod(scheduleBills, amountScope === currentScope ? amountsMap : {}, payDay2 - 1, forecastAmountsMap, cardStatementMap)
 
   const primaryChecking = accounts.find(a => a.is_primary_checking && a.type === 'checking') ?? null
 
@@ -1274,18 +1309,57 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   function handleAmountChange(billId, rawValue) {
+    if (amountScope !== currentScope || amountRows[billId]?.items != null || pendingAmounts.current[billId]) return
     const value = rawValue === '' ? null : Number(rawValue)
     setAmountsMap(prev => ({ ...prev, [billId]: value }))
   }
 
   async function handleAmountBlur(billId, rawValue) {
+    if (amountScope !== currentScope || amountRows[billId]?.items != null || pendingAmounts.current[billId]) return
     const value = rawValue === '' ? null : Number(rawValue)
-    setAmountsMap(prev => ({ ...prev, [billId]: value }))
-    if (!userId || value == null || isNaN(value)) return
+    if (!userId || value == null || !Number.isFinite(value)) return
+    const scope = currentScope
+    const generation = scopeGeneration.current
+    pendingAmounts.current[billId] = true
+    amountMutationEpoch.current++
+    setScalarBusy(prev => ({ ...prev, [billId]: true }))
     try {
-      await upsertBillAmount(userId, billId, navYear, navMonth, value)
-    } catch (e) {
-      console.error('Failed to save bill amount:', e)
+      const saved = await upsertBillAmount(userId, billId, navYear, navMonth, value)
+      if (activeScope.current !== scope || scopeGeneration.current !== generation) return
+      amountMutationEpoch.current++
+      setAmountRows(prev => ({ ...prev, [billId]: saved }))
+      setAmountsMap(prev => ({ ...prev, [billId]: saved.amount }))
+    } catch (err) {
+      if (activeScope.current !== scope || scopeGeneration.current !== generation) return
+      setError(err.message)
+      setAmountsMap(prev => ({ ...prev, [billId]: amountRows[billId]?.amount ?? null }))
+    } finally {
+      if (activeScope.current === scope && scopeGeneration.current === generation) {
+        delete pendingAmounts.current[billId]
+        setScalarBusy(prev => ({ ...prev, [billId]: false }))
+      }
+    }
+  }
+
+  async function handleItemsSave(billId, items, expectedRevision, expectedRowId) {
+    if (amountScope !== currentScope || pendingAmounts.current[billId]) throw new Error('Wait for the current amount save before editing items.')
+    const scope = currentScope
+    const generation = scopeGeneration.current
+    pendingAmounts.current[billId] = true
+    amountMutationEpoch.current++
+    setScalarBusy(prev => ({ ...prev, [billId]: true }))
+    try {
+      const saved = await saveBillAmountItems(userId, billId, navYear, navMonth, items, expectedRevision, expectedRowId)
+      if (activeScope.current !== scope || scopeGeneration.current !== generation) throw new Error('Month changed while saving. Reopen the month to see its saved items.')
+      amountMutationEpoch.current++
+      setAmountRows(prev => ({ ...prev, [billId]: saved }))
+      setAmountsMap(prev => ({ ...prev, [billId]: saved.amount }))
+      return saved
+    } finally {
+      if (activeScope.current === scope && scopeGeneration.current === generation) {
+        delete pendingAmounts.current[billId]
+        setScalarBusy(prev => ({ ...prev, [billId]: false }))
+      }
     }
   }
 
@@ -1353,6 +1427,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
   async function handleImportAmounts() {
     const toImport = (parsedAmountRows ?? []).filter(r => r.selected && r.matchedBillId)
     if (toImport.length === 0) return
+    const generation = scopeGeneration.current
     setImportingAmounts(true)
     setAmountsParseError(null)
     try {
@@ -1360,8 +1435,13 @@ export default function PayPeriodPlanner({ userId, mobile }) {
         await upsertBillAmount(userId, r.matchedBillId, r.year, r.month, r.amount)
       }
       setParsedAmountRows(null)
+      const scope = currentScope
+      const epoch = amountMutationEpoch.current
+      if (scopeGeneration.current !== generation || Object.keys(pendingAmounts.current).length) return
       const amounts = await getBillAmounts(userId, navYear, navMonth)
+      if (activeScope.current !== scope || scopeGeneration.current !== generation || amountMutationEpoch.current !== epoch) return
       setAmountsMap(buildAmountsMap(amounts))
+      setAmountRows(Object.fromEntries(amounts.map(value => [value.bill_id, value])))
     } catch (e) {
       setAmountsParseError(e.message)
     } finally {
@@ -1785,7 +1865,13 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   label={`PERIOD 1 · AROUND THE ${ordinal(payDay1).toUpperCase()}`}
                   payDay={payDay2 - 1}
                   bills={period1}
-                  amountsMap={amountsMap}
+                  amountRows={amountRows}
+                  amountScope={amountScope}
+                  currentScope={currentScope}
+                  amountsLoading={amountsLoading}
+                  scalarBusy={scalarBusy}
+                  onItemsSave={handleItemsSave}
+                  amountsMap={amountScope === currentScope ? amountsMap : {}}
                   forecastAmountsMap={forecastAmountsMap}
                   cardStatementMap={cardStatementMap}
                   primaryChecking={primaryChecking}
@@ -1802,7 +1888,13 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                   label={`PERIOD 2 · AROUND THE ${ordinal(payDay2).toUpperCase()}`}
                   payDay={31}
                   bills={period2}
-                  amountsMap={amountsMap}
+                  amountRows={amountRows}
+                  amountScope={amountScope}
+                  currentScope={currentScope}
+                  amountsLoading={amountsLoading}
+                  scalarBusy={scalarBusy}
+                  onItemsSave={handleItemsSave}
+                  amountsMap={amountScope === currentScope ? amountsMap : {}}
                   forecastAmountsMap={forecastAmountsMap}
                   cardStatementMap={cardStatementMap}
                   primaryChecking={primaryChecking}

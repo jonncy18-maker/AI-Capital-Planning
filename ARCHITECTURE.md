@@ -363,6 +363,8 @@ Discovered during Supabase → Neon migration assessment (2026-07-04): 5 tables 
 
 **bill_amounts** (77 rows) — per-bill, per-month actual/planned amount overrides.
 
+Monthly itemization (local Codex change, 2026-10-04; migration 023 must be applied before use): `bill_amounts.items` is a nullable JSONB array of `{ id, name, amount }`. NULL retains legacy scalar entry; an empty array is an itemized zero-total month. `amount` remains the single aggregate consumed by Schedule, transfer/savings calculations, and the existing cash-series resolver. The server derives it in cents from validated items. `item_revision` advances on both scalar and item writes; item saves carry the expected monthly row ID and revision. Existing-row UPDATE checks both atomically, while first INSERT refuses conflicts. Scalar writes/deletes refuse itemized rows. Only unlinked variable bills support itemization, preserving existing amount resolution for fixed/forecast/actuals/card-linked bills. The existing pay day determines the item's period; items do not have separate dates or recurrence rules. The shared bill tool registry exposes `list_bill_amount_items`, `add_bill_amount_item`, `update_bill_amount_item`, and `remove_bill_amount_item` to the in-app assistant and MCP through the same authenticated route and validation seam. Live database and MCP execution remain unverified.
+
 **account_balances** (10 rows) — per-account balance snapshots, twice-monthly (`period_half` 1 or 2).
 
 **forecast_overrides** (0 rows) — per-category, per-month manual overrides of the forecast.

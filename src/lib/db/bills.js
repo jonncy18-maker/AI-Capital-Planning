@@ -99,6 +99,16 @@ export async function upsertBillAmount(_userId, billId, year, month, amount, not
   return parseJsonOrThrow(res)
 }
 
+export async function saveBillAmountItems(_userId, billId, year, month, items, expectedRevision, expectedRowId = null) {
+  const res = await apiFetch('/api/bill-amounts', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ billId, year, month, items, expectedRevision, expectedRowId }),
+  })
+  return parseJsonOrThrow(res)
+}
+
 export async function deleteBillAmount(billId, year, month) {
   const res = await apiFetch(`/api/bill-amounts/${billId}/${year}/${month}`, {
     method: 'DELETE',
