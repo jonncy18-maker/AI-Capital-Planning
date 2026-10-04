@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import GrillSession from './GrillSession.jsx'
+import OutlookView from './OutlookView.jsx'
 import { getTransactionsForAnalysis } from '../../lib/db/transactions.js'
 import { getBudgetCategories, importCategoryMappings } from '../../lib/db/budgetCategories.js'
 import { getCommitments } from '../../lib/db/commitments.js'
@@ -13,6 +14,8 @@ import {
 import { getBudgetStatus, setBudgetStatus } from '../../lib/db/budgetStatus.js'
 import { analyzeTransactions, MONTHS } from '../../lib/budget/patternAnalyzer.js'
 import { commitmentYearSchedule } from '../../lib/commitments/schedule.js'
+import { loadOutlookInputs } from '../../lib/outlook/loadOutlook.js'
+import { buildOutlook, outlookGroupTargets } from '../../lib/outlook/outlookEngine.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
 
@@ -794,6 +797,8 @@ export default function Budget({ userId, mobile }) {
   const [showReopen, setShowReopen] = useState(false)
   const [statusBusy, setStatusBusy] = useState(false)
   const [grilling, setGrilling] = useState(false)
+  const [viewMode, setViewMode] = useState('detailed')
+  const [outlookTargetsFor, setOutlookTargetsFor] = useState(null) // { year, targets }
   const fileRef = useRef(null)
 
   const finalized = status.status === 'finalized'
@@ -820,6 +825,25 @@ export default function Budget({ userId, mobile }) {
   }, [userId])
 
   useEffect(() => { loadYearData(year) }, [year, loadYearData])
+
+  // Reference numbers for a future year with no budget yet: the outlook's
+  // group totals for that year, shown as a target and fed to the grill.
+  const noBudgetYet = !loading && lineItems.length === 0
+  useEffect(() => {
+    if (!noBudgetYet || year <= CUR_YEAR) return
+    let cancelled = false
+    loadOutlookInputs(userId, { curYear: CUR_YEAR })
+      .then(inputs => {
+        if (cancelled) return
+        const outlook = buildOutlook(inputs)
+        const col = outlook.empty ? null : outlook.columns.find(c => c.year === year)
+        const targets = col?.kind === 'outlook' ? outlookGroupTargets(outlook, year) : null
+        setOutlookTargetsFor({ year, targets: targets && Object.keys(targets).length ? targets : null })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [noBudgetYet, year, userId])
+  const outlookTargets = noBudgetYet && outlookTargetsFor?.year === year ? outlookTargetsFor.targets : null
 
   async function handleAnalyze() {
     setAnalyzing(true)
@@ -1008,8 +1032,10 @@ export default function Budget({ userId, mobile }) {
         moduleId="budget"
         mobile={mobile}
         icon="▦"
-        title={grilling ? 'Budget Interview' : reviewing ? 'Match Detail Tabs' : editing ? 'Edit Budget' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
-        subtitle={grilling
+        title={viewMode === 'outlook' && !generating && !reviewing && !editing && !grilling ? '5-Year Outlook' : grilling ? 'Budget Interview' : reviewing ? 'Match Detail Tabs' : editing ? 'Edit Budget' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
+        subtitle={viewMode === 'outlook' && !generating && !reviewing && !editing && !grilling
+          ? 'Driver-based forward years: one number per group, compounded from the detailed budget.'
+          : grilling
           ? `Building ${year} budget — AI-guided interview`
           : reviewing
             ? 'Confirm which detail tab feeds each non-monthly category.'
@@ -1020,6 +1046,8 @@ export default function Budget({ userId, mobile }) {
                 : 'Build and review a month-by-month budget for the year.'}
         actions={!generating && !reviewing && !editing && !grilling && (
           <>
+            <ViewToggle mode={viewMode} year={year} onChange={setViewMode} />
+            {viewMode === 'detailed' && <>
             <select value={year} onChange={e => { setEditing(false); setYear(Number(e.target.value)) }} style={{
               padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--bd)',
               borderRadius: 7, color: 'var(--tx-1)', fontSize: 13, outline: 'none', cursor: 'pointer',
@@ -1052,6 +1080,7 @@ export default function Budget({ userId, mobile }) {
                 </button>
               </>
             )}
+            </>}
           </>
         )}
       />
@@ -1062,7 +1091,9 @@ export default function Budget({ userId, mobile }) {
         </div>
       )}
 
-      {loading ? (
+      {viewMode === 'outlook' && !generating && !reviewing && !editing && !grilling ? (
+        <OutlookView userId={userId} mobile={mobile} />
+      ) : loading ? (
         <div style={{ color: 'var(--tx-3)', fontSize: 14, padding: 32 }}>Loading budget…</div>
       ) : grilling ? (
         <GrillSession
@@ -1070,6 +1101,7 @@ export default function Budget({ userId, mobile }) {
           targetYear={year}
           commitments={commitments}
           lineItems={lineItems}
+          outlookTargets={outlookTargets}
           onGenerateDraft={() => { setGrilling(false); handleAnalyze() }}
           onCancel={() => setGrilling(false)}
           mobile={mobile}
@@ -1108,6 +1140,19 @@ export default function Budget({ userId, mobile }) {
             Use the AI-guided interview to build a thorough {year} budget step by step,
             or generate one automatically from your transaction history.
           </div>
+          {outlookTargets && (
+            <div style={{ maxWidth: 400, margin: '0 auto 20px', textAlign: 'left', border: '1px solid var(--bd)', borderRadius: 10, padding: '12px 16px', background: 'var(--bg-card)' }}>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+                Outlook target for {year}
+              </div>
+              {Object.entries(outlookTargets).map(([g, v]) => (
+                <div key={g} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, padding: '3px 0' }}>
+                  <span style={{ color: 'var(--tx-2)' }}>{g}</span>
+                  <span style={{ fontFamily: "'DM Mono', monospace", color: 'var(--tx-1)' }}>{fmtFull(v)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {/* Primary option: Grill Session */}
           <div style={{ maxWidth: 400, margin: '0 auto 16px', cursor: 'pointer' }} onClick={() => setGrilling(true)}>
             <div style={{
@@ -1192,6 +1237,21 @@ export default function Budget({ userId, mobile }) {
           onCancel={() => setShowReopen(false)}
         />
       )}
+    </div>
+  )
+}
+
+function ViewToggle({ mode, year, onChange }) {
+  const btn = active => ({
+    padding: '6px 12px', border: 'none', fontSize: 12, cursor: 'pointer',
+    background: active ? 'var(--accent)' : 'transparent',
+    color: active ? 'var(--accent-tx-on)' : 'var(--tx-3)',
+    fontWeight: active ? 600 : 400,
+  })
+  return (
+    <div style={{ display: 'inline-flex', border: '1px solid var(--bd)', borderRadius: 7, overflow: 'hidden' }}>
+      <button onClick={() => onChange('detailed')} style={btn(mode === 'detailed')}>Detailed · {year}</button>
+      <button onClick={() => onChange('outlook')} style={btn(mode === 'outlook')}>5-year outlook</button>
     </div>
   )
 }
