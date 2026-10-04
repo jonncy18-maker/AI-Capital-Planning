@@ -1,3 +1,5 @@
+import { parseLocalDate } from '../dates.js'
+
 // Shared commitment → cash-demand scheduling.
 //
 // Commitments store a flexible `cost_structure` jsonb. This module normalizes
@@ -20,8 +22,8 @@ function isActiveInMonth(commitment, year, month) {
   if (commitment.status === 'completed') {
     // completed commitments still count for past months, not future
   }
-  const start = commitment.start_date ? new Date(commitment.start_date) : null
-  const end = commitment.end_date ? new Date(commitment.end_date) : null
+  const start = commitment.start_date ? parseLocalDate(commitment.start_date) : null
+  const end = commitment.end_date ? parseLocalDate(commitment.end_date) : null
   const pointer = new Date(year, month - 1, 15) // mid-month probe
   if (start && pointer < new Date(start.getFullYear(), start.getMonth(), 1)) return false
   if (end && pointer > new Date(end.getFullYear(), end.getMonth() + 1, 0)) return false
@@ -42,8 +44,8 @@ export function commitmentMonthlyDemand(commitment, year, month) {
       return month === hitMonth ? (Number(cs.amount ?? cs.annual_total ?? 0) || 0) : 0
     }
     case 'total': {
-      const start = commitment.start_date ? new Date(commitment.start_date) : null
-      const end = commitment.end_date ? new Date(commitment.end_date) : null
+      const start = commitment.start_date ? parseLocalDate(commitment.start_date) : null
+      const end = commitment.end_date ? parseLocalDate(commitment.end_date) : null
       if (!start || !end) return 0
       const span = Math.max(monthsBetween(start, end), 1)
       return (Number(cs.amount ?? 0) || 0) / span
@@ -68,23 +70,22 @@ export function commitmentYearSchedule(commitment, year) {
 
 // Total projected cost across the commitment's whole lifespan.
 export function commitmentTotalProjected(commitment) {
-  const start = commitment.start_date ? new Date(commitment.start_date) : null
-  const end = commitment.end_date ? new Date(commitment.end_date) : null
+  const start = commitment.start_date ? parseLocalDate(commitment.start_date) : null
+  const end = commitment.end_date ? parseLocalDate(commitment.end_date) : null
   const cs = commitment.cost_structure || {}
   const kind = cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
 
   if (kind === 'total') return Number(cs.amount ?? 0) || 0
 
   if (!start) return 0
-  // Open-ended commitments: project a rolling 12 months as a representative cost.
-  const effectiveEnd = end || new Date(start.getFullYear() + 1, start.getMonth(), start.getDate())
+  // Open-ended commitments: project a rolling 12 months as a representative
+  // cost. Bounded ones count every calendar month from start through end.
+  const monthCount = Math.min(end ? monthsBetween(start, end) : 12, 600)
   let total = 0
   const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
-  let guard = 0
-  while (cursor <= effectiveEnd && guard < 600) {
+  for (let i = 0; i < monthCount; i++) {
     total += commitmentMonthlyDemand(commitment, cursor.getFullYear(), cursor.getMonth() + 1)
     cursor.setMonth(cursor.getMonth() + 1)
-    guard++
   }
   return total
 }

@@ -147,6 +147,6 @@ When the 3-iteration cap is reached without a satisfactory audit, stop and repor
 
 ## Cross-Cutting Rules
 
-Model IDs in code stay pinned to exact IDs deliberately (e.g. `claude-haiku-4-5`, `claude-sonnet-4-6` in `app/api/ai-chat/route.js`) — never swap them for a family name.
+Anthropic models are pinned by family, not by version (decided 2026-07-08, see ROADMAP.md): `resolveModel()` in `app/api/ai-chat/route.js` resolves `sonnet`/`haiku` to the newest release in that family. The exact IDs in `MODEL_FALLBACKS` (e.g. `claude-haiku-4-5`, `claude-sonnet-4-6`) are only used when that lookup fails. Non-Anthropic models (e.g. `gpt-6-luna`) stay pinned to exact IDs.
 
 **Where things go.** Anything only Claude Code needs goes in `CLAUDE.md`. Never put agent permissions (push, merge, deploy) in this file: every agent reads it.
