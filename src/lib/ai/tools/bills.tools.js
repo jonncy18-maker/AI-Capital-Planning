@@ -2,8 +2,9 @@
 // demand calendar, so every tool here goes through the confirmation card.
 
 import {
-  getBills, upsertBill, deleteBill, upsertBillAmount, deleteBillAmount, getAccounts,
+  getBills, upsertBill, deleteBill, upsertBillAmount, deleteBillAmount, getAccounts, getBillAmounts, saveBillAmountItems,
 } from '../../db/bills.js'
+import { isBillAmountItemsEligible, initialBillAmountItems, normalizeBillAmountItems, totalBillAmountItems } from '../../payperiods/billAmountItems.js'
 import { getBudgetCategories } from '../../db/budgetCategories.js'
 import {
   money, resolveByName, resolveCategoryId, row, toMonth, toNumber, toNullableNumber,
@@ -14,6 +15,7 @@ const BILL_TYPES = ['credit_card', 'loan', 'rent', 'investment', 'subscription',
 const PAYMENT_METHODS = ['auto', 'manual']
 
 export const billTools = [
+  ...billAmountItemTools(),
   {
     name: 'save_bill',
     group: 'bills',
@@ -246,4 +248,99 @@ function monthList(input) {
   }
   if (input?.month !== undefined) return [toMonth(input.month)]
   return [new Date().getMonth() + 1]
+}
+
+// These item tools deliberately require an exact target and explicit month;
+// fuzzy matching or calendar defaults can charge the wrong bill or period.
+async function itemContext(userId, input) {
+  if (typeof input.bill !== 'string' || !input.bill.trim()) throw new Error('Provide a bill ID or exact name.')
+  if (!Number.isInteger(input.year) || !Number.isInteger(input.month) || input.month < 1 || input.month > 12) {
+    throw new Error('Provide an explicit integer year and month (1–12).')
+  }
+  const bills = await getBills(userId)
+  const idMatch = bills.find(bill => bill.id === input.bill)
+  const matches = idMatch ? [idMatch] : bills.filter(bill => bill.name === input.bill)
+  if (matches.length !== 1) throw new Error('Bill name must match exactly and unambiguously; use its ID.')
+  const bill = matches[0]
+  if (!isBillAmountItemsEligible(bill)) throw new Error('Only unlinked variable bills can have items.')
+  const rows = await getBillAmounts(userId, input.year, input.month)
+  const stored = rows.find(value => value.bill_id === bill.id)
+  return { bill, stored, year: input.year, month: input.month }
+}
+
+function itemResult(context, saved = context.stored) {
+  return {
+    billId: context.bill.id, year: context.year, month: context.month,
+    items: saved?.items ?? null, total: Number(saved?.amount ?? 0), revision: saved?.item_revision ?? 0,
+  }
+}
+
+function itemMutation(action, context, input) {
+  const items = initialBillAmountItems(context.stored)
+  let affected
+  if (action === 'add') {
+    affected = { id: globalThis.crypto.randomUUID(), name: input.name, amount: input.amount }
+    items.push(affected)
+  } else {
+    const index = items.findIndex(item => item.id === input.item_id)
+    if (index < 0) throw new Error('Item not found. List this month’s items and use its item_id.')
+    affected = items[index]
+    if (action === 'remove') items.splice(index, 1)
+    else {
+      if (input.name === undefined && input.amount === undefined) throw new Error('Provide a name or amount to update.')
+      affected = { ...affected, ...(input.name !== undefined ? { name: input.name } : {}), ...(input.amount !== undefined ? { amount: input.amount } : {}) }
+      items[index] = affected
+    }
+  }
+  return { items: normalizeBillAmountItems(items), affected }
+}
+
+function billAmountItemTools() {
+  const properties = {
+    bill: { type: 'string', description: 'Bill ID or exact, unambiguous bill name. No partial matches.' },
+    year: { type: 'integer' },
+    month: { type: 'integer', minimum: 1, maximum: 12 },
+  }
+  const dollars = amount => Number(amount).toLocaleString(undefined, { style: 'currency', currency: 'USD' })
+  return [
+    {
+      name: 'list_bill_amount_items', group: 'bills', write: false,
+      schema: { name: 'list_bill_amount_items', description: 'Read monthly items, total and revision for an unlinked variable bill. items:null means a legacy scalar amount; first add preserves it as Existing amount.', input_schema: { type: 'object', properties, required: ['bill', 'year', 'month'] } },
+      async execute(userId, input) {
+        const context = await itemContext(userId, input)
+        return { summary: `Items for "${context.bill.name}" in ${context.year}-${context.month}`, result: itemResult(context) }
+      },
+    },
+    ...['add', 'update', 'remove'].map(action => {
+      const name = `${action}_bill_amount_item`
+      return {
+        name, group: 'bills', write: true,
+        schema: {
+          name, description: `${action === 'add' ? 'Add a named monthly outflow item, preserving any existing manual amount on first add' : action === 'update' ? 'Edit a specific monthly outflow item by item_id' : 'Remove a specific monthly outflow item by item_id'}. Requires an unlinked variable bill and an explicit year/month. Concurrent changes fail; list again before retrying.`,
+          input_schema: {
+            type: 'object', properties: { ...properties,
+              ...(action !== 'add' ? { item_id: { type: 'string' } } : {}),
+              ...(action !== 'remove' ? { name: { type: 'string', minLength: 1, maxLength: 200 }, amount: { type: 'number', minimum: 0, maximum: 10000000 } } : {}),
+            },
+            required: ['bill', 'year', 'month', ...(action === 'add' ? ['name', 'amount'] : ['item_id'])],
+          },
+        },
+        async preview(input, ctx) {
+          const context = await itemContext(ctx.userId, input)
+          const { items, affected } = itemMutation(action, context, input)
+          return {
+            title: `${action[0].toUpperCase() + action.slice(1)} outflow item · ${context.bill.name}`,
+            rows: [row('Month', `${MONTH_SHORT[context.month - 1]} ${context.year}`), row('Item', affected.name), row('Amount', dollars(affected.amount)), row('New monthly total', dollars(totalBillAmountItems(items)))],
+            destructive: action === 'remove',
+          }
+        },
+        async execute(userId, input) {
+          const context = await itemContext(userId, input)
+          const { items, affected } = itemMutation(action, context, input)
+          const saved = await saveBillAmountItems(userId, context.bill.id, context.year, context.month, items, context.stored?.item_revision ?? 0, context.stored?.id ?? null)
+          return { summary: `${action === 'add' ? 'Added' : action === 'update' ? 'Updated' : 'Removed'} "${affected.name}" on "${context.bill.name}"`, result: itemResult(context, saved) }
+        },
+      }
+    }),
+  ]
 }

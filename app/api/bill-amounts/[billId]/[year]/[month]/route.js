@@ -25,11 +25,18 @@ export async function DELETE(request, context) {
     const rows = await sql`
       DELETE FROM bill_amounts
       WHERE bill_id = ${billId} AND year = ${yearNum} AND month = ${monthNum}
+        AND user_id = ${userId} AND items IS NULL
         AND EXISTS (SELECT 1 FROM bills b WHERE b.id = ${billId} AND b.user_id = ${userId})
       RETURNING id
     `
 
     if (rows.length === 0) {
+      const [itemized] = await sql`
+        SELECT id FROM bill_amounts WHERE bill_id = ${billId} AND year = ${yearNum} AND month = ${monthNum}
+          AND user_id = ${userId} AND items IS NOT NULL
+          AND EXISTS (SELECT 1 FROM bills b WHERE b.id = ${billId} AND b.user_id = ${userId})
+      `
+      if (itemized) return Response.json({ error: 'This month is itemized. Remove individual items instead.' }, { status: 409 })
       return Response.json({ error: 'Bill amount not found.' }, { status: 404 })
     }
     return new Response(null, { status: 204 })
