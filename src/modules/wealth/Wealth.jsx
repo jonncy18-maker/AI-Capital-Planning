@@ -244,7 +244,10 @@ export default function Wealth({ userId, mobile }) {
     horizon
   ), [startBalance, monthlyContribution, annualReturn, horizon, annualCommitmentDrain, contributionMaps])
 
-  const activeSeries = includeCommitments && annualCommitmentDrain > 0 ? comparison.scenarioSeries : comparison.baseSeries
+  // With the outlook in use, commitments can start after the current year, so
+  // the current-year drain alone can't tell whether any exist.
+  const showCommitmentSeries = contributionMaps ? includeCommitments : includeCommitments && annualCommitmentDrain > 0
+  const activeSeries = showCommitmentSeries ? comparison.scenarioSeries : comparison.baseSeries
   const yrsToTarget = yearsToTarget(activeSeries, retirementTarget)
   const finalBalance = activeSeries[activeSeries.length - 1].balance
 
@@ -293,7 +296,7 @@ export default function Wealth({ userId, mobile }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)' }}>Projected net worth</div>
                 <div style={{ display: 'flex', gap: 14, fontSize: 11 }}>
-                  {includeCommitments && annualCommitmentDrain > 0 && (
+                  {showCommitmentSeries && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--tx-3)' }}>
                       <span style={{ width: 14, height: 0, borderTop: '2px dashed var(--tx-3)' }} /> No commitments
                     </span>
@@ -309,8 +312,8 @@ export default function Wealth({ userId, mobile }) {
                 </div>
               </div>
               <TrajectoryChart
-                baseSeries={includeCommitments && annualCommitmentDrain > 0 ? comparison.baseSeries : activeSeries}
-                scenarioSeries={includeCommitments && annualCommitmentDrain > 0 ? comparison.scenarioSeries : null}
+                baseSeries={showCommitmentSeries ? comparison.baseSeries : activeSeries}
+                scenarioSeries={showCommitmentSeries ? comparison.scenarioSeries : null}
                 target={retirementTarget}
                 mobile={mobile}
               />
