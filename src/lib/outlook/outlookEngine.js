@@ -98,8 +98,8 @@ export function buildOutlook({
   takeHomeBase = null,
   assumptions = {},
   events = [],
-  adjustments = [],
-  selectedAdjustments = [],
+  adjustments: allAdjustments = [],
+  selectedAdjustments: allSelectedAdjustments = [],
 }) {
   if (baseYear == null) return { empty: true, nextYear, baseYear: null }
 
@@ -108,6 +108,12 @@ export function buildOutlook({
     year,
     kind: baseYear === nextYear && year === nextYear ? 'detailed' : 'outlook',
   }))
+
+  // The detailed column is a read-only roll-up of the real budget; outlook
+  // adjustments (possible via the API) must not change it.
+  const detailedYears = new Set(columns.filter(c => c.kind === 'detailed').map(c => c.year))
+  const adjustments = allAdjustments.filter(a => !detailedYears.has(a.year))
+  const selectedAdjustments = allSelectedAdjustments.filter(a => !detailedYears.has(a.year))
 
   const bases = computeGroupBases({ baseLineItems, categories })
 

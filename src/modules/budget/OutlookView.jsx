@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { loadOutlookInputs } from '../../lib/outlook/loadOutlook.js'
 import { buildOutlook, expenseGroups, DEFAULT_INFLATION } from '../../lib/outlook/outlookEngine.js'
 import {
@@ -46,7 +46,7 @@ const toPctText = r => (r == null ? '' : String(Math.round(r * 1000) / 10))
 
 // A percent input that only commits on blur/Enter, and only reports success
 // once the parent's save has resolved.
-function PctInput({ value, placeholder, onCommit, busy, width = 64, ariaLabel }) {
+function PctInput({ value, placeholder, onCommit, busy, width = 64, ariaLabel, allowClear = false }) {
   const [draft, setDraft] = useState(toPctText(value))
   // Re-sync the draft when the saved value changes (derived state, not an effect).
   const [seen, setSeen] = useState(value)
@@ -55,7 +55,7 @@ function PctInput({ value, placeholder, onCommit, busy, width = 64, ariaLabel })
   function commit() {
     if (busy) return
     const parsed = parsePct(draft)
-    if (Number.isNaN(parsed)) { setDraft(toPctText(value)); return }
+    if (Number.isNaN(parsed) || (parsed === null && !allowClear)) { setDraft(toPctText(value)); return }
     if (parsed === (value ?? null)) return
     onCommit(parsed)
   }
@@ -166,19 +166,22 @@ export default function OutlookView({ userId, mobile }) {
     return () => { cancelled = true }
   }, [userId])
 
+  // Only the latest pick's response may be applied; a slow earlier fetch is dropped.
+  const pickSeq = useRef(0)
   async function pickScenario(id) {
+    const seq = ++pickSeq.current
     setScenarioId(id)
     setSelectedAdjustments([])
-    if (!id) return
+    if (!id) { setScenarioBusy(false); return }
     setScenarioBusy(true)
     setError(null)
     try {
-      setSelectedAdjustments(await getScenarioOutlookAdjustments(id))
+      const rows = await getScenarioOutlookAdjustments(id)
+      if (seq === pickSeq.current) setSelectedAdjustments(rows)
     } catch (e) {
-      setError(e.message)
-      setScenarioId('')
+      if (seq === pickSeq.current) { setError(e.message); setScenarioId('') }
     } finally {
-      setScenarioBusy(false)
+      if (seq === pickSeq.current) setScenarioBusy(false)
     }
   }
 
@@ -349,6 +352,7 @@ export default function OutlookView({ userId, mobile }) {
                     value={g.isOverride ? g.rate : null}
                     placeholder={toPctText(g.rate)}
                     ariaLabel={`${g.name} growth rate percent`}
+                    allowClear
                     busy={saving === `g:${g.name}`}
                     onCommit={v => saveAssumptions(`g:${g.name}`, { group_rates: { [g.name]: v } })}
                   />

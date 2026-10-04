@@ -1825,7 +1825,7 @@ function AiAdjustmentComposer({ userId, scenarioId, scenarioName, existingAdjust
 // ── Scenario detail panel ────────────────────────────────────────────────────
 
 function ScenarioDetail({
-  scenario, adjustments, outlookAdjs, categories, context, userId,
+  scenario, adjustments, outlookAdjs, outlookError, categories, context, userId,
   onPromote, onDelete, onAddAdj, onDeleteAdj, onAddOutlookAdj, onDeleteOutlookAdj, onClone, onAdjsRefresh, loading, onGoToForecast, mobile,
 }) {
   const [rightView, setRightView] = useState('forecast')
@@ -2037,6 +2037,9 @@ function ScenarioDetail({
                 <>
                   {adjustments.length === 0 && outlookAdjs.length > 0 ? null : (
                     <AdjustmentsTable adjustments={adjustments} onDelete={onDeleteAdj} readOnly={isCommitted} />
+                  )}
+                  {outlookError && !outlookAdjs.length && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: 'var(--red)' }}>Could not load outlook adjustments: {outlookError}</div>
                   )}
                   <OutlookAdjustmentsList adjustments={outlookAdjs} onDelete={onDeleteOutlookAdj} readOnly={isCommitted} />
                   {!isCommitted && (
@@ -2260,6 +2263,7 @@ const TAB_META = {
 export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange, openScenarioId, onGoToForecast }) {
   const [scenarios, setScenarios] = useState([])
   const [adjustments, setAdjustments] = useState({}) // { [scenarioId]: adj[] }
+  const [outlookError, setOutlookError] = useState(null)
   const [outlookAdjs, setOutlookAdjs] = useState({}) // { [scenarioId]: outlook adj[] }
   const [adjLoading, setAdjLoading] = useState({})
   const [categories, setCategories] = useState([])
@@ -2336,11 +2340,13 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
 
   async function loadOutlookAdjs(scenarioId) {
     if (outlookAdjs[scenarioId]) return
+    setOutlookError(null)
     try {
       const data = await getScenarioOutlookAdjustments(scenarioId)
       setOutlookAdjs(prev => ({ ...prev, [scenarioId]: data }))
-    } catch {
-      setOutlookAdjs(prev => ({ ...prev, [scenarioId]: [] }))
+    } catch (e) {
+      // Not cached, so the next selection retries; non-fatal, so it doesn't use the page-level error.
+      setOutlookError(e.message)
     }
   }
 
@@ -2629,6 +2635,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                       scenario={selected}
                       adjustments={selectedAdjs}
                       outlookAdjs={outlookAdjs[selectedId] ?? []}
+                      outlookError={outlookError}
                       categories={categories}
                       context={context}
                       userId={userId}
