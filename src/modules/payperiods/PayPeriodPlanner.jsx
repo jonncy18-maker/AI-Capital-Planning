@@ -152,7 +152,7 @@ function SplitChip({ label, value, accent = false }) {
   )
 }
 
-function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, scalarBusy, onItemsSave, period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, mobile }) {
+function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, scalarBusy, onItemsSave, period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0 }) {
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
