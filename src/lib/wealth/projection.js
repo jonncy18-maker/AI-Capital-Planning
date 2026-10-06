@@ -7,21 +7,30 @@
 // Project a single series forward.
 // startBalance: number, monthlyContribution: number, annualReturn: 0.07 = 7%,
 // years: integer. Optional annualCommitmentDrain reduces investable cash per year.
+// Optional yearContributions (object or array, projection year index y -> annual
+// net contribution) overrides the flat contribution for those years. An override
+// year already nets commitments out (the 5-year outlook's net savings includes
+// them), so the commitment drain is not applied again; negative values withdraw.
 export function projectTrajectory({
   startBalance = 0,
   monthlyContribution = 0,
   annualReturn = 0.06,
   years = 30,
   annualCommitmentDrain = 0,
+  yearContributions = null,
 }) {
   const monthlyRate = annualReturn / 12
-  const monthlyDrain = annualCommitmentDrain / 12
+  const defaultDrain = annualCommitmentDrain / 12
   const series = [{ year: 0, balance: startBalance }]
   let balance = startBalance
 
   for (let y = 1; y <= years; y++) {
+    const override = yearContributions?.[y]
+    const hasOverride = override != null && Number.isFinite(Number(override))
+    const contribution = hasOverride ? Number(override) / 12 : monthlyContribution
+    const monthlyDrain = hasOverride ? 0 : defaultDrain
     for (let m = 0; m < 12; m++) {
-      balance = balance * (1 + monthlyRate) + monthlyContribution - monthlyDrain
+      balance = balance * (1 + monthlyRate) + contribution - monthlyDrain
       if (balance < 0) balance = 0
     }
     series.push({ year: y, balance: Math.round(balance) })

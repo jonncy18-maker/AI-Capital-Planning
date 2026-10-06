@@ -53,6 +53,14 @@ export async function POST(request, context) {
         FROM scenario_adjustments sa, new_scenario ns
         WHERE sa.scenario_id = ${scenarioId} AND sa.user_id = ${userId}
         RETURNING 1
+      ),
+      copied_outlook_adjustments AS (
+        INSERT INTO scenario_outlook_adjustments
+          (user_id, scenario_id, year, group_name, delta_amount, label)
+        SELECT soa.user_id, ns.id, soa.year, soa.group_name, soa.delta_amount, soa.label
+        FROM scenario_outlook_adjustments soa, new_scenario ns
+        WHERE soa.scenario_id = ${scenarioId} AND soa.user_id = ${userId}
+        RETURNING 1
       )
       SELECT * FROM new_scenario
     `
