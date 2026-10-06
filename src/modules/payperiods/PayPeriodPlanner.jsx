@@ -1934,6 +1934,13 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                 // what's already in checking, plus the balance to leave behind.
                 const gapP1 = Math.max(0, (autoP1 + manualP1) + minCheckingBal - p1CheckingBal)
                 const gapP2 = Math.max(0, (autoP2 + manualP2) + minCheckingBal - p2CheckingBal)
+                // Auto/manual split of the transfer — same rule as each period card's
+                // AUTO/MANUAL chips (checking is applied against the manual portion),
+                // so auto + manual always equals the gap and the split totals agree.
+                const autoXferP1   = Math.min(Math.round(autoP1), Math.round(gapP1))
+                const manualXferP1 = Math.round(gapP1) - autoXferP1
+                const autoXferP2   = Math.min(Math.round(autoP2), Math.round(gapP2))
+                const manualXferP2 = Math.round(gapP2) - autoXferP2
 
                 // Hierarchy drawdown — each period uses its own saved balances independently
                 function drawFrom(bkts, gap) {
@@ -1948,12 +1955,12 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                 const p1Buckets = savingsAccounts.map((sa, i) => ({
                   account: sa,
                   balance: Number(balancesMap[`${sa.id}-1`] ?? 0),
-                  autoReserve: i === 0 ? autoP1 : 0,
+                  autoReserve: i === 0 ? autoXferP1 : 0,
                 }))
                 const p2Buckets = savingsAccounts.map((sa, i) => ({
                   account: sa,
                   balance: Number(balancesMap[`${sa.id}-2`] ?? 0),
-                  autoReserve: i === 0 ? autoP2 : 0,
+                  autoReserve: i === 0 ? autoXferP2 : 0,
                 }))
                 // The combined (auto+manual) target already counts the auto dollars,
                 // so drawing it against p1Buckets/p2Buckets (which reserve the auto
@@ -1988,8 +1995,8 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                 // position 0) is drawn down the hierarchy for the manual portion
                 // only, so this reuses the exact same bucket construction above.
                 const showSplit = useHierarchy && splitAutoManual
-                const p1ManualDraws = showSplit ? drawFrom(p1Buckets, manualP1) : null
-                const p2ManualDraws = showSplit ? drawFrom(p2Buckets, manualP2) : null
+                const p1ManualDraws = showSplit ? drawFrom(p1Buckets, manualXferP1) : null
+                const p2ManualDraws = showSplit ? drawFrom(p2Buckets, manualXferP2) : null
 
                 return (
                   <div style={{
@@ -2095,9 +2102,9 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                       {/* Period 1 / Period 2 panels */}
                       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 14 }}>
                         {[
-                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, bal: p1CheckingBal, gap: gapP1, draws: p1Draws, manualDraws: p1ManualDraws },
-                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, bal: p2CheckingBal, gap: gapP2, draws: p2Draws, manualDraws: p2ManualDraws },
-                        ].map(({ key, label, auto, manual, bal, gap, draws, manualDraws }) => (
+                          { key: 'p1', label: 'PERIOD 1', auto: autoP1, manual: manualP1, autoX: autoXferP1, manualX: manualXferP1, bal: p1CheckingBal, gap: gapP1, draws: p1Draws, manualDraws: p1ManualDraws },
+                          { key: 'p2', label: 'PERIOD 2', auto: autoP2, manual: manualP2, autoX: autoXferP2, manualX: manualXferP2, bal: p2CheckingBal, gap: gapP2, draws: p2Draws, manualDraws: p2ManualDraws },
+                        ].map(({ key, label, auto, manual, autoX, manualX, bal, gap, draws, manualDraws }) => (
                           <div key={key} style={{
                             border: '1px solid var(--bd)', borderRadius: 8,
                             padding: '12px 14px', background: 'var(--bg-app)',
@@ -2123,7 +2130,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                     </div>
                                   </div>
                                   <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, fontWeight: 600, color: 'var(--accent)' }}>
-                                    {fmt(auto)}
+                                    {fmt(autoX)}
                                   </div>
                                 </div>
 
@@ -2168,12 +2175,12 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                   </div>
                                 </div>
                                 <div style={{ marginTop: 8, borderTop: '1px solid var(--bd)', paddingTop: 6, textAlign: 'right' }}>
-                                  {manual === 0 ? (
+                                  {manualX === 0 ? (
                                     <span style={{ fontSize: 11, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>no manual transfer needed</span>
-                                  ) : manualDraws.reduce((s, b) => s + b.draw, 0) >= manual ? (
-                                    <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ Covered {fmt(manual)}</span>
+                                  ) : manualDraws.reduce((s, b) => s + b.draw, 0) >= manualX ? (
+                                    <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ Covered {fmt(manualX)}</span>
                                   ) : (
-                                    <span style={{ fontSize: 11, color: 'var(--warn)' }}>⚠ Shortfall {fmt(manual - manualDraws.reduce((s, b) => s + b.draw, 0))}</span>
+                                    <span style={{ fontSize: 11, color: 'var(--warn)' }}>⚠ Shortfall {fmt(manualX - manualDraws.reduce((s, b) => s + b.draw, 0))}</span>
                                   )}
                                 </div>
                               </div>
