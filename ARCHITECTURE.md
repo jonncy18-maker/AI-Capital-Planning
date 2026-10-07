@@ -85,6 +85,21 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
   `body:has(.lp)` restores page scrolling only while the landing page is
   mounted. Tour video is served from `public/landing/`. `/` still redirects to
   `/dashboard` (PWA `start_url` is `/`).
+- **Local development (added 2026-10-07):** `npm run dev` serves the app at
+  `http://localhost:3000` against a dedicated Neon branch named `dev-local`, a
+  copy-on-write copy of the live `dev` branch, so local work never reads or
+  writes live data. Everything the app needs is in the gitignored `.env.local`:
+  `DATABASE_URL` (the `dev-local` connection string), `NEON_AUTH_BASE_URL` and a
+  generated `NEON_AUTH_COOKIE_SECRET`, plus `ANTHROPIC_API_KEY` if the AI chat
+  is needed locally (blank otherwise; `/api/ai-chat` fails without it). Neon Auth
+  config is per branch: the copy carries the user accounts (the same login
+  works) and its own base URL, and `http://localhost:3000` is added to that
+  branch's trusted domains only, leaving the live branch's list unchanged.
+  To reset the data, delete `dev-local` and re-create it from `dev`
+  (`neonctl branches create --name dev-local --parent dev`), then update
+  `DATABASE_URL` and `NEON_AUTH_BASE_URL` (a new branch gets new values) and
+  re-add the localhost trusted domain (`neonctl neon-auth domain add`). Try new
+  migrations on `dev-local` before applying them to `dev`.
 - **Future:** React Native native app (planned migration, not V1 scope)
 
 ---
