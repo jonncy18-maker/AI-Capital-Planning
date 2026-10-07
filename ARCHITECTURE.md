@@ -100,6 +100,14 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
   `DATABASE_URL` and `NEON_AUTH_BASE_URL` (a new branch gets new values) and
   re-add the localhost trusted domain (`neonctl neon-auth domain add`). Try new
   migrations on `dev-local` before applying them to `dev`.
+  The dev server runs as a systemd user service (`capital-dev@<copy>`, wrapper
+  `~/.local/bin/capital-dev`, machine-local and not in the repo): the main copy
+  starts automatically on port 3000 when the container boots. The agent copies
+  are on demand with `capital-dev start|stop|status|logs antigravity` (port
+  3001) or `codex` (port 3002). Those copies' `.env.local` is a symlink to the
+  main copy's, so there is one place to change; each port is on `dev-local`'s
+  trusted domains; the first start runs `npm ci`. Run one or two at a time
+  (the container has a 6 GB RAM limit).
 - **Future:** React Native native app (planned migration, not V1 scope)
 
 ---
