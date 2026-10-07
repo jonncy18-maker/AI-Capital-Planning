@@ -10,6 +10,22 @@ import {
 } from '../../lib/db/outlook.js'
 
 const CUR_YEAR = new Date().getFullYear()
+const CUSHION_KEY = 'outlook.cushion.v1'
+const DEFAULT_FLOOR = 25000
+
+function loadCushionSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CUSHION_KEY))
+    const floor = saved?.floor
+    const startCash = saved?.startCash
+    return {
+      floor: typeof floor === 'number' && Number.isFinite(floor) ? floor : DEFAULT_FLOOR,
+      startCash: typeof startCash === 'number' && Number.isFinite(startCash) ? startCash : null,
+    }
+  } catch {
+    return { floor: DEFAULT_FLOOR, startCash: null }
+  }
+}
 
 const fmtFull = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString()
 const fmtSigned = n => (n < 0 ? '−$' : '+$') + Math.abs(Math.round(n)).toLocaleString()
@@ -144,9 +160,8 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
   const [eventBusy, setEventBusy] = useState(false)
 
   // Affordability state
-  const [cushionFloor, setCushionFloor] = useState(25000)
-  const [startCashMode, setStartCashMode] = useState('forecast')
-  const [startCashOverride, setStartCashOverride] = useState(42000)
+  const [cushionFloor, setCushionFloor] = useState(() => loadCushionSettings().floor)
+  const [startCash, setStartCash] = useState(() => loadCushionSettings().startCash)
   const [tableExpanded, setTableExpanded] = useState(false) // Default collapsed
   const [hoveredPoint, setHoveredPoint] = useState(null)
   const [inspectCell, setInspectCell] = useState(null)
@@ -222,7 +237,11 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
     [inputs]
   )
 
-  const startCash = startCashMode === 'forecast' ? 42000 : Number(startCashOverride) || 0
+  useEffect(() => {
+    try {
+      localStorage.setItem(CUSHION_KEY, JSON.stringify({ floor: cushionFloor, startCash }))
+    } catch { /* storage unavailable */ }
+  }, [cushionFloor, startCash])
 
   const cushionAnalysis = useMemo(() => {
     if (!outlook || outlook.empty) return null
@@ -343,6 +362,7 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
   const { columns } = outlook
   const assumptions = inputs.assumptions
   const years = columns.map(c => c.year)
+  const cushionReady = !!cushionAnalysis && !cushionAnalysis.incomplete
   const inflation = Number.isFinite(Number(assumptions?.inflation_rate)) ? Number(assumptions.inflation_rate) : DEFAULT_INFLATION
   const incomeGrowth = Number(assumptions?.income_growth_rate)
   const scenarioActive = !!scenarioId
@@ -353,14 +373,14 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
   const chartH = 140
   const padX = 55
   const padY = 22
-  const allChartVals = cushionAnalysis ? [...cushionAnalysis.cushion, cushionFloor] : [cushionFloor]
+  const allChartVals = cushionReady ? [...cushionAnalysis.cushion, cushionFloor] : [cushionFloor]
   const maxVal = Math.max(...allChartVals) * 1.15
   const minVal = Math.min(0, Math.min(...allChartVals) * 0.9)
   const getY = v => chartH - padY - ((v - minVal) / (maxVal - minVal || 1)) * (chartH - 2 * padY)
   const getX = idx => padX + idx * ((chartW - 2 * padX) / (years.length - 1 || 1))
   const floorY = getY(cushionFloor)
 
-  const pathD = cushionAnalysis?.cushion.map((v, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(v)}`).join(' ') ?? ''
+  const pathD = cushionReady ? cushionAnalysis.cushion.map((v, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(v)}`).join(' ') : ''
 
   return (
     <div>
@@ -377,7 +397,24 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
       )}
 
       {/* Top Hero: Affordability Verdict & Chart */}
-      {cushionAnalysis && (
+      {cushionAnalysis && cushionAnalysis.incomplete && (
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderTop: '3px solid var(--warn)', borderRadius: 12, padding: 20, marginBottom: 24 }}>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--tx-3)', fontWeight: 600 }}>Affordability Verdict</div>
+          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: 'var(--tx-1)', margin: '10px 0 6px' }}>
+            {cushionAnalysis.reason === 'start-cash' ? 'Set your starting cash to see a verdict' : "Can't compute — add take-home income"}
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--tx-2)', lineHeight: 1.5, margin: '0 0 12px' }}>
+            {cushionAnalysis.reason === 'start-cash'
+              ? 'The verdict needs the cash you are starting with. Enter it once and it is remembered on this device.'
+              : 'Every projection year needs take-home income before the cash cushion can be calculated.'}
+          </p>
+          {cushionAnalysis.reason === 'start-cash' && (
+            <button onClick={() => setSettingsOpen(true)} style={primarySmall}>Set starting cash</button>
+          )}
+        </div>
+      )}
+
+      {cushionReady && (
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '340px 1fr', gap: 18, marginBottom: 24 }}>
           {/* Verdict Card */}
           <div style={{
@@ -450,8 +487,8 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
               {hoveredPoint && (
                 <div style={{
                   position: 'absolute',
-                  left: hoveredPoint.x,
-                  top: hoveredPoint.y,
+                  left: `${(hoveredPoint.x / chartW) * 100}%`,
+                  top: `${(hoveredPoint.y / chartH) * 100}%`,
                   transform: 'translate(-50%, -100%)',
                   marginTop: -10,
                   background: 'rgba(19, 26, 30, 0.95)',
@@ -803,7 +840,7 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
                 </tr>
 
                 {/* 6. Cumulative Cash Cushion */}
-                {cushionAnalysis && (
+                {cushionReady && (
                   <tr style={{ background: 'var(--accent-bg)' }}>
                     <td style={{ ...rowLabel, fontWeight: 700 }}>
                       Cumulative Cash Cushion
@@ -846,31 +883,20 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
               <input
                 type="number"
                 value={cushionFloor}
-                onChange={e => setCushionFloor(Number(e.target.value))}
+                onChange={e => setCushionFloor(e.target.value === '' ? 0 : Number(e.target.value))}
                 style={{ ...fieldStyle, ...mono, width: '100%' }}
               />
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 11.5, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }}>Starting Cash Baseline ($)</label>
-              <div style={{ display: 'flex', gap: 12, marginBottom: 6, fontSize: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--tx-1)' }}>
-                  <input type="radio" checked={startCashMode === 'forecast'} onChange={() => setStartCashMode('forecast')} />
-                  Forecast ($42,000)
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--tx-1)' }}>
-                  <input type="radio" checked={startCashMode === 'override'} onChange={() => setStartCashMode('override')} />
-                  Override
-                </label>
-              </div>
-              {startCashMode === 'override' && (
-                <input
-                  type="number"
-                  value={startCashOverride}
-                  onChange={e => setStartCashOverride(Number(e.target.value))}
-                  style={{ ...fieldStyle, ...mono, width: '100%' }}
-                />
-              )}
+              <label style={{ fontSize: 11.5, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }}>Starting Cash ($)</label>
+              <input
+                type="number"
+                value={startCash ?? ''}
+                placeholder="Enter your current liquid cash"
+                onChange={e => setStartCash(e.target.value === '' ? null : Number(e.target.value))}
+                style={{ ...fieldStyle, ...mono, width: '100%' }}
+              />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>

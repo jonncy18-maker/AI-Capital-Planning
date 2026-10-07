@@ -467,3 +467,30 @@ test('computeCushion calculates running cash cushion, lowest year, buffer, and p
   assert.equal(failRes.isPass, false)
 })
 
+
+test('computeCushion is incomplete when any net savings entry is missing', () => {
+  for (const bad of [null, undefined, NaN]) {
+    const res = computeCushion({ netSavings: [1000, bad, 2000], startCash: 30000, floor: 20000 })
+    assert.equal(res.incomplete, true)
+    assert.equal(res.reason, 'income')
+    assert.equal(res.floor, 20000)
+    assert.equal(res.isPass, undefined)
+    assert.equal(res.cushion, undefined)
+  }
+})
+
+test('computeCushion is incomplete when start cash is missing', () => {
+  for (const bad of [null, undefined, NaN, '']) {
+    const res = computeCushion({ netSavings: [1000, 2000], startCash: bad, floor: 20000 })
+    assert.equal(res.incomplete, true)
+    assert.equal(res.reason, 'start-cash')
+    assert.equal(res.isPass, undefined)
+  }
+  assert.equal(computeCushion({ netSavings: [1000], floor: 20000 }).incomplete, true)
+})
+
+test('computeCushion accepts a zero start cash', () => {
+  const res = computeCushion({ netSavings: [1000, -500], startCash: 0, floor: 0 })
+  assert.equal(res.incomplete, undefined)
+  assert.deepEqual(res.cushion, [1000, 500])
+})
