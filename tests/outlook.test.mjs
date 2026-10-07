@@ -13,6 +13,7 @@ import {
   outlookNetSavingsMap,
   outlookGroupTargets,
   outlookContributionMaps,
+  computeCushion,
 } from '../src/lib/outlook/outlookEngine.js'
 import { summarizeOutlookAdjustments, outlookChip, formatSignedMoney } from '../src/lib/outlook/scenarioSummary.js'
 import { projectTrajectory } from '../src/lib/wealth/projection.js'
@@ -439,3 +440,30 @@ test('scenario summary: per-year sort, net savings, chip text', () => {
   assert.equal(formatSignedMoney(-1200), '−$1,200')
   assert.equal(formatSignedMoney(0), '$0')
 })
+
+test('computeCushion calculates running cash cushion, lowest year, buffer, and pass/fail', () => {
+  // start with 30k, net savings: +10k, -15k, +20k, +5k, +10k
+  // cushion: 40k, 25k, 45k, 50k, 60k
+  const res = computeCushion({
+    netSavings: [10000, -15000, 20000, 5000, 10000],
+    startCash: 30000,
+    floor: 20000,
+  })
+  assert.deepEqual(res.cushion, [40000, 25000, 45000, 50000, 60000])
+  assert.equal(res.minCushion, 25000)
+  assert.equal(res.minIndex, 1)
+  assert.equal(res.buffer, 5000)
+  assert.equal(res.isPass, true)
+
+  // Fail case where cushion dips below floor
+  const failRes = computeCushion({
+    netSavings: [5000, -25000, 10000, 5000, 5000],
+    startCash: 30000,
+    floor: 20000,
+  })
+  assert.deepEqual(failRes.cushion, [35000, 10000, 20000, 25000, 30000])
+  assert.equal(failRes.minCushion, 10000)
+  assert.equal(failRes.buffer, -10000)
+  assert.equal(failRes.isPass, false)
+})
+
