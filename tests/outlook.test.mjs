@@ -13,6 +13,7 @@ import {
   outlookNetSavingsMap,
   outlookGroupTargets,
   outlookContributionMaps,
+  computeCushion,
 } from '../src/lib/outlook/outlookEngine.js'
 import { summarizeOutlookAdjustments, outlookChip, formatSignedMoney } from '../src/lib/outlook/scenarioSummary.js'
 import { projectTrajectory } from '../src/lib/wealth/projection.js'
@@ -438,4 +439,58 @@ test('scenario summary: per-year sort, net savings, chip text', () => {
   assert.deepEqual(saving, { text: '+$300 · 2029 outlook', tone: 'good' })
   assert.equal(formatSignedMoney(-1200), '−$1,200')
   assert.equal(formatSignedMoney(0), '$0')
+})
+
+test('computeCushion calculates running cash cushion, lowest year, buffer, and pass/fail', () => {
+  // start with 30k, net savings: +10k, -15k, +20k, +5k, +10k
+  // cushion: 40k, 25k, 45k, 50k, 60k
+  const res = computeCushion({
+    netSavings: [10000, -15000, 20000, 5000, 10000],
+    startCash: 30000,
+    floor: 20000,
+  })
+  assert.deepEqual(res.cushion, [40000, 25000, 45000, 50000, 60000])
+  assert.equal(res.minCushion, 25000)
+  assert.equal(res.minIndex, 1)
+  assert.equal(res.buffer, 5000)
+  assert.equal(res.isPass, true)
+
+  // Fail case where cushion dips below floor
+  const failRes = computeCushion({
+    netSavings: [5000, -25000, 10000, 5000, 5000],
+    startCash: 30000,
+    floor: 20000,
+  })
+  assert.deepEqual(failRes.cushion, [35000, 10000, 20000, 25000, 30000])
+  assert.equal(failRes.minCushion, 10000)
+  assert.equal(failRes.buffer, -10000)
+  assert.equal(failRes.isPass, false)
+})
+
+
+test('computeCushion is incomplete when any net savings entry is missing', () => {
+  for (const bad of [null, undefined, NaN]) {
+    const res = computeCushion({ netSavings: [1000, bad, 2000], startCash: 30000, floor: 20000 })
+    assert.equal(res.incomplete, true)
+    assert.equal(res.reason, 'income')
+    assert.equal(res.floor, 20000)
+    assert.equal(res.isPass, undefined)
+    assert.equal(res.cushion, undefined)
+  }
+})
+
+test('computeCushion is incomplete when start cash is missing', () => {
+  for (const bad of [null, undefined, NaN, '']) {
+    const res = computeCushion({ netSavings: [1000, 2000], startCash: bad, floor: 20000 })
+    assert.equal(res.incomplete, true)
+    assert.equal(res.reason, 'start-cash')
+    assert.equal(res.isPass, undefined)
+  }
+  assert.equal(computeCushion({ netSavings: [1000], floor: 20000 }).incomplete, true)
+})
+
+test('computeCushion accepts a zero start cash', () => {
+  const res = computeCushion({ netSavings: [1000, -500], startCash: 0, floor: 0 })
+  assert.equal(res.incomplete, undefined)
+  assert.deepEqual(res.cushion, [1000, 500])
 })

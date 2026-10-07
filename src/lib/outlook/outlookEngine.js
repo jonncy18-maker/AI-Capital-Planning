@@ -221,3 +221,41 @@ export function outlookGroupTargets(outlook, year) {
   for (const g of outlook.groups) out[g.name] = g.cells[idx].amount
   return out
 }
+
+// Running cash cushion trajectory: starting cash + cumulative annual net savings.
+// Returns cushion per year, min cushion, min index, buffer against floor, and pass status.
+// Returns { incomplete: true, reason, floor } when start cash or any year's net savings is missing.
+export function computeCushion({ netSavings = [], startCash = null, floor = 25000 }) {
+  if (startCash == null || startCash === '' || !Number.isFinite(Number(startCash))) {
+    return { incomplete: true, reason: 'start-cash', floor }
+  }
+  if (netSavings.some(n => n == null || n === '' || !Number.isFinite(Number(n)))) {
+    return { incomplete: true, reason: 'income', floor }
+  }
+  const cushion = []
+  let running = Number(startCash)
+  for (let i = 0; i < netSavings.length; i++) {
+    running += Number(netSavings[i])
+    cushion.push(running)
+  }
+  let minCushion = cushion.length ? cushion[0] : running
+  let minIndex = 0
+  for (let i = 0; i < cushion.length; i++) {
+    if (cushion[i] < minCushion) {
+      minCushion = cushion[i]
+      minIndex = i
+    }
+  }
+  const buffer = minCushion - floor
+  const isPass = minCushion >= floor
+  return {
+    cushion,
+    minCushion,
+    minIndex,
+    buffer,
+    isPass,
+    floor,
+    startCash: Number(startCash),
+  }
+}
+
