@@ -5,7 +5,7 @@ import { getTransactionsForAnalysis } from '../../lib/db/transactions.js'
 
 const PHASE_NAMES = ['Income', 'Life Events', 'Commitments', 'Non-Monthly', 'Categories', 'Envelope']
 
-export default function GrillSession({ userId, targetYear, commitments, lineItems, onGenerateDraft, onCancel, mobile }) {
+export default function GrillSession({ userId, targetYear, commitments, lineItems, outlookTargets, onGenerateDraft, onCancel, mobile }) {
   const [messages, setMessages] = useState([])
   const [phase, setPhase] = useState(1)
   const [input, setInput] = useState('')
@@ -63,6 +63,7 @@ export default function GrillSession({ userId, targetYear, commitments, lineItem
         commitments,
         priorBudgetGroups,
         spendingGroups,
+        outlookTargets,
       })
       setMessages([{ role: 'assistant', content: res.content }])
     } catch (e) {
@@ -89,6 +90,7 @@ export default function GrillSession({ userId, targetYear, commitments, lineItem
         commitments,
         priorBudgetGroups,
         spendingGroups,
+        outlookTargets,
       })
       setMessages(m => [...m, { role: 'assistant', content: res.content }])
     } catch (e) {

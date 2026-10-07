@@ -160,3 +160,5 @@ At the start of each session, with the copy on a clean `main`:
 1. `git fetch local && git merge --ff-only local/main`.
 2. If the copy is not on a clean `main`, or the fast-forward fails, stop and tell John. Do not reset, rebase or discard anything on your own.
 3. Do your work on a local branch and hand it back through the audit inbox; never edit `main` in the copy.
+
+To see your changes running, start this copy's dev server (against the `dev-local` Neon branch, never live data) with `capital-dev start codex` (port 3002) or `capital-dev start antigravity` (port 3001), and stop it with `capital-dev stop <copy>`. See "Local development" in `ARCHITECTURE.md`.

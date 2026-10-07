@@ -12,6 +12,14 @@ import {
   cloneScenario,
 } from '../../lib/db/scenarios.js'
 import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
+import {
+  getScenarioOutlookAdjustments,
+  getAllOutlookAdjustments,
+  addScenarioOutlookAdjustment,
+  deleteScenarioOutlookAdjustment,
+} from '../../lib/db/outlook.js'
+import { expenseGroups } from '../../lib/outlook/outlookEngine.js'
+import { summarizeOutlookAdjustments, outlookChip, formatSignedMoney } from '../../lib/outlook/scenarioSummary.js'
 import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario, runAdjustmentAgent, confirmPendingAdjustments, cancelPendingAdjustments } from '../../lib/ai/scenarioAgent.js'
 import { headerStyles } from '../common/headerStyles.js'
 import { moduleHue } from '../registry.js'
@@ -131,11 +139,13 @@ function StateBadge({ state }) {
 
 // ── Scenario list item ───────────────────────────────────────────────────────
 
-function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
+function ScenarioListItem({ scenario, selected, onClick, adjustments, outlookAdjustments }) {
   const adjs = adjustments ?? []
+  const oChip = outlookChip(summarizeOutlookAdjustments(outlookAdjustments))
   // Cash terms: positive = better off, so income scenarios read green.
   const netDelta = adjs.reduce((s, a) => s + cashEffect(a), 0)
   const hasData = adjs.length > 0
+  const anyData = hasData || !!oChip
 
   let span = null
   if (hasData) {
@@ -154,17 +164,17 @@ function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
       color: 'var(--tx-1)', cursor: 'pointer', borderRadius: '0 6px 6px 0',
       marginBottom: 2, transition: 'background 0.15s',
     }}>
-      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: hasData ? 5 : 3, color: selected ? 'var(--accent)' : 'var(--tx-1)' }}>
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: anyData ? 5 : 3, color: selected ? 'var(--accent)' : 'var(--tx-1)' }}>
         {scenario.name}
       </div>
-      {!hasData && scenario.description && (
+      {!anyData && scenario.description && (
         <div style={{ fontSize: 11, color: 'var(--tx-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2 }}>
           {scenario.description}
         </div>
       )}
-      {hasData ? (
+      {anyData ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{
+          {hasData && <span style={{
             display: 'inline-block', padding: '2px 7px', borderRadius: 10,
             fontSize: 10.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
             background: netDelta > 0 ? 'rgba(46,204,113,0.1)' : netDelta < 0 ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
@@ -172,8 +182,19 @@ function ScenarioListItem({ scenario, selected, onClick, adjustments }) {
             border: `1px solid ${netDelta > 0 ? 'rgba(46,204,113,0.2)' : netDelta < 0 ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
           }}>
             {netDelta === 0 ? '$0' : (netDelta < 0 ? '−' : '+') + fmtAbs(netDelta)}
-          </span>
+          </span>}
           {span && <span style={{ fontSize: 10, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>{span}</span>}
+          {oChip && (
+            <span style={{
+              display: 'inline-block', padding: '2px 7px', borderRadius: 10,
+              fontSize: 10.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+              background: oChip.tone === 'good' ? 'rgba(46,204,113,0.1)' : oChip.tone === 'bad' ? 'rgba(229,57,53,0.1)' : 'var(--hover)',
+              color: oChip.tone === 'good' ? 'var(--green)' : oChip.tone === 'bad' ? 'var(--red)' : 'var(--tx-3)',
+              border: `1px solid ${oChip.tone === 'good' ? 'rgba(46,204,113,0.2)' : oChip.tone === 'bad' ? 'rgba(229,57,53,0.2)' : 'var(--bd)'}`,
+            }}>
+              {oChip.text}
+            </span>
+          )}
         </div>
       ) : (
         <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 4 }}>
@@ -374,6 +395,181 @@ function AddAdjustmentForm({ categories, onSubmit, onCancel, context }) {
         </button>
       </div>
     </form>
+  )
+}
+
+// ── Outlook adjustments (year · group) ───────────────────────────────────────
+// Kept apart from the monthly adjustments on purpose: they have no month or
+// category, and the monthly charts/summaries must never see them.
+
+function OutlookBadge() {
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700,
+      letterSpacing: '0.04em', textTransform: 'uppercase',
+      background: 'var(--warn-bg)', color: 'var(--warn)', border: '1px solid var(--warn)',
+    }}>
+      Outlook year
+    </span>
+  )
+}
+
+function OutlookAdjustmentForm({ categories, onSubmit, onCancel }) {
+  const groups = useMemo(() => expenseGroups(categories), [categories])
+  const years = [CUR_YEAR + 2, CUR_YEAR + 3, CUR_YEAR + 4, CUR_YEAR + 5]
+  const [year, setYear] = useState(years[0])
+  const [group, setGroup] = useState('')
+  const [delta, setDelta] = useState('')
+  const [label, setLabel] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const fieldStyle = {
+    padding: '7px 9px', background: 'var(--field)', border: '1px solid var(--bd)',
+    borderRadius: 6, color: 'var(--tx-1)', fontSize: 12, outline: 'none',
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setErr('')
+    if (!group) return setErr('Select a group.')
+    const d = parseFloat(delta)
+    if (!Number.isFinite(d) || d === 0) return setErr('Enter a non-zero amount.')
+    setSaving(true)
+    try {
+      await onSubmit({ year: Number(year), group_name: group, delta_amount: d, label: label.trim() })
+    } catch (ex) {
+      setErr(ex.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 8, padding: 16, marginTop: 12 }}>
+      <div style={{ fontSize: 11, color: 'var(--tx-2)', marginBottom: 12, lineHeight: 1.5 }}>
+        A one-year change to a whole group in the 5-year outlook. Positive spends more, negative spends less.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }}>Year</label>
+          <select value={year} onChange={e => setYear(e.target.value)} style={{ ...fieldStyle, width: '100%' }}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }}>Group</label>
+          <select value={group} onChange={e => setGroup(e.target.value)} style={{ ...fieldStyle, width: '100%' }}>
+            <option value="">— select —</option>
+            {groups.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }}>Amount ($)</label>
+          <input type="number" value={delta} onChange={e => setDelta(e.target.value)} placeholder="-500 or +1200" step="0.01" style={{ ...fieldStyle, width: '100%' }} />
+        </div>
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 11, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }}>Label (optional)</label>
+        <input type="text" value={label} onChange={e => setLabel(e.target.value)} maxLength={200} placeholder="e.g. Kitchen remodel" style={{ ...fieldStyle, width: '100%' }} />
+      </div>
+      {err && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="submit" disabled={saving} style={{
+          padding: '8px 20px', background: 'var(--accent)', color: 'var(--accent-tx-on)',
+          border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600,
+          cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
+        }}>
+          {saving ? 'Adding…' : 'Add Outlook Adjustment'}
+        </button>
+        <button type="button" onClick={onCancel} style={{
+          padding: '8px 14px', background: 'transparent', color: 'var(--tx-2)',
+          border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+        }}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function OutlookAdjustmentsList({ adjustments, onDelete, readOnly }) {
+  const [busyId, setBusyId] = useState(null)
+  const [err, setErr] = useState('')
+  if (!adjustments.length) return null
+
+  async function handleDelete(id) {
+    setBusyId(id)
+    setErr('')
+    try { await onDelete(id) } catch (ex) { setErr(ex.message) } finally { setBusyId(null) }
+  }
+
+  return (
+    <div style={{ marginTop: 14, border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
+      {adjustments.map((a, i) => (
+        <div key={a.id} style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', fontSize: 12.5,
+          borderTop: i ? '1px solid var(--bd-light)' : 'none',
+        }}>
+          <OutlookBadge />
+          <span style={{ flex: 1, minWidth: 0, color: 'var(--tx-1)' }}>
+            {a.year} · {a.group_name}{a.label ? ` · ${a.label}` : ''}
+          </span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: 'tabular-nums', color: 'var(--tx-1)' }}>
+            {(a.delta_amount < 0 ? '−' : '+') + fmtAbs(a.delta_amount)}
+          </span>
+          {!readOnly && (
+            <button
+              onClick={() => handleDelete(a.id)}
+              disabled={busyId === a.id}
+              title="Remove outlook adjustment"
+              style={{ background: 'none', border: 'none', color: 'var(--tx-3)', cursor: 'pointer', fontSize: 15, opacity: busyId === a.id ? 0.5 : 1 }}
+            >×</button>
+          )}
+        </div>
+      ))}
+      {err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '8px 14px' }}>{err}</div>}
+    </div>
+  )
+}
+
+function OutlookImpactBlock({ adjustments, committed, onOpenOutlook, scenarioId }) {
+  const summary = summarizeOutlookAdjustments(adjustments)
+  if (!summary) return null
+  return (
+    <div style={{ marginTop: 20, border: '1px solid var(--bd)', borderRadius: 10, padding: '14px 16px', background: 'var(--bg-card)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-1)' }}>Outlook impact</span>
+          <OutlookBadge />
+        </div>
+        {onOpenOutlook && (
+          <button onClick={() => onOpenOutlook(scenarioId)} style={{
+            padding: '5px 12px', background: 'transparent', color: 'var(--accent)',
+            border: '1px solid var(--accent-bd)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          }}>
+            View in 5-year outlook
+          </button>
+        )}
+      </div>
+      {committed && (
+        <div style={{ fontSize: 11.5, color: 'var(--tx-3)', marginBottom: 10 }}>Included in baseline outlook</div>
+      )}
+      {summary.byYear.map(y => (
+        <div key={y.year} style={{ marginBottom: 10 }}>
+          {y.items.map(it => (
+            <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, padding: '3px 0' }}>
+              <span style={{ color: 'var(--tx-2)' }}>{y.year} · {it.group_name}{it.label ? ` · ${it.label}` : ''}</span>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: 'tabular-nums', color: 'var(--tx-1)' }}>{formatSignedMoney(it.delta)}</span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, padding: '5px 0 0', borderTop: '1px solid var(--bd-light)', fontWeight: 600 }}>
+            <span style={{ color: 'var(--tx-1)' }}>Net savings {y.year}</span>
+            <span style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: 'tabular-nums', color: y.net < 0 ? 'var(--red)' : y.net > 0 ? 'var(--green)' : 'var(--tx-2)' }}>{formatSignedMoney(y.net)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -1684,12 +1880,13 @@ function AiAdjustmentComposer({ userId, scenarioId, scenarioName, existingAdjust
 // ── Scenario detail panel ────────────────────────────────────────────────────
 
 function ScenarioDetail({
-  scenario, adjustments, categories, context, userId,
-  onPromote, onDelete, onAddAdj, onDeleteAdj, onClone, onAdjsRefresh, loading, onGoToForecast, mobile,
+  scenario, adjustments, outlookAdjs, outlookError, onOpenOutlook, categories, context, userId,
+  onPromote, onDelete, onAddAdj, onDeleteAdj, onAddOutlookAdj, onDeleteOutlookAdj, onClone, onAdjsRefresh, loading, onGoToForecast, mobile,
 }) {
   const [rightView, setRightView] = useState('forecast')
   const [showAdjModal, setShowAdjModal] = useState(false)
   const [adjTab, setAdjTab] = useState('manual')
+  const [adjMode, setAdjMode] = useState('detailed')
   const [sensitivity, setSensitivity] = useState(1.0)
   const [cloning, setCloning] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -1725,6 +1922,13 @@ function ScenarioDetail({
     setShowAddForm(false)
   }
 
+  async function handleAddOutlookAdj(data) {
+    await onAddOutlookAdj(data)
+    setShowAddForm(false)
+  }
+
+  const totalAdjCount = adjustments.length + outlookAdjs.length
+
   async function handleClone() {
     setCloning(true)
     try { await onClone(scenario.id) } finally { setCloning(false) }
@@ -1753,7 +1957,7 @@ function ScenarioDetail({
               padding: '7px 12px', background: 'transparent', color: 'var(--tx-2)',
               border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
             }}>
-              {adjustments.length > 0 ? `${adjustments.length} adjustment${adjustments.length !== 1 ? 's' : ''}` : '+ Adjustments'}
+              {totalAdjCount > 0 ? `${totalAdjCount} adjustment${totalAdjCount !== 1 ? 's' : ''}` : '+ Adjustments'}
             </button>
             <button onClick={handleClone} disabled={cloning} style={{
               padding: '7px 12px', background: 'transparent', color: 'var(--tx-2)',
@@ -1859,9 +2063,14 @@ function ScenarioDetail({
             ))}
           </div>
         </div>
-        {rightView === 'forecast'
+        {adjustments.length === 0 && outlookAdjs.length > 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--tx-3)', fontSize: 13 }}>
+            No monthly adjustments — see outlook impact below.
+          </div>
+        ) : rightView === 'forecast'
           ? <ForecastImpactChart adjustments={scaledAdjs} ctx={context} />
           : <WaterfallChart adjustments={scaledAdjs} />}
+        <OutlookImpactBlock adjustments={outlookAdjs} committed={isCommitted} onOpenOutlook={onOpenOutlook} scenarioId={scenario.id} />
       </div>
 
       {/* Adjustments modal */}
@@ -1886,7 +2095,13 @@ function ScenarioDetail({
                 <div style={{ color: 'var(--tx-3)', fontSize: 13 }}>Loading adjustments…</div>
               ) : (
                 <>
-                  <AdjustmentsTable adjustments={adjustments} onDelete={onDeleteAdj} readOnly={isCommitted} />
+                  {adjustments.length === 0 && outlookAdjs.length > 0 ? null : (
+                    <AdjustmentsTable adjustments={adjustments} onDelete={onDeleteAdj} readOnly={isCommitted} />
+                  )}
+                  {outlookError && !outlookAdjs.length && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: 'var(--red)' }}>Could not load outlook adjustments: {outlookError}</div>
+                  )}
+                  <OutlookAdjustmentsList adjustments={outlookAdjs} onDelete={onDeleteOutlookAdj} readOnly={isCommitted} />
                   {!isCommitted && (
                     <>
                       {/* Tab toggle */}
@@ -1909,8 +2124,29 @@ function ScenarioDetail({
                         ))}
                       </div>
 
+                      {adjTab === 'manual' && (
+                        <div style={{ display: 'flex', gap: 4, marginBottom: 12, background: 'var(--bg-app)', borderRadius: 8, padding: 3, border: '1px solid var(--bd)', width: 'fit-content', flexWrap: 'wrap' }}>
+                          {[['detailed', 'Detailed (month · category)'], ['outlook', 'Outlook (year · group)']].map(([key, label]) => (
+                            <button
+                              key={key}
+                              onClick={() => { setAdjMode(key); setShowAddForm(false) }}
+                              style={{
+                                padding: '5px 12px', border: 'none', borderRadius: 6, fontSize: 11.5, cursor: 'pointer',
+                                background: adjMode === key ? 'var(--bg-card)' : 'transparent',
+                                color: adjMode === key ? 'var(--tx-1)' : 'var(--tx-3)',
+                                fontWeight: adjMode === key ? 600 : 400,
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       {adjTab === 'manual' && (showAddForm ? (
-                        <AddAdjustmentForm categories={categories} onSubmit={handleAddAdj} onCancel={() => setShowAddForm(false)} context={context} />
+                        adjMode === 'outlook'
+                          ? <OutlookAdjustmentForm categories={categories} onSubmit={handleAddOutlookAdj} onCancel={() => setShowAddForm(false)} />
+                          : <AddAdjustmentForm categories={categories} onSubmit={handleAddAdj} onCancel={() => setShowAddForm(false)} context={context} />
                       ) : (
                         <button onClick={() => setShowAddForm(true)} style={{ padding: '8px 16px', background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent-bd)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                           + Add Adjustment
@@ -2084,9 +2320,20 @@ const TAB_META = {
   idea:      { label: 'Ideas',      color: '#f59e0b' },
 }
 
-export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange, openScenarioId, onGoToForecast }) {
+// One request for every scenario's outlook adjustments (list cards need totals
+// for all of them); scenarios with none map to [] so they are not refetched.
+async function fetchOutlookByScenario(list) {
+  const rows = await getAllOutlookAdjustments()
+  const map = Object.fromEntries(list.map(sc => [sc.id, []]))
+  for (const row of rows) if (map[row.scenario_id]) map[row.scenario_id].push(row)
+  return map
+}
+
+export default function Scenarios({ userId, mobile, reloadSignal, context, onDataChange, openScenarioId, onGoToForecast, onOpenOutlook }) {
   const [scenarios, setScenarios] = useState([])
   const [adjustments, setAdjustments] = useState({}) // { [scenarioId]: adj[] }
+  const [outlookError, setOutlookError] = useState(null)
+  const [outlookAdjs, setOutlookAdjs] = useState({}) // { [scenarioId]: outlook adj[] }
   const [adjLoading, setAdjLoading] = useState({})
   const [categories, setCategories] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -2112,6 +2359,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     try {
       const data = await getScenarios(userId)
       setScenarios(data)
+      fetchOutlookByScenario(data).then(m => setOutlookAdjs(prev => ({ ...prev, ...m }))).catch(() => {})
     } catch (e) {
       setError(e.message)
     } finally {
@@ -2126,7 +2374,10 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
 
   useEffect(() => {
     if (!reloadSignal) return
-    getScenarios(userId).then(setScenarios).catch(() => {})
+    getScenarios(userId).then(list => {
+      setScenarios(list)
+      fetchOutlookByScenario(list).then(m => setOutlookAdjs(prev => ({ ...prev, ...m }))).catch(() => {})
+    }).catch(() => {})
     getBudgetCategories(userId).then(setCategories).catch(() => {})
   }, [reloadSignal]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2160,7 +2411,20 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     loadAdjustments(scenarioId)
   }
 
+  async function loadOutlookAdjs(scenarioId) {
+    if (outlookAdjs[scenarioId]) return
+    setOutlookError(prev => (prev?.id === scenarioId ? null : prev))
+    try {
+      const data = await getScenarioOutlookAdjustments(scenarioId)
+      setOutlookAdjs(prev => ({ ...prev, [scenarioId]: data }))
+    } catch (e) {
+      // Not cached, so the next selection retries; non-fatal, so it doesn't use the page-level error.
+      setOutlookError({ id: scenarioId, message: e.message })
+    }
+  }
+
   async function loadAdjustments(scenarioId) {
+    loadOutlookAdjs(scenarioId)
     if (adjustments[scenarioId] || adjLoading[scenarioId]) return
     setAdjLoading(prev => ({ ...prev, [scenarioId]: true }))
     try {
@@ -2206,6 +2470,16 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
   async function handleDeleteAdj(adjId) {
     await deleteAdjustment(adjId)
     setAdjustments(prev => ({ ...prev, [selectedId]: (prev[selectedId] ?? []).filter(a => a.id !== adjId) }))
+  }
+
+  async function handleAddOutlookAdj(data) {
+    const adj = await addScenarioOutlookAdjustment(selectedId, data)
+    setOutlookAdjs(prev => ({ ...prev, [selectedId]: [...(prev[selectedId] ?? []), adj] }))
+  }
+
+  async function handleDeleteOutlookAdj(adjId) {
+    await deleteScenarioOutlookAdjustment(adjId)
+    setOutlookAdjs(prev => ({ ...prev, [selectedId]: (prev[selectedId] ?? []).filter(a => a.id !== adjId) }))
   }
 
   async function handleAdjsRefresh() {
@@ -2392,7 +2666,8 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                     <ScenarioListItem key={s.id} scenario={s}
                       selected={selectedId === s.id}
                       onClick={() => { handleSelect(s.id); setShowComposer(false) }}
-                      adjustments={adjustments[s.id]} />
+                      adjustments={adjustments[s.id]}
+                      outlookAdjustments={outlookAdjs[s.id]} />
                   ))}
                   {modeled.length === 0 && !showNewForm && (
                     <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.6 }}>
@@ -2433,6 +2708,9 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                     <ScenarioDetail
                       scenario={selected}
                       adjustments={selectedAdjs}
+                      outlookAdjs={outlookAdjs[selectedId] ?? []}
+                      onOpenOutlook={onOpenOutlook}
+                      outlookError={outlookError?.id === selectedId ? outlookError.message : null}
                       categories={categories}
                       context={context}
                       userId={userId}
@@ -2440,6 +2718,8 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                       onDelete={handleDelete}
                       onAddAdj={handleAddAdj}
                       onDeleteAdj={handleDeleteAdj}
+                      onAddOutlookAdj={handleAddOutlookAdj}
+                      onDeleteOutlookAdj={handleDeleteOutlookAdj}
                       onClone={handleClone}
                       onAdjsRefresh={handleAdjsRefresh}
                       loading={isAdjLoading}

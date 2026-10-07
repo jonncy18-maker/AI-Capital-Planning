@@ -85,6 +85,29 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
   `body:has(.lp)` restores page scrolling only while the landing page is
   mounted. Tour video is served from `public/landing/`. `/` still redirects to
   `/dashboard` (PWA `start_url` is `/`).
+- **Local development (added 2026-10-07):** `npm run dev` serves the app at
+  `http://localhost:3000` against a dedicated Neon branch named `dev-local`, a
+  copy-on-write copy of the live `dev` branch, so local work never reads or
+  writes live data. Everything the app needs is in the gitignored `.env.local`:
+  `DATABASE_URL` (the `dev-local` connection string), `NEON_AUTH_BASE_URL` and a
+  generated `NEON_AUTH_COOKIE_SECRET`, plus `ANTHROPIC_API_KEY` if the AI chat
+  is needed locally (blank otherwise; `/api/ai-chat` fails without it). Neon Auth
+  config is per branch: the copy carries the user accounts (the same login
+  works) and its own base URL, and `http://localhost:3000` is added to that
+  branch's trusted domains only, leaving the live branch's list unchanged.
+  To reset the data, delete `dev-local` and re-create it from `dev`
+  (`neonctl branches create --name dev-local --parent dev`), then update
+  `DATABASE_URL` and `NEON_AUTH_BASE_URL` (a new branch gets new values) and
+  re-add the localhost trusted domain (`neonctl neon-auth domain add`). Try new
+  migrations on `dev-local` before applying them to `dev`.
+  The dev server runs as a systemd user service (`capital-dev@<copy>`, wrapper
+  `~/.local/bin/capital-dev`, machine-local and not in the repo): the main copy
+  starts automatically on port 3000 when the container boots. The agent copies
+  are on demand with `capital-dev start|stop|status|logs antigravity` (port
+  3001) or `codex` (port 3002). Those copies' `.env.local` is a symlink to the
+  main copy's, so there is one place to change; each port is on `dev-local`'s
+  trusted domains; the first start runs `npm ci`. Run one or two at a time
+  (the container has a 6 GB RAM limit).
 - **Future:** React Native native app (planned migration, not V1 scope)
 
 ---
@@ -176,6 +199,8 @@ Key behaviors:
 - **Non-Monthly:** Irregular timing, known annual total (cruises, annual fees, scholarship transfers)
 
 **Multi-year handling:** Long-Term Commitments with defined timespans automatically feed into the multi-year projection. The AI flags years where commitment profiles change (e.g., a scholarship ending, a lease expiring).
+
+**5-year outlook (added 2026-10-04):** Only the next budget year is detailed (category × month). The four years after it are an outlook: one annual number per budget group (Income/Transfers/`exclude_from_totals` excluded), computed live by the pure `src/lib/outlook/outlookEngine.js` — group base (base-year line items minus commitment-linked rows) × (1 + group rate or inflation default)^years, plus commitments by their real dates (never inflated), one-time planned events, and one-time scenario outlook adjustments. Take-home income (the Settings estimate) grows at its own rate; net savings = income − groups − commitments − events. Nothing is materialized: assumptions, events and scenario outlook adjustments are the only stored inputs. Committed scenarios' outlook adjustments are always in the baseline. Wealth can take outlook net savings as its contributions for projection years 1–5.
 
 ### 4.5 Long-Term Commitments
 First-class module for any financial obligation spanning more than one year.
@@ -300,6 +325,23 @@ year            integer
 delta_amount    numeric  -- adjustment vs. baseline
 label           text
 created_at      timestamptz
+```
+
+**outlook_assumptions** *(2026-10-04, one row per user)*
+```
+inflation_rate      numeric  -- default growth for every group (0.03 = 3%)
+income_growth_rate  numeric
+group_rates         jsonb    -- {"Travel": 0.06}; missing key = use inflation_rate
+```
+
+**outlook_events** *(2026-10-04)* — one-time planned outlook spending
+```
+year int, group_name text, name text, amount numeric
+```
+
+**scenario_outlook_adjustments** *(2026-10-04)* — year × group deltas (positive = more spending); never materialized into forecast_line_items
+```
+scenario_id uuid REFERENCES scenarios ON DELETE CASCADE, year int, group_name text, delta_amount numeric, label text
 ```
 
 **commitments**
