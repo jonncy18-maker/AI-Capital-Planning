@@ -38,18 +38,27 @@ async function estimateTakeHome(profile, year) {
 // view and the Wealth module share one loader.
 export async function loadOutlookInputs(userId, { curYear = new Date().getFullYear() } = {}) {
   const nextYear = curYear + 1
-  const [nextItems, curItems, categories, commitments, profile, assumptions, events, committedAdjustments, scenarios] =
-    await Promise.all([
-      getBudgetLineItems(userId, { year: nextYear }),
-      getBudgetLineItems(userId, { year: curYear }),
-      getBudgetCategories(userId),
-      getCommitments(userId, { status: 'active' }),
-      getProfile(userId).catch(() => null),
-      getOutlookAssumptions(),
-      getOutlookEvents(),
-      getCommittedOutlookAdjustments(),
-      getScenarios(userId),
-    ])
+  const [
+    nextItems,
+    curItems,
+    categories,
+    commitments,
+    profile,
+    assumptions,
+    events,
+    committedAdjustments,
+    scenarios,
+  ] = await Promise.all([
+    getBudgetLineItems(userId, { year: nextYear }),
+    getBudgetLineItems(userId, { year: curYear }),
+    getBudgetCategories(userId),
+    getCommitments(userId, { status: 'active' }),
+    getProfile(userId).catch(() => null),
+    getOutlookAssumptions(),
+    getOutlookEvents(),
+    getCommittedOutlookAdjustments(),
+    getScenarios(userId),
+  ])
 
   const baseYear = resolveBaseYear({
     nextYear,

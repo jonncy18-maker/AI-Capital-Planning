@@ -32,7 +32,7 @@ export async function PATCH(request, context) {
     year: validateYear,
     group_name: validateGroupName,
     name: validateEventName,
-    amount: v => validateAmount(v, 'amount'),
+    amount: (v) => validateAmount(v, 'amount'),
   }
   for (const key of Object.keys(fields)) {
     if (body?.[key] === undefined) continue
@@ -40,7 +40,7 @@ export async function PATCH(request, context) {
     if (r.error) return Response.json({ error: r.error }, { status: 400 })
     fields[key] = r.value
   }
-  if (Object.values(fields).every(v => v === null)) {
+  if (Object.values(fields).every((v) => v === null)) {
     return Response.json({ error: 'No updatable fields provided.' }, { status: 400 })
   }
 
