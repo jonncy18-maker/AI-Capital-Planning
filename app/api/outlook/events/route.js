@@ -22,7 +22,7 @@ export async function GET(request) {
       WHERE user_id = ${userId}
       ORDER BY year ASC, created_at ASC
     `
-    return Response.json(rows.map(r => ({ ...r, amount: Number(r.amount) })))
+    return Response.json(rows.map((r) => ({ ...r, amount: Number(r.amount) })))
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 })
   }

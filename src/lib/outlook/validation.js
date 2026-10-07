@@ -3,9 +3,9 @@
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export const isUuid = v => typeof v === 'string' && UUID_RE.test(v)
+export const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v)
 
-export const isFiniteNumber = v => typeof v === 'number' && Number.isFinite(v)
+export const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v)
 
 export function validateRate(v, field) {
   if (!isFiniteNumber(v) || v < -0.5 || v > 1.0) {
@@ -49,7 +49,10 @@ export function validateGroupRatesPatch(v) {
   for (const [key, rate] of Object.entries(v)) {
     const k = validateGroupName(key, 'group_rates key')
     if (k.error) return k
-    if (rate === null) { out[key] = null; continue }
+    if (rate === null) {
+      out[key] = null
+      continue
+    }
     const r = validateRate(rate, `group_rates.${key}`)
     if (r.error) return r
     out[key] = rate

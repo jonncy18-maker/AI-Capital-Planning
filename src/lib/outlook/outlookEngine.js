@@ -12,10 +12,23 @@ export const OUTLOOK_YEARS = 5
 export const DEFAULT_INFLATION = 0.03
 export const DEFAULT_INCOME_GROWTH = 0.03
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+]
 
-const isIncomeGroup = g => (g || '').trim().toLowerCase() === 'income'
-const isTransfersGroup = g => (g || '').trim().toLowerCase() === 'transfers'
+const isIncomeGroup = (g) => (g || '').trim().toLowerCase() === 'income'
+const isTransfersGroup = (g) => (g || '').trim().toLowerCase() === 'transfers'
 
 // True for groups/categories that are not real spending: the Income group,
 // Transfers, and any category flagged exclude_from_totals (the flag the rest of
@@ -54,7 +67,7 @@ export function groupRate(assumptions, group) {
 // baseGroups: { [group]: base annual amount } from the base-year budget,
 // excluding commitment-linked line items (commitments are computed separately).
 export function computeGroupBases({ baseLineItems = [], categories = [] }) {
-  const catById = new Map(categories.map(c => [c.id, c]))
+  const catById = new Map(categories.map((c) => [c.id, c]))
   const bases = {}
   // Seed every spendable group so groups with no base-year spend still get a
   // row (and can take events/adjustments/rates).
@@ -104,51 +117,59 @@ export function buildOutlook({
   if (baseYear == null) return { empty: true, nextYear, baseYear: null }
 
   const years = Array.from({ length: OUTLOOK_YEARS }, (_, i) => nextYear + i)
-  const columns = years.map(year => ({
+  const columns = years.map((year) => ({
     year,
     kind: baseYear === nextYear && year === nextYear ? 'detailed' : 'outlook',
   }))
 
   // The detailed column is a read-only roll-up of the real budget; outlook
   // adjustments (possible via the API) must not change it.
-  const detailedYears = new Set(columns.filter(c => c.kind === 'detailed').map(c => c.year))
-  const adjustments = allAdjustments.filter(a => !detailedYears.has(a.year))
-  const selectedAdjustments = allSelectedAdjustments.filter(a => !detailedYears.has(a.year))
+  const detailedYears = new Set(columns.filter((c) => c.kind === 'detailed').map((c) => c.year))
+  const adjustments = allAdjustments.filter((a) => !detailedYears.has(a.year))
+  const selectedAdjustments = allSelectedAdjustments.filter((a) => !detailedYears.has(a.year))
 
   const bases = computeGroupBases({ baseLineItems, categories })
 
   // A group that only appears on an event/adjustment still needs a row so the
   // amount is visible and totals reconcile with the rows shown.
-  const inWindow = y => y >= years[0] && y <= years[years.length - 1]
+  const inWindow = (y) => y >= years[0] && y <= years[years.length - 1]
   for (const a of [...adjustments, ...selectedAdjustments]) {
     if (inWindow(a.year) && a.group_name) bases[a.group_name] ??= 0
   }
 
   const groupNames = Object.keys(bases).sort((a, b) => a.localeCompare(b))
 
-  const groups = groupNames.map(name => {
+  const groups = groupNames.map((name) => {
     const { rate, isOverride } = groupRate(assumptions, name)
-    const cells = years.map(year => {
+    const cells = years.map((year) => {
       const compounded = bases[name] * Math.pow(1 + rate, year - baseYear)
-      const committedAdj = sumBy(adjustments, a => a.year === year && a.group_name === name, a => a.delta_amount)
-      const scenarioDelta = sumBy(selectedAdjustments, a => a.year === year && a.group_name === name, a => a.delta_amount)
+      const committedAdj = sumBy(
+        adjustments,
+        (a) => a.year === year && a.group_name === name,
+        (a) => a.delta_amount
+      )
+      const scenarioDelta = sumBy(
+        selectedAdjustments,
+        (a) => a.year === year && a.group_name === name,
+        (a) => a.delta_amount
+      )
       return { amount: compounded + committedAdj, committedAdj, scenarioDelta }
     })
     return { name, base: bases[name], rate, isOverride, cells }
   })
 
-  const commitmentTotals = years.map(year =>
+  const commitmentTotals = years.map((year) =>
     commitments.reduce((s, c) => s + commitmentYearSchedule(c, year).reduce((a, b) => a + b, 0), 0)
   )
 
-  const commitmentEnds = years.map(year =>
+  const commitmentEnds = years.map((year) =>
     commitments
-      .filter(c => c.end_date && parseLocalDate(c.end_date).getFullYear() === year - 1)
-      .map(c => ({ id: c.id, name: c.name, ended: endedLabel(c) }))
+      .filter((c) => c.end_date && parseLocalDate(c.end_date).getFullYear() === year - 1)
+      .map((c) => ({ id: c.id, name: c.name, ended: endedLabel(c) }))
   )
 
-  const eventsByYear = years.map(year => {
-    const items = events.filter(e => e.year === year)
+  const eventsByYear = years.map((year) => {
+    const items = events.filter((e) => e.year === year)
     return { total: items.reduce((s, e) => s + num(e.amount), 0), items }
   })
 
@@ -157,17 +178,25 @@ export function buildOutlook({
   const growth = Number.isFinite(Number(assumptions?.income_growth_rate))
     ? Number(assumptions.income_growth_rate)
     : DEFAULT_INCOME_GROWTH
-  const income = years.map(year => (hasIncome ? takeHome * Math.pow(1 + growth, year - baseYear) : null))
+  const income = years.map((year) =>
+    hasIncome ? takeHome * Math.pow(1 + growth, year - baseYear) : null
+  )
 
   const groupTotals = years.map((_, i) => groups.reduce((s, g) => s + g.cells[i].amount, 0))
-  const scenarioDeltaTotals = years.map((_, i) => groups.reduce((s, g) => s + g.cells[i].scenarioDelta, 0))
+  const scenarioDeltaTotals = years.map((_, i) =>
+    groups.reduce((s, g) => s + g.cells[i].scenarioDelta, 0)
+  )
 
   // The group rows already contain committed adjustments, so net savings only
   // subtracts the group total, commitments and events.
   const netSavings = years.map((_, i) =>
-    income[i] == null ? null : income[i] - groupTotals[i] - commitmentTotals[i] - eventsByYear[i].total
+    income[i] == null
+      ? null
+      : income[i] - groupTotals[i] - commitmentTotals[i] - eventsByYear[i].total
   )
-  const netSavingsScenario = netSavings.map((n, i) => (n == null ? null : n - scenarioDeltaTotals[i]))
+  const netSavingsScenario = netSavings.map((n, i) =>
+    n == null ? null : n - scenarioDeltaTotals[i]
+  )
 
   return {
     empty: false,
@@ -191,7 +220,7 @@ export function buildOutlook({
 // has a number (otherwise the Wealth projection must not use a partial series).
 export function outlookNetSavingsMap(outlook) {
   if (!outlook || outlook.empty) return null
-  if (outlook.netSavings.some(n => n == null || !Number.isFinite(n))) return null
+  if (outlook.netSavings.some((n) => n == null || !Number.isFinite(n))) return null
   return Object.fromEntries(outlook.columns.map((c, i) => [c.year, outlook.netSavings[i]]))
 }
 
@@ -215,7 +244,7 @@ export function outlookContributionMaps(outlook, curYear) {
 // { [group]: amount } for one year, for reference panels.
 export function outlookGroupTargets(outlook, year) {
   if (!outlook || outlook.empty) return null
-  const idx = outlook.columns.findIndex(c => c.year === year)
+  const idx = outlook.columns.findIndex((c) => c.year === year)
   if (idx < 0) return null
   const out = {}
   for (const g of outlook.groups) out[g.name] = g.cells[idx].amount
@@ -229,7 +258,7 @@ export function computeCushion({ netSavings = [], startCash = null, floor = 2500
   if (startCash == null || startCash === '' || !Number.isFinite(Number(startCash))) {
     return { incomplete: true, reason: 'start-cash', floor }
   }
-  if (netSavings.some(n => n == null || n === '' || !Number.isFinite(Number(n)))) {
+  if (netSavings.some((n) => n == null || n === '' || !Number.isFinite(Number(n)))) {
     return { incomplete: true, reason: 'income', floor }
   }
   const cushion = []
@@ -258,4 +287,3 @@ export function computeCushion({ netSavings = [], startCash = null, floor = 2500
     startCash: Number(startCash),
   }
 }
-

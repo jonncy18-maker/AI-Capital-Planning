@@ -24,7 +24,7 @@ export async function GET(request) {
         AND (${committedOnly}::boolean = false OR s.state = 'committed')
       ORDER BY soa.year ASC, soa.created_at ASC
     `
-    return Response.json(rows.map(r => ({ ...r, delta_amount: Number(r.delta_amount) })))
+    return Response.json(rows.map((r) => ({ ...r, delta_amount: Number(r.delta_amount) })))
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 })
   }

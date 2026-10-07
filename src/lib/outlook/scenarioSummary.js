@@ -1,13 +1,13 @@
 // Display helpers for a scenario's outlook adjustments (year · group rows where
 // a positive delta means more spending).
 
-const money = n => '$' + Math.abs(Math.round(n)).toLocaleString()
-const signed = n => (n === 0 ? '$0' : (n < 0 ? '−' : '+') + money(n))
+const money = (n) => '$' + Math.abs(Math.round(n)).toLocaleString()
+const signed = (n) => (n === 0 ? '$0' : (n < 0 ? '−' : '+') + money(n))
 
 // null when there are no adjustments. byYear is sorted by year then group;
 // net is the net-savings impact (the negative of that year's summed deltas).
 export function summarizeOutlookAdjustments(adjustments) {
-  const rows = (adjustments ?? []).filter(a => Number.isFinite(Number(a.delta_amount)))
+  const rows = (adjustments ?? []).filter((a) => Number.isFinite(Number(a.delta_amount)))
   if (!rows.length) return null
   const byYearMap = new Map()
   for (const a of rows) {
@@ -19,7 +19,7 @@ export function summarizeOutlookAdjustments(adjustments) {
   }
   const byYear = [...byYearMap.values()]
     .sort((a, b) => a.year - b.year)
-    .map(y => ({
+    .map((y) => ({
       year: y.year,
       net: -y.sum,
       items: y.items.sort((a, b) => a.group_name.localeCompare(b.group_name)),
@@ -37,7 +37,10 @@ export function summarizeOutlookAdjustments(adjustments) {
 // A +$1,200 spending delta reads "−$1,200 · 2029 outlook" (tone 'bad').
 export function outlookChip(summary) {
   if (!summary) return null
-  const years = summary.minYear === summary.maxYear ? `${summary.minYear}` : `${summary.minYear}–${summary.maxYear}`
+  const years =
+    summary.minYear === summary.maxYear
+      ? `${summary.minYear}`
+      : `${summary.minYear}–${summary.maxYear}`
   return {
     text: `${signed(-summary.total)} · ${years} outlook`,
     tone: summary.total > 0 ? 'bad' : summary.total < 0 ? 'good' : 'neutral',
