@@ -112,7 +112,7 @@ function classifyCategory(monthlyTotalsMap, spanMonths) {
 export function analyzeTransactions(transactions, categories = []) {
   // Categories flagged exclude_from_totals (transfers, CC payments) never seed a
   // budget line — they aren't real spend.
-  const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
+  const excluded = new Set(categories.filter((c) => c.exclude_from_totals).map((c) => c.category))
   const spanMonths = countSpanMonths(transactions, excluded)
   const totals = buildCategoryMonthlyTotals(transactions, excluded)
 

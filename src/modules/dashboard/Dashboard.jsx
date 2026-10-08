@@ -75,12 +75,6 @@ function fmtK(n) {
   if (abs >= 1000) return '$' + Math.round(n / 1000) + 'k'
   return '$' + Math.round(n || 0)
 }
-function fmtK1(n) {
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) return '$' + (n / 1_000_000).toFixed(1) + 'M'
-  if (abs >= 1000) return '$' + (n / 1000).toFixed(1) + 'k'
-  return '$' + Math.round(n || 0)
-}
 
 // ── widget primitives ────────────────────────────────────────────────────────
 

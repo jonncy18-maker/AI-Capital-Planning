@@ -103,7 +103,7 @@ export function allocateCents(totalCents, n) {
 // minus sign, whole-dollar Math.round of the magnitude) so swapping is invisible.
 export function formatMoney(dollars, { decimals = 0, signed = false } = {}) {
   const n = Number(dollars) || 0
-  const sign = signed ? (n >= 0 ? '+' : '−') : (n < 0 ? '−' : '')
+  const sign = signed ? (n >= 0 ? '+' : '−') : n < 0 ? '−' : ''
   let body
   if (decimals > 0) {
     body = (Math.abs(toCents(n)) / 100).toLocaleString('en-US', {
@@ -123,9 +123,19 @@ export function parseMoneyInput(str) {
   if (typeof str !== 'string') return null
   let s = str.replace(/[\s$,]/g, '').replace(/−/g, '-')
   let neg = false
-  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1) }
-  if (s.startsWith('-')) { if (neg) return null; neg = true; s = s.slice(1) }
-  else if (s.endsWith('-')) { if (neg) return null; neg = true; s = s.slice(0, -1) }
+  if (/^\(.*\)$/.test(s)) {
+    neg = true
+    s = s.slice(1, -1)
+  }
+  if (s.startsWith('-')) {
+    if (neg) return null
+    neg = true
+    s = s.slice(1)
+  } else if (s.endsWith('-')) {
+    if (neg) return null
+    neg = true
+    s = s.slice(0, -1)
+  }
   if (!/^(\d+(\.\d*)?|\.\d+)$/.test(s)) return null
   const v = fromCents(toCents(s))
   return neg ? (v === 0 ? 0 : -v) : v
