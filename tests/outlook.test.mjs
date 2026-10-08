@@ -20,6 +20,8 @@ import { projectTrajectory } from '../src/lib/wealth/projection.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const approx = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} !~ ${b}`)
+// Engine amounts are whole cents (compounded once, rounded half away from zero).
+const toCent = (n) => Math.round(n * 100) / 100
 
 const NEXT = 2027
 const cats = [
@@ -81,7 +83,7 @@ test('groups compound per year with the default rate; detailed year equals the r
   assert.equal(housing.base, 2000)
   assert.equal(housing.cells[0].amount, 2000)
   approx(housing.cells[1].amount, 2000 * 1.03)
-  approx(housing.cells[4].amount, 2000 * Math.pow(1.03, 4))
+  approx(housing.cells[4].amount, toCent(2000 * Math.pow(1.03, 4)))
   assert.equal(housing.isOverride, false)
 })
 
@@ -130,8 +132,8 @@ test('events and adjustments are one-time, not compounded', () => {
   // events never appear inside group rows
   approx(group(o, 'Housing').cells[2].amount, 2000 * Math.pow(1.03, 2))
   // adjustment sits in its own year only
-  approx(group(o, 'Food').cells[2].amount, 500 * Math.pow(1.03, 2) + 600)
-  approx(group(o, 'Food').cells[3].amount, 500 * Math.pow(1.03, 3))
+  approx(group(o, 'Food').cells[2].amount, toCent(500 * Math.pow(1.03, 2)) + 600)
+  approx(group(o, 'Food').cells[3].amount, toCent(500 * Math.pow(1.03, 3)))
   assert.equal(group(o, 'Food').cells[2].committedAdj, 600)
 })
 
