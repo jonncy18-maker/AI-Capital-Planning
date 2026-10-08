@@ -4,11 +4,24 @@
 import { parseLocalDate } from '../dates.js'
 import { aggregateCommitmentsForYear, commitmentMonthlyDemand } from '../commitments/schedule.js'
 import { cashEffect, isIncomeAdjustment } from '../scenarios/scenarioUtils.js'
+import { toCents, fromCents, sumCents, sumDollars, mulCents, allocateCents } from '../money.js'
+
+// All money below is summed in integer cents and converted back to dollars only
+// in the returned objects. Averages and percentages stay unrounded floats.
 
 // Budget and forecast line items exist for income categories too (a committed
 // income scenario writes one). Every "spend" aggregate below sums line items,
 // so income lines have to be filtered out or a bonus lands as an expense.
 const isIncomeGroup = (g) => (g || '').trim().toLowerCase() === 'income'
+
+// Index of the in-progress month for a year: 11 for a past year (every month is
+// actual), -1 for a future year (every month is forecast), else today's month.
+function currentMonthIndex(year, now = new Date()) {
+  const cy = now.getFullYear()
+  if (year < cy) return 11
+  if (year > cy) return -1
+  return now.getMonth()
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -24,8 +37,7 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
   const categories = ctx?.categories ?? []
   const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
 
-  const now = new Date()
-  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+  const currentMonth = currentMonthIndex(year)
 
   // category_id → group (from line items first, then the category table).
   const catGroup = {}
@@ -42,7 +54,7 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
     const m = (li.month ?? 1) - 1
     if (m < 0 || m > 11) continue
     if (!budgetByGroupMonth[g]) budgetByGroupMonth[g] = Array(12).fill(0)
-    budgetByGroupMonth[g][m] += Number(li.amount || 0)
+    budgetByGroupMonth[g][m] += toCents(li.amount)
   }
 
   // Forecast from the independent forecast lines, grouped by month; falls back to
@@ -56,7 +68,7 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
       const g = fi.budget_categories?.group || catGroup[fi.category_id] || 'Uncategorized'
       if (isIncomeGroup(g)) continue
       if (!forecastByGroupMonth[g]) forecastByGroupMonth[g] = Array(12).fill(0)
-      forecastByGroupMonth[g][m] += Number(fi.amount || 0)
+      forecastByGroupMonth[g][m] += toCents(fi.amount)
     }
   } else {
     for (const g of Object.keys(budgetByGroupMonth)) forecastByGroupMonth[g] = [...budgetByGroupMonth[g]]
@@ -73,7 +85,7 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
     const g = t.group || 'Uncategorized'
     const m = d.getMonth()
     if (!actualByGroupMonth[g]) actualByGroupMonth[g] = Array(12).fill(0)
-    actualByGroupMonth[g][m] += Math.abs(amt)
+    actualByGroupMonth[g][m] += Math.abs(toCents(amt))
   }
 
   const groups = new Set([
@@ -95,12 +107,18 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
       else forecast += forecastMonths[m]
     }
     const projected = actual + forecast
-    if (budget < 1 && projected < 1) continue
+    if (budget < 100 && projected < 100) continue
     rows.push({ group: g, actual, forecast, projected, budget })
   }
 
   rows.sort((a, b) => b.projected - a.projected)
-  const top = rows.slice(0, topN)
+  const top = rows.slice(0, topN).map(r => ({
+    group: r.group,
+    actual: fromCents(r.actual),
+    forecast: fromCents(r.forecast),
+    projected: fromCents(r.projected),
+    budget: fromCents(r.budget),
+  }))
   const max = top.reduce((m, r) => Math.max(m, r.projected, r.budget), 0) || 1
 
   return { rows: top, max, totalGroups: rows.length, hasBudget: lineItems.length > 0 }
@@ -114,10 +132,12 @@ export function yearProjection(ctx, yearTxns = []) {
   let actualToDate = 0
   let forecastRemaining = 0
   for (const mo of mbva.months) {
-    if (mo.actual != null) actualToDate += mo.actual
-    else forecastRemaining += mo.forecast
+    if (mo.actual != null) actualToDate += toCents(mo.actual)
+    else forecastRemaining += toCents(mo.forecast)
   }
-  const projectedTotal = actualToDate + forecastRemaining
+  const projectedTotal = fromCents(actualToDate + forecastRemaining)
+  actualToDate = fromCents(actualToDate)
+  forecastRemaining = fromCents(forecastRemaining)
   const now = new Date()
   const endOfYear = new Date(now.getFullYear(), 11, 31)
   const daysLeft = Math.max(Math.round((endOfYear - now) / 86400000), 0)
@@ -128,20 +148,27 @@ export function yearProjection(ctx, yearTxns = []) {
 // (actuals-to-date + forecast-for-the-rest).
 export function budgetVsActual(ctx, yearTxns = []) {
   const lineItems = ctx?.budgetLineItems ?? []
-  const planned = lineItems
-    .filter(li => !isIncomeGroup(li.budget_categories?.group))
-    .reduce((s, li) => s + Number(li.amount || 0), 0)
+  const plannedC = sumCents(
+    lineItems.filter(li => !isIncomeGroup(li.budget_categories?.group)),
+    li => toCents(li.amount)
+  )
   const { projectedTotal } = yearProjection(ctx, yearTxns)
-  const variance = projectedTotal - planned
-  const pct = planned > 0 ? (projectedTotal / planned) * 100 : null
-  return { planned, projected: projectedTotal, variance, pct, hasBudget: lineItems.length > 0 }
+  const projectedC = toCents(projectedTotal)
+  const pct = plannedC > 0 ? (projectedC / plannedC) * 100 : null
+  return {
+    planned: fromCents(plannedC),
+    projected: projectedTotal,
+    variance: fromCents(projectedC - plannedC),
+    pct,
+    hasBudget: lineItems.length > 0,
+  }
 }
 
 // Cash-flow spike: largest upcoming month from commitments in the current year.
 export function cashFlowSpike(ctx) {
   const commitments = (ctx?.commitments ?? []).filter(c => c.status === 'active')
   const year = ctx?.thisYear ?? new Date().getFullYear()
-  const monthly = aggregateCommitmentsForYear(commitments, year)
+  const monthly = aggregateCommitmentsForYear(commitments, year).map(toCents)
   const now = new Date()
   const startMonth = year === now.getFullYear() ? now.getMonth() : 0 // 0-indexed
   let spikeMonth = -1
@@ -152,8 +179,8 @@ export function cashFlowSpike(ctx) {
   return {
     hasData: spikeMonth >= 0 && spikeVal > 0,
     month: spikeMonth >= 0 ? MONTHS[spikeMonth] : null,
-    amount: spikeVal,
-    yearTotal: monthly.reduce((a, b) => a + b, 0),
+    amount: fromCents(spikeVal),
+    yearTotal: fromCents(sumCents(monthly)),
   }
 }
 
@@ -162,7 +189,7 @@ export function commitmentsSummary(ctx) {
   const commitments = ctx?.commitments ?? []
   const active = commitments.filter(c => c.status === 'active')
   const year = ctx?.thisYear ?? new Date().getFullYear()
-  const yearTotal = aggregateCommitmentsForYear(active, year).reduce((a, b) => a + b, 0)
+  const yearTotal = sumDollars(aggregateCommitmentsForYear(active, year))
   return { activeCount: active.length, totalCount: commitments.length, yearTotal }
 }
 
@@ -187,14 +214,14 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
   )
 
   // Income-category lines are tracked separately: they belong to the income
-  // projection, never to the expense plan.
+  // projection, never to the expense plan. Arrays hold integer cents.
   const budget = Array(12).fill(0)
   const budgetIncome = Array(12).fill(0)
   for (const li of lineItems) {
     const m = (li.month ?? 1) - 1
     if (m < 0 || m >= 12) continue
     const target = isIncomeGroup(li.budget_categories?.group) ? budgetIncome : budget
-    target[m] += Number(li.amount || 0)
+    target[m] += toCents(li.amount)
   }
 
   // Forecast is its own independent dataset (forecast_line_items), seeded from
@@ -209,7 +236,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
       const m = (fi.month ?? 1) - 1
       if (m < 0 || m >= 12) continue
       const target = isIncomeGroup(fi.budget_categories?.group) ? forecastIncome : forecast
-      target[m] += Number(fi.amount || 0)
+      target[m] += toCents(fi.amount)
     }
   }
 
@@ -222,12 +249,11 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
     const d = parseLocalDate(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     const m = d.getMonth()
-    actual[m] += Math.abs(amt)
+    actual[m] += Math.abs(toCents(amt))
     seen[m] = true
   }
 
-  const now = new Date()
-  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+  const currentMonth = currentMonthIndex(year)
 
   // Committed scenario deltas for future months only.
   // scenarioFilter: 'all' = apply all committed, 'baseline' = none, id string = only that one.
@@ -244,22 +270,25 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
       const m = (adj.month ?? 1) - 1
       if (m < 0 || m >= 12 || m <= currentMonth) continue
       const target = isIncomeAdjustment(adj) ? scenarioIncomeDeltas : scenarioDeltas
-      target[m] += Number(adj.delta_amount) || 0
+      target[m] += toCents(adj.delta_amount)
     }
   }
 
   const varThreshold = ctx?.varianceThreshold ?? 10   // percent, e.g. 10 means ±10%
   const varRatio = varThreshold / 100                  // decimal form, e.g. 0.10
 
+  const forecastWithScenarios = forecast.map((v, m) => v + scenarioDeltas[m])
+  const actualOrNull = actual.map((v, m) => (m > currentMonth || !seen[m] ? null : v))
+
   const months = MONTHS.map((label, m) => {
     const b = budget[m]
-    const f = forecast[m] + scenarioDeltas[m]   // forecast + committed scenario deltas
+    const f = forecastWithScenarios[m]   // forecast + committed scenario deltas
     const hasOverride = f !== b    // at least one category overridden
     const isPast = m < currentMonth
     const isCurrent = m === currentMonth
     const isFuture = m > currentMonth
-    const hasActual = !isFuture && seen[m]
-    const a = hasActual ? actual[m] : null
+    const a = actualOrNull[m]
+    const hasActual = a != null
     // For status comparison use forecast (not raw budget) so overridden months track correctly
     let status = 'none'
     if (f > 0 && a != null) {
@@ -267,27 +296,30 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
       else if (a < f * (1 - varRatio)) status = 'under'
       else status = 'on'
     }
-    return { month: m, label, budget: b, forecast: f, hasOverride, actual: a, hasActual, isPast, isCurrent, isFuture, status }
+    return {
+      month: m, label, budget: fromCents(b), forecast: fromCents(f), hasOverride,
+      actual: a == null ? null : fromCents(a), hasActual, isPast, isCurrent, isFuture, status,
+    }
   })
 
   // YTD roll-up against forecast (not raw budget) — drives the "on track" pill.
   let ytdBudget = 0
   let ytdForecast = 0
   let ytdActual = 0
-  for (const mo of months) {
-    if (mo.actual == null) continue
-    ytdBudget += mo.budget
-    ytdForecast += mo.forecast
-    ytdActual += mo.actual
+  for (let m = 0; m < 12; m++) {
+    if (actualOrNull[m] == null) continue
+    ytdBudget += budget[m]
+    ytdForecast += forecastWithScenarios[m]
+    ytdActual += actualOrNull[m]
   }
   const ytdPct = ytdForecast > 0 ? (ytdActual / ytdForecast) * 100 : null
 
   // Full-year projection: actuals for past/current months + forecast for the rest
   let fullYearProjected = 0
-  for (const mo of months) {
-    fullYearProjected += mo.actual != null ? mo.actual : (mo.forecast ?? mo.budget)
+  for (let m = 0; m < 12; m++) {
+    fullYearProjected += actualOrNull[m] != null ? actualOrNull[m] : forecastWithScenarios[m]
   }
-  const annualBudgetTotal = budget.reduce((s, v) => s + v, 0)
+  const annualBudgetTotal = sumCents(budget)
   const fullYearPct = annualBudgetTotal > 0 ? (fullYearProjected / annualBudgetTotal) * 100 : null
   const onTrack = (fullYearPct ?? ytdPct) == null ? true : (fullYearPct ?? ytdPct) <= 100 + varThreshold
 
@@ -298,13 +330,13 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
     hasBudget: lineItems.length > 0,
     hasForecastOverrides: forecastInitialized,
     hasActuals: seen.some(Boolean),
-    annualBudget: budget.reduce((a, b) => a + b, 0),
-    annualForecast: forecast.reduce((a, b) => a + b, 0),
-    ytdBudget,
-    ytdForecast,
-    ytdActual,
+    annualBudget: fromCents(annualBudgetTotal),
+    annualForecast: fromCents(sumCents(forecast)),
+    ytdBudget: fromCents(ytdBudget),
+    ytdForecast: fromCents(ytdForecast),
+    ytdActual: fromCents(ytdActual),
     ytdPct,
-    fullYearProjected,
+    fullYearProjected: fromCents(fullYearProjected),
     fullYearPct,
     onTrack,
     committedScenarioCount,
@@ -312,8 +344,8 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
     varThreshold,
     // Income-category plan lines, kept out of the expense series above so the
     // income projection can pick them up instead.
-    forecastIncome,
-    scenarioIncomeDeltas,
+    forecastIncome: forecastIncome.map(fromCents),
+    scenarioIncomeDeltas: scenarioIncomeDeltas.map(fromCents),
   }
 }
 
@@ -323,8 +355,8 @@ export function wealthSummary(ctx) {
   if (!w) return { hasData: false }
   return {
     hasData: true,
-    netWorth: Number(w.net_worth || 0),
-    investable: (Number(w.investment_balance) || 0) + (Number(w.retirement_balance) || 0),
+    netWorth: fromCents(toCents(w.net_worth)),
+    investable: fromCents(toCents(w.investment_balance) + toCents(w.retirement_balance)),
     date: w.snapshot_date,
   }
 }
@@ -340,29 +372,36 @@ export function scenarioImpact(ctx) {
 
   // cashEffect, not the raw delta: an adjustment on an Income category improves
   // the position, every other category worsens it.
+  const effectCents = (a) => toCents(cashEffect(a))
   const committedSummaries = committed.map(s => {
     const adjs = s.adjustments ?? []
-    const netTotal = adjs.reduce((sum, a) => sum + cashEffect(a), 0)
+    const netCents = sumCents(adjs, effectCents)
     const monthCount = new Set(adjs.map(a => `${a.year}-${a.month}`)).size
-    const monthlyAvg = monthCount > 0 ? netTotal / monthCount : 0
-    return { name: s.name, netTotal, monthlyAvg }
+    // Average: float division of exact cents, left unrounded.
+    const avgCents = monthCount > 0 ? netCents / monthCount : 0
+    return { name: s.name, netTotal: fromCents(netCents), monthlyAvg: avgCents / 100 }
   })
-
-  const modeledSummaries = modeled.map(s => {
+  const avgCentsList = committed.map(s => {
     const adjs = s.adjustments ?? []
-    const netTotal = adjs.reduce((sum, a) => sum + cashEffect(a), 0)
-    return { name: s.name, netTotal }
+    const monthCount = new Set(adjs.map(a => `${a.year}-${a.month}`)).size
+    return monthCount > 0 ? sumCents(adjs, effectCents) / monthCount : 0
   })
 
-  const committedMonthlyNet = committedSummaries.reduce((s, c) => s + c.monthlyAvg, 0)
+  const modeledSummaries = modeled.map(s => ({
+    name: s.name,
+    netTotal: fromCents(sumCents(s.adjustments ?? [], effectCents)),
+  }))
+
+  // Sum of per-scenario averages (statistics, not a money total): float, unrounded.
+  const committedMonthlyNet = avgCentsList.reduce((s, v) => s + v, 0) / 100
 
   // Annual figure = this year's actual cash effects, not monthlyAvg × 12 —
   // extrapolation would turn a one-off bonus into a phantom recurring salary.
   const thisYear = ctx?.thisYear ?? new Date().getFullYear()
-  const committedAnnualNet = committed.reduce((s, sc) =>
-    s + (sc.adjustments ?? [])
-      .filter(a => Number(a.year) === thisYear)
-      .reduce((t, a) => t + cashEffect(a), 0), 0)
+  const committedAnnualNet = fromCents(sumCents(
+    committed.flatMap(sc => (sc.adjustments ?? []).filter(a => Number(a.year) === thisYear)),
+    effectCents
+  ))
 
   return {
     hasData: true,
@@ -374,6 +413,44 @@ export function scenarioImpact(ctx) {
   }
 }
 
+// Post-tax monthly income forecast from the salary profile, in integer cents
+// (null when no salary is set). Base is salary/12 with the annual bonus added in
+// bonus_month only; subtracts estimated taxes (the effective rate on salary +
+// bonus), benefits, and 401k contributions. Annual amounts are split across the
+// 12 months with allocateCents so they sum exactly to the annual figure.
+function monthlyIncomeForecastCents(ctx) {
+  const profile = ctx?.profile
+  const salary = toCents(profile?.annual_income)
+  if (salary <= 0) return null
+  const annualBonus = toCents(profile?.annual_bonus)
+  const rawBonusMonth = profile?.bonus_month  // stored 1-12; null if no bonus month
+  const bonusMonthIdx = rawBonusMonth != null ? Number(rawBonusMonth) - 1 : null  // 0-11
+
+  const totalGross = salary + annualBonus
+  const benefitsAmount = toCents(profile?.benefits_amount)
+  const benefitsPct = Number(profile?.benefits_pct) || 0
+  const annualBenefits = benefitsAmount > 0 ? benefitsAmount
+    : (benefitsPct > 0 ? mulCents(totalGross, benefitsPct / 100) : 0)
+  const monthlyBenefits = allocateCents(annualBenefits, 12)
+
+  const totalTax = toCents(ctx?.incomeEstimate?.totalTax)
+  const effectiveTaxRate = totalGross > 0 ? totalTax / totalGross : 0
+
+  const four01kPct = Number(profile?.four01k_pct) || 0
+  const four01kOnBonus = profile?.four01k_on_bonus ?? false
+  const monthlySalary = allocateCents(salary, 12)
+  const monthly401kSalary = allocateCents(mulCents(salary, four01kPct / 100), 12)
+  const bonus401k = mulCents(annualBonus, four01kPct / 100)
+
+  return Array.from({ length: 12 }, (_, m) => {
+    const isBonus = bonusMonthIdx !== null && m === bonusMonthIdx
+    const grossMonth = monthlySalary[m] + (isBonus ? annualBonus : 0)
+    const taxMonth = mulCents(grossMonth, effectiveTaxRate)
+    const month401k = monthly401kSalary[m] + (isBonus && four01kOnBonus ? bonus401k : 0)
+    return Math.max(0, grossMonth - taxMonth - month401k - monthlyBenefits[m])
+  })
+}
+
 // Income vs. expenses — YTD from full-year transactions plus a full-year
 // actual-so-far + forecast-for-the-rest projection. When a salary profile exists,
 // future months use post-tax income forecast (salary/12 + bonus in bonus_month,
@@ -383,21 +460,28 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
   )
   const now = new Date()
+  const year = ctx?.thisYear ?? now.getFullYear()
 
+  // "To date" = every month up to and including the in-progress one, so a charge
+  // dated later this month counts here exactly as it does in the monthly series
+  // and fullYearActualExpenses. Later months stay forecast-only.
+  const currentMonth = currentMonthIndex(year, now)
   const ytd = yearTxns.filter(t => {
     if (excluded.has(t.category)) return false
     const d = parseLocalDate(t.date)
-    return !isNaN(d.getTime()) && d <= now
+    return !isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() <= currentMonth
   })
 
-  const ytdIncome = ytd.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0)
-  const ytdExpenses = ytd.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
-  const ytdNet = ytdIncome - ytdExpenses
-  const savingsRate = ytdIncome > 0 ? (ytdNet / ytdIncome) * 100 : null
+  const incomeCents = (list) => sumCents(list.filter(t => Number(t.amount) > 0), t => toCents(t.amount))
+  const expenseCents = (list) => sumCents(list.filter(t => Number(t.amount) < 0), t => Math.abs(toCents(t.amount)))
+
+  const ytdIncomeC = incomeCents(ytd)
+  const ytdExpensesC = expenseCents(ytd)
+  const ytdNetC = ytdIncomeC - ytdExpensesC
+  const savingsRate = ytdIncomeC > 0 ? (ytdNetC / ytdIncomeC) * 100 : null
 
   // ── Expense forecast (budget/override per month) ─────────────────────────────
   const mbva = monthlyBudgetVsActual(ctx, yearTxns)
-  const currentMonth = mbva.currentMonth
   let fullYearActualExpenses = 0
   let fullYearForecastExpenses = 0
   // Planned income for the same months the expense side is forecasting — months
@@ -406,15 +490,15 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   let forecastIncomeLines = 0
   mbva.months.forEach((mo, m) => {
     if (mo.actual != null) {
-      fullYearActualExpenses += mo.actual
+      fullYearActualExpenses += toCents(mo.actual)
     } else {
-      fullYearForecastExpenses += (mo.forecast ?? 0)
-      forecastIncomeLines += (mbva.forecastIncome?.[m] ?? 0) + (mbva.scenarioIncomeDeltas?.[m] ?? 0)
+      fullYearForecastExpenses += toCents(mo.forecast ?? 0)
+      forecastIncomeLines += toCents(mbva.forecastIncome?.[m] ?? 0) + toCents(mbva.scenarioIncomeDeltas?.[m] ?? 0)
     }
   })
   const fullYearExpenses = fullYearActualExpenses + fullYearForecastExpenses
 
-  // Month-by-month actuals from transactions
+  // Month-by-month actuals from transactions (cents)
   const incomeByMonth = Array(12).fill(0)
   const expensesByMonth = Array(12).fill(0)
   for (const t of yearTxns) {
@@ -422,46 +506,12 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     if (amt === 0) continue
     if (excluded.has(t.category)) continue
     const d = parseLocalDate(t.date)
-    if (Number.isNaN(d.getTime()) || d.getFullYear() !== now.getFullYear()) continue
-    if (amt > 0) incomeByMonth[d.getMonth()] += amt
-    else expensesByMonth[d.getMonth()] += Math.abs(amt)
+    if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
+    if (amt > 0) incomeByMonth[d.getMonth()] += toCents(amt)
+    else expensesByMonth[d.getMonth()] += Math.abs(toCents(amt))
   }
 
-  // ── Post-tax income forecast from profile ────────────────────────────────────
-  // Uses salary/12 as base; adds annual bonus in bonus_month only; subtracts
-  // estimated taxes (pro-rated at the effective rate on salary + bonus), benefits,
-  // and 401k contributions. Falls back to transaction-average when no salary set.
-  const profile = ctx?.profile
-  const salary = Number(profile?.annual_income) || 0
-  const annualBonus = Number(profile?.annual_bonus) || 0
-  const rawBonusMonth = profile?.bonus_month  // stored 1-12; null if no bonus month
-  const bonusMonthIdx = rawBonusMonth != null ? Number(rawBonusMonth) - 1 : null  // 0-11
-
-  let monthlyIncomeForecast = null
-  if (salary > 0) {
-    const totalGross = salary + annualBonus
-    const benefitsAmount = Number(profile?.benefits_amount) || 0
-    const benefitsPct = Number(profile?.benefits_pct) || 0
-    const annualBenefits = benefitsAmount > 0 ? benefitsAmount
-      : (benefitsPct > 0 ? totalGross * benefitsPct / 100 : 0)
-    const monthlyBenefits = annualBenefits / 12
-
-    const est = ctx?.incomeEstimate
-    const totalTax = Number(est?.totalTax) || 0
-    const effectiveTaxRate = totalGross > 0 ? totalTax / totalGross : 0
-
-    const four01kPct = Number(profile?.four01k_pct) || 0
-    const four01kOnBonus = profile?.four01k_on_bonus ?? false
-    const monthly401kSalary = salary / 12 * four01kPct / 100
-
-    monthlyIncomeForecast = Array(12).fill(0).map((_, m) => {
-      const isBonus = bonusMonthIdx !== null && m === bonusMonthIdx
-      const grossMonth = salary / 12 + (isBonus ? annualBonus : 0)
-      const taxMonth = grossMonth * effectiveTaxRate
-      const month401k = monthly401kSalary + (isBonus && four01kOnBonus ? annualBonus * four01kPct / 100 : 0)
-      return Math.max(0, grossMonth - taxMonth - month401k - monthlyBenefits)
-    })
-  }
+  const monthlyIncomeForecast = monthlyIncomeForecastCents(ctx)
 
   // ── Full-year income: actuals for elapsed months, forecast for the rest ──────
   let fullYearIncome = 0
@@ -471,11 +521,8 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     }
   } else {
     // Fallback: rolling average of completed months
-    let completedIncome = 0
-    for (let m = 0; m < currentMonth; m++) completedIncome += incomeByMonth[m]
-    const avgMonthlyIncome = currentMonth > 0 ? completedIncome / currentMonth
-      : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
-    fullYearIncome = ytdIncome + avgMonthlyIncome * Math.max(11 - currentMonth, 0)
+    const avgIncomeCents = averageOfCompleted(incomeByMonth, currentMonth)
+    fullYearIncome = ytdIncomeC + mulCents(avgIncomeCents, Math.max(11 - currentMonth, 0))
   }
 
   fullYearIncome += forecastIncomeLines
@@ -483,12 +530,9 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const fullYearNet = fullYearIncome - fullYearExpenses
   const fullYearSavingsRate = fullYearIncome > 0 ? (fullYearNet / fullYearIncome) * 100 : null
 
-  // Rolling averages for display
-  let completedIncome = 0
-  for (let m = 0; m < currentMonth; m++) completedIncome += incomeByMonth[m]
-  const avgMonthlyIncome = currentMonth > 0 ? completedIncome / currentMonth
-    : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
-  const avgMonthlyExpenses = currentMonth > 0 ? ytdExpenses / currentMonth : ytdExpenses
+  // Rolling averages for display (statistics: exact cents / n, not rounded)
+  const avgMonthlyIncome = averageOfCompleted(incomeByMonth, currentMonth) / 100
+  const avgMonthlyExpenses = averageOfCompleted(expensesByMonth, currentMonth) / 100
 
   // Expense forecast per month (budget/override for future months)
   const monthlyExpenseForecast = mbva.months.map(mo => mo.forecast ?? 0)
@@ -498,44 +542,55 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   for (const t of ytd) {
     if (Number(t.amount) < 0) {
       const grp = t.group || t.category || 'Other'
-      ytdSpendByGroup[grp] = (ytdSpendByGroup[grp] || 0) + Math.abs(Number(t.amount))
+      ytdSpendByGroup[grp] = (ytdSpendByGroup[grp] || 0) + Math.abs(toCents(t.amount))
     }
   }
   const topGroupEntry = Object.entries(ytdSpendByGroup).sort((a, b) => b[1] - a[1])[0]
-  const topYtdGroup = topGroupEntry ? { name: topGroupEntry[0], amount: topGroupEntry[1] } : null
+  const topYtdGroup = topGroupEntry ? { name: topGroupEntry[0], amount: fromCents(topGroupEntry[1]) } : null
 
   // Prior-year full savings rate
   let priorYearSavingsRate = null
   if (priorYearTxns.length > 0) {
     const pyFiltered = priorYearTxns.filter(t => !excluded.has(t.category))
-    const pyIncome = pyFiltered.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0)
-    const pyExpenses = pyFiltered.filter(t => Number(t.amount) < 0).reduce((s, t) => s + Math.abs(Number(t.amount)), 0)
-    const pyNet = pyIncome - pyExpenses
+    const pyIncome = incomeCents(pyFiltered)
+    const pyNet = pyIncome - expenseCents(pyFiltered)
     priorYearSavingsRate = pyIncome > 0 ? (pyNet / pyIncome) * 100 : null
   }
 
   return {
     hasData: ytd.length > 0,
-    ytdIncome,
-    ytdExpenses,
-    ytdNet,
+    ytdIncome: fromCents(ytdIncomeC),
+    ytdExpenses: fromCents(ytdExpensesC),
+    ytdNet: fromCents(ytdNetC),
     savingsRate,
     avgMonthlyIncome,
     avgMonthlyExpenses,
-    fullYearIncome,
-    fullYearExpenses,
-    fullYearActualExpenses,
-    fullYearForecastExpenses,
-    fullYearNet,
+    fullYearIncome: fromCents(fullYearIncome),
+    fullYearExpenses: fromCents(fullYearExpenses),
+    fullYearActualExpenses: fromCents(fullYearActualExpenses),
+    fullYearForecastExpenses: fromCents(fullYearForecastExpenses),
+    fullYearNet: fromCents(fullYearNet),
     fullYearSavingsRate,
     topYtdGroup,
     priorYearSavingsRate,
-    monthlyIncome: incomeByMonth,
-    monthlyExpenses: expensesByMonth,
-    monthlyIncomeForecast,
+    monthlyIncome: incomeByMonth.map(fromCents),
+    monthlyExpenses: expensesByMonth.map(fromCents),
+    monthlyIncomeForecast: monthlyIncomeForecast ? monthlyIncomeForecast.map(fromCents) : null,
     monthlyExpenseForecast,
     currentMonth,
   }
+}
+
+// Average per completed month (m < currentMonth), in (fractional) cents. In
+// January there is no completed month yet, so the in-progress month stands in;
+// a future year (currentMonth -1) has no basis, so 0.
+function averageOfCompleted(byMonthCents, currentMonth) {
+  if (currentMonth > 0) {
+    let sum = 0
+    for (let m = 0; m < currentMonth; m++) sum += byMonthCents[m]
+    return sum / currentMonth
+  }
+  return currentMonth === 0 ? byMonthCents[0] : 0
 }
 
 // Category-level breakdown for a single spend group — used by the drill-down modal.
@@ -547,8 +602,7 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
   const categories = ctx?.categories ?? []
   const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
 
-  const now = new Date()
-  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+  const currentMonth = currentMonthIndex(year)
 
   // category_id (UUID) → category name string
   const catIdToName = {}
@@ -556,7 +610,7 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
     if (c.id && c.category) catIdToName[c.id] = c.category
   }
 
-  // Budget per category per month (only for the target group)
+  // Budget per category per month (only for the target group), in cents
   const budgetByCatMonth = {}
   for (const li of lineItems) {
     const g = li.budget_categories?.group || 'Uncategorized'
@@ -566,7 +620,7 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
     const m = (li.month ?? 1) - 1
     if (m < 0 || m > 11) continue
     if (!budgetByCatMonth[catName]) budgetByCatMonth[catName] = Array(12).fill(0)
-    budgetByCatMonth[catName][m] += Number(li.amount || 0)
+    budgetByCatMonth[catName][m] += toCents(li.amount)
   }
 
   // Forecast from the independent forecast lines for this group; falls back to the
@@ -582,7 +636,7 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
       const m = (fi.month ?? 1) - 1
       if (m < 0 || m > 11) continue
       if (!forecastByCatMonth[catName]) forecastByCatMonth[catName] = Array(12).fill(0)
-      forecastByCatMonth[catName][m] += Number(fi.amount || 0)
+      forecastByCatMonth[catName][m] += toCents(fi.amount)
     }
   } else {
     for (const cat of Object.keys(budgetByCatMonth)) {
@@ -601,12 +655,12 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     const m = d.getMonth()
     if (!actualByCatMonth[t.category]) actualByCatMonth[t.category] = Array(12).fill(0)
-    actualByCatMonth[t.category][m] += Math.abs(amt)
+    actualByCatMonth[t.category][m] += Math.abs(toCents(amt))
   }
 
   const allCats = new Set([...Object.keys(budgetByCatMonth), ...Object.keys(actualByCatMonth)])
 
-  const rows = []
+  const rowsC = []
   for (const cat of allCats) {
     const budgetMonths = budgetByCatMonth[cat] || Array(12).fill(0)
     const forecastMonths = forecastByCatMonth[cat] || budgetMonths
@@ -622,24 +676,39 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
       }
     }
     const projected = actual + forecast
-    if (fullBudget < 1 && projected < 1) continue
-    rows.push({ category: cat, actual, forecast, projected, fullBudget, ytdBudget,
+    if (fullBudget < 100 && projected < 100) continue
+    rowsC.push({ category: cat, actual, forecast, projected, fullBudget, ytdBudget,
       monthlyActual: [...actualMonths], monthlyBudget: [...budgetMonths] })
   }
 
-  rows.sort((a, b) => b.projected - a.projected)
-  const max = rows.reduce((m, r) => Math.max(m, r.projected, r.fullBudget), 0) || 1
+  rowsC.sort((a, b) => b.projected - a.projected)
 
   const groupMonthlyActual = Array(12).fill(0)
   const groupMonthlyBudget = Array(12).fill(0)
-  for (const r of rows) {
+  for (const r of rowsC) {
     for (let m = 0; m < 12; m++) {
       groupMonthlyActual[m] += r.monthlyActual[m] || 0
       groupMonthlyBudget[m] += r.monthlyBudget[m] || 0
     }
   }
 
-  return { rows, max, currentMonth, groupMonthlyActual, groupMonthlyBudget }
+  const rows = rowsC.map(r => ({
+    category: r.category,
+    actual: fromCents(r.actual),
+    forecast: fromCents(r.forecast),
+    projected: fromCents(r.projected),
+    fullBudget: fromCents(r.fullBudget),
+    ytdBudget: fromCents(r.ytdBudget),
+    monthlyActual: r.monthlyActual.map(fromCents),
+    monthlyBudget: r.monthlyBudget.map(fromCents),
+  }))
+  const max = rows.reduce((m, r) => Math.max(m, r.projected, r.fullBudget), 0) || 1
+
+  return {
+    rows, max, currentMonth,
+    groupMonthlyActual: groupMonthlyActual.map(fromCents),
+    groupMonthlyBudget: groupMonthlyBudget.map(fromCents),
+  }
 }
 
 // Full-year net cash flow: income minus expenses for actual months; forecast
@@ -648,12 +717,15 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
 export function cashFlowForecast(ctx, yearTxns = []) {
   const now = new Date()
   const year = ctx?.thisYear ?? now.getFullYear()
-  const currentMonthIdx = now.getFullYear() === year ? now.getMonth() : 12
+  // First forecast month: the in-progress month is itself forecast, so a past
+  // year has none (12) and a future year starts in January (0).
+  const cmi = currentMonthIndex(year, now)
+  const currentMonthIdx = year === now.getFullYear() ? cmi : cmi + 1
   const commitments = (ctx?.commitments ?? []).filter(c => c.status === 'active')
   const lineItems = ctx?.budgetLineItems ?? []
   const excluded = new Set((ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category))
 
-  // Non-Monthly budget items indexed by "budgetYear-month"
+  // Non-Monthly budget items indexed by "budgetYear-month" (amounts in cents)
   const budgetByYM = {}
   for (const li of lineItems) {
     const cat = li.budget_categories || {}
@@ -661,10 +733,10 @@ export function cashFlowForecast(ctx, yearTxns = []) {
     if (li.commitment_id) continue
     const key = `${li.budget_year}-${li.month}`
     if (!budgetByYM[key]) budgetByYM[key] = []
-    budgetByYM[key].push({ name: li.label || cat.category || 'Budget item', amount: Number(li.amount) || 0 })
+    budgetByYM[key].push({ name: li.label || cat.category || 'Budget item', amount: toCents(li.amount) })
   }
 
-  // Net cash flow per actual month (income − expenses, sign preserved)
+  // Net cash flow per actual month (income − expenses, sign preserved), in cents
   const netByMonth = Array(12).fill(0)
   for (const t of yearTxns) {
     const amt = Number(t.amount) || 0
@@ -672,67 +744,52 @@ export function cashFlowForecast(ctx, yearTxns = []) {
     if (excluded.has(t.category)) continue
     const d = parseLocalDate(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
-    netByMonth[d.getMonth()] += amt
+    netByMonth[d.getMonth()] += toCents(amt)
   }
 
-  // Income forecast per month from salary profile (mirrors incomeVsExpenses logic)
-  const profile = ctx?.profile
-  const salary = Number(profile?.annual_income) || 0
-  const annualBonus = Number(profile?.annual_bonus) || 0
-  const bonusMonthIdx = profile?.bonus_month != null ? Number(profile.bonus_month) - 1 : null
-  let monthlyIncomeForecast = null
-  if (salary > 0) {
-    const totalGross = salary + annualBonus
-    const benefitsAmount = Number(profile?.benefits_amount) || 0
-    const benefitsPct = Number(profile?.benefits_pct) || 0
-    const annualBenefits = benefitsAmount > 0 ? benefitsAmount : (benefitsPct > 0 ? totalGross * benefitsPct / 100 : 0)
-    const monthlyBenefits = annualBenefits / 12
-    const totalTax = Number(ctx?.incomeEstimate?.totalTax) || 0
-    const effectiveTaxRate = totalGross > 0 ? totalTax / totalGross : 0
-    const four01kPct = Number(profile?.four01k_pct) || 0
-    const four01kOnBonus = profile?.four01k_on_bonus ?? false
-    const monthly401kSalary = salary / 12 * four01kPct / 100
-    monthlyIncomeForecast = Array(12).fill(0).map((_, m) => {
-      const isBonus = bonusMonthIdx !== null && m === bonusMonthIdx
-      const grossMonth = salary / 12 + (isBonus ? annualBonus : 0)
-      const taxMonth = grossMonth * effectiveTaxRate
-      const month401k = monthly401kSalary + (isBonus && four01kOnBonus ? annualBonus * four01kPct / 100 : 0)
-      return Math.max(0, grossMonth - taxMonth - month401k - monthlyBenefits)
-    })
-  }
+  // Income forecast per month from salary profile (same model as incomeVsExpenses)
+  const monthlyIncomeForecast = monthlyIncomeForecastCents(ctx)
 
   // Full Jan–Dec: actual months use transaction net; forecast months use income − outflows
+  const totalsC = []
   const data = MONTHS.map((label, i) => {
     const m = i + 1
     if (i < currentMonthIdx) {
-      return { year, month: m, label, isActual: true, commitmentDemand: 0, budgetDemand: 0, forecastIncome: 0, total: netByMonth[i], sources: [] }
+      totalsC.push(netByMonth[i])
+      return { year, month: m, label, isActual: true, commitmentDemand: 0, budgetDemand: 0, forecastIncome: 0, total: fromCents(netByMonth[i]), sources: [] }
     }
     const sources = []
     let commitmentDemand = 0
     for (const c of commitments) {
       const demand = commitmentMonthlyDemand(c, year, m)
       if (demand > 0) {
-        sources.push({ name: c.name || 'Commitment', kind: 'commitment', amount: demand })
-        commitmentDemand += demand
+        const demandC = toCents(demand)
+        sources.push({ name: c.name || 'Commitment', kind: 'commitment', amount: fromCents(demandC) })
+        commitmentDemand += demandC
       }
     }
     let budgetDemand = 0
     for (const b of budgetByYM[`${year}-${m}`] || []) {
-      sources.push({ name: b.name, kind: 'budget', amount: b.amount })
+      sources.push({ name: b.name, kind: 'budget', amount: fromCents(b.amount) })
       budgetDemand += b.amount
     }
     const forecastIncome = monthlyIncomeForecast ? monthlyIncomeForecast[i] : 0
     const total = forecastIncome - (commitmentDemand + budgetDemand)
-    return { year, month: m, label, isActual: false, commitmentDemand, budgetDemand, forecastIncome, total, sources }
+    totalsC.push(total)
+    return {
+      year, month: m, label, isActual: false,
+      commitmentDemand: fromCents(commitmentDemand), budgetDemand: fromCents(budgetDemand),
+      forecastIncome: fromCents(forecastIncome), total: fromCents(total), sources,
+    }
   })
 
   const max = data.reduce((m, d) => Math.max(m, Math.abs(d.total)), 0) || 1
   const halves = [
-    { label: 'H1 · JAN–JUN', total: data.slice(0, 6).reduce((s, d) => s + d.total, 0) },
-    { label: 'H2 · JUL–DEC', total: data.slice(6).reduce((s, d) => s + d.total, 0) },
+    { label: 'H1 · JAN–JUN', total: fromCents(sumCents(totalsC.slice(0, 6))) },
+    { label: 'H2 · JUL–DEC', total: fromCents(sumCents(totalsC.slice(6))) },
   ]
-  const actualNet = data.filter(d => d.isActual).reduce((s, d) => s + d.total, 0)
-  const forecastNet = data.filter(d => !d.isActual).reduce((s, d) => s + d.total, 0)
+  const actualNet = fromCents(sumCents(totalsC.filter((_, i) => data[i].isActual)))
+  const forecastNet = fromCents(sumCents(totalsC.filter((_, i) => !data[i].isActual)))
 
   return { data, max, hasData: data.some(d => d.total !== 0), halves, todayIdx: currentMonthIdx, actualNet, forecastNet }
 }

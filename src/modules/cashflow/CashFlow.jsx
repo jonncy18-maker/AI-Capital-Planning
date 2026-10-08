@@ -5,6 +5,8 @@ import { getExcludedCategoryNames } from '../../lib/db/budgetCategories.js'
 import { getCommitments } from '../../lib/db/commitments.js'
 import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
 import { commitmentMonthlyDemand, describeCostStructure } from '../../lib/commitments/schedule.js'
+import { monthlyTotals, categoryTotals } from '../../lib/cashflow/monthlyTotals.js'
+import { sumDollars, toCents, fromCents } from '../../lib/money.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -58,24 +60,14 @@ function aggregateByMonth(transactions, monthRange, excluded) {
       const d = parseLocalDate(t.date)
       return d.getFullYear() === year && d.getMonth() + 1 === month
     })
-    const totalOut = rows.filter(r => r.amount < 0).reduce((s, r) => s + r.amount, 0)
-    const totalIn = rows.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0)
-    const net = totalIn + totalOut // totalOut is negative
-
-    // Group by category
-    const catMap = {}
-    rows.forEach(r => {
-      const key = r.category || 'Uncategorized'
-      if (!catMap[key]) catMap[key] = { category: key, group: r.group, total: 0 }
-      catMap[key].total += r.amount
-    })
-    const byCategory = Object.values(catMap).sort((a, b) => a.total - b.total) // most negative first
+    const { totalOut, totalIn, net } = monthlyTotals(rows)
+    const byCategory = categoryTotals(rows) // most negative first
 
     return {
       year,
       month,
       label,
-      totalOut: Math.abs(totalOut),
+      totalOut,
       totalIn,
       net,
       byCategory,
@@ -128,7 +120,7 @@ function aggregatePlannedByMonth(commitments, lineItems, monthRange) {
     }
 
     sources.sort((a, b) => b.amount - a.amount) // largest first
-    const totalOut = sources.reduce((s, r) => s + r.amount, 0)
+    const totalOut = sumDollars(sources, r => r.amount)
 
     return { year, month, label, totalOut, sources }
   })
@@ -140,9 +132,9 @@ function buildQuarters(monthData) {
   const quarters = []
   for (let q = 0; q < 4; q++) {
     const slice = monthData.slice(q * 3, q * 3 + 3)
-    const totalOut = slice.reduce((s, m) => s + m.totalOut, 0)
-    const totalIn = slice.reduce((s, m) => s + (m.totalIn || 0), 0)
-    const net = totalIn - totalOut
+    const totalOut = sumDollars(slice, m => m.totalOut)
+    const totalIn = sumDollars(slice, m => m.totalIn || 0)
+    const net = fromCents(toCents(totalIn) - toCents(totalOut))
     const label = `Q${q + 1}`
     const range = slice.length > 0
       ? `${slice[0].label.split(' ')[0]} – ${slice[slice.length - 1].label}`

@@ -18,8 +18,11 @@ export default function ModuleHeader({ icon, title, subtitle, actions, mobile, m
         flexDirection: mobile ? 'column' : 'row',
         justifyContent: 'space-between',
         gap: 14,
+        // Desktop only: when the actions don't fit beside the title they drop
+        // onto their own line instead of squeezing the title.
+        ...(mobile ? null : { flexWrap: 'wrap' }),
       }}>
-        <div style={{ minWidth: 0 }}>
+        <div style={mobile ? { minWidth: 0 } : { flex: '1 1 320px', minWidth: 0, textAlign: 'left' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {icon && <span style={headerStyles.icon(hue)}>{icon}</span>}
             <h1 style={headerStyles.title(mobile)}>{title}</h1>
@@ -31,7 +34,9 @@ export default function ModuleHeader({ icon, title, subtitle, actions, mobile, m
           )}
         </div>
         {actions && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+          <div style={mobile
+            ? { display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }
+            : { display: 'flex', alignItems: 'center', gap: 10, flex: '0 1 auto', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto', maxWidth: '100%' }}>
             {actions}
           </div>
         )}

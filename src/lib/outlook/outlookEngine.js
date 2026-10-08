@@ -1,5 +1,6 @@
 import { commitmentYearSchedule } from '../commitments/schedule.js'
 import { parseLocalDate } from '../dates.js'
+import { toCents, fromCents, mulCents, sumCents } from '../money.js'
 
 // Pure 5-year outlook math. No fetches: callers pass already-loaded inputs.
 //
@@ -44,14 +45,10 @@ export function resolveBaseYear({ nextYear, curYear, hasNextBudget, hasCurBudget
   return null
 }
 
-function num(v) {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
-}
-
-function sumBy(list, pred, pick) {
+// Sum of the picked dollar amounts for matching items, in integer cents.
+function sumByCents(list, pred, pick) {
   let s = 0
-  for (const item of list) if (pred(item)) s += num(pick(item))
+  for (const item of list) if (pred(item)) s += toCents(pick(item))
   return s
 }
 
@@ -68,11 +65,11 @@ export function groupRate(assumptions, group) {
 // excluding commitment-linked line items (commitments are computed separately).
 export function computeGroupBases({ baseLineItems = [], categories = [] }) {
   const catById = new Map(categories.map((c) => [c.id, c]))
-  const bases = {}
+  const baseCents = {}
   // Seed every spendable group so groups with no base-year spend still get a
   // row (and can take events/adjustments/rates).
   for (const c of categories) {
-    if (c.group && !isExcludedFromSpend(c.group, c)) bases[c.group] ??= 0
+    if (c.group && !isExcludedFromSpend(c.group, c)) baseCents[c.group] ??= 0
   }
   for (const li of baseLineItems) {
     if (li.commitment_id != null) continue
@@ -80,8 +77,10 @@ export function computeGroupBases({ baseLineItems = [], categories = [] }) {
     const group = li.budget_categories?.group ?? cat?.group
     if (!group) continue
     if (isExcludedFromSpend(group, cat ?? li.budget_categories)) continue
-    bases[group] = (bases[group] ?? 0) + num(li.amount)
+    baseCents[group] = (baseCents[group] ?? 0) + toCents(li.amount)
   }
+  const bases = {}
+  for (const g of Object.keys(baseCents)) bases[g] = fromCents(baseCents[g])
   return bases
 }
 
@@ -142,24 +141,34 @@ export function buildOutlook({
   const groups = groupNames.map((name) => {
     const { rate, isOverride } = groupRate(assumptions, name)
     const cells = years.map((year) => {
-      const compounded = bases[name] * Math.pow(1 + rate, year - baseYear)
-      const committedAdj = sumBy(
+      const compounded = mulCents(toCents(bases[name]), Math.pow(1 + rate, year - baseYear))
+      const committedAdj = sumByCents(
         adjustments,
         (a) => a.year === year && a.group_name === name,
         (a) => a.delta_amount
       )
-      const scenarioDelta = sumBy(
+      const scenarioDelta = sumByCents(
         selectedAdjustments,
         (a) => a.year === year && a.group_name === name,
         (a) => a.delta_amount
       )
-      return { amount: compounded + committedAdj, committedAdj, scenarioDelta }
+      return {
+        amount: fromCents(compounded + committedAdj),
+        committedAdj: fromCents(committedAdj),
+        scenarioDelta: fromCents(scenarioDelta),
+      }
     })
     return { name, base: bases[name], rate, isOverride, cells }
   })
 
+  // Each commitment's year is rounded to a cent once (not per month), so a
+  // 'total' kind spread over a span that doesn't divide evenly keeps its cents.
   const commitmentTotals = years.map((year) =>
-    commitments.reduce((s, c) => s + commitmentYearSchedule(c, year).reduce((a, b) => a + b, 0), 0)
+    fromCents(
+      sumCents(commitments, (c) =>
+        toCents(commitmentYearSchedule(c, year).reduce((a, b) => a + b, 0))
+      )
+    )
   )
 
   const commitmentEnds = years.map((year) =>
@@ -170,7 +179,7 @@ export function buildOutlook({
 
   const eventsByYear = years.map((year) => {
     const items = events.filter((e) => e.year === year)
-    return { total: items.reduce((s, e) => s + num(e.amount), 0), items }
+    return { total: fromCents(sumCents(items, (e) => toCents(e.amount))), items }
   })
 
   const takeHome = Number(takeHomeBase)
@@ -179,12 +188,14 @@ export function buildOutlook({
     ? Number(assumptions.income_growth_rate)
     : DEFAULT_INCOME_GROWTH
   const income = years.map((year) =>
-    hasIncome ? takeHome * Math.pow(1 + growth, year - baseYear) : null
+    hasIncome ? fromCents(mulCents(toCents(takeHome), Math.pow(1 + growth, year - baseYear))) : null
   )
 
-  const groupTotals = years.map((_, i) => groups.reduce((s, g) => s + g.cells[i].amount, 0))
+  const groupTotals = years.map((_, i) =>
+    fromCents(sumCents(groups, (g) => toCents(g.cells[i].amount)))
+  )
   const scenarioDeltaTotals = years.map((_, i) =>
-    groups.reduce((s, g) => s + g.cells[i].scenarioDelta, 0)
+    fromCents(sumCents(groups, (g) => toCents(g.cells[i].scenarioDelta)))
   )
 
   // The group rows already contain committed adjustments, so net savings only
@@ -192,10 +203,15 @@ export function buildOutlook({
   const netSavings = years.map((_, i) =>
     income[i] == null
       ? null
-      : income[i] - groupTotals[i] - commitmentTotals[i] - eventsByYear[i].total
+      : fromCents(
+          toCents(income[i]) -
+            toCents(groupTotals[i]) -
+            toCents(commitmentTotals[i]) -
+            toCents(eventsByYear[i].total)
+        )
   )
   const netSavingsScenario = netSavings.map((n, i) =>
-    n == null ? null : n - scenarioDeltaTotals[i]
+    n == null ? null : fromCents(toCents(n) - toCents(scenarioDeltaTotals[i]))
   )
 
   return {
@@ -236,7 +252,7 @@ export function outlookContributionMaps(outlook, curYear) {
   outlook.columns.forEach((c, i) => {
     const y = c.year - curYear
     withCommitments[y] = net[c.year]
-    withoutCommitments[y] = net[c.year] + outlook.commitments[i]
+    withoutCommitments[y] = fromCents(toCents(net[c.year]) + toCents(outlook.commitments[i]))
   })
   return { withCommitments, withoutCommitments }
 }
@@ -261,29 +277,28 @@ export function computeCushion({ netSavings = [], startCash = null, floor = 2500
   if (netSavings.some((n) => n == null || n === '' || !Number.isFinite(Number(n)))) {
     return { incomplete: true, reason: 'income', floor }
   }
-  const cushion = []
-  let running = Number(startCash)
+  let running = toCents(startCash)
+  const cushionCents = []
   for (let i = 0; i < netSavings.length; i++) {
-    running += Number(netSavings[i])
-    cushion.push(running)
+    running += toCents(netSavings[i])
+    cushionCents.push(running)
   }
-  let minCushion = cushion.length ? cushion[0] : running
+  let minCents = cushionCents.length ? cushionCents[0] : running
   let minIndex = 0
-  for (let i = 0; i < cushion.length; i++) {
-    if (cushion[i] < minCushion) {
-      minCushion = cushion[i]
+  for (let i = 0; i < cushionCents.length; i++) {
+    if (cushionCents[i] < minCents) {
+      minCents = cushionCents[i]
       minIndex = i
     }
   }
-  const buffer = minCushion - floor
-  const isPass = minCushion >= floor
+  const floorCents = toCents(floor)
   return {
-    cushion,
-    minCushion,
+    cushion: cushionCents.map(fromCents),
+    minCushion: fromCents(minCents),
     minIndex,
-    buffer,
-    isPass,
+    buffer: fromCents(minCents - floorCents),
+    isPass: minCents >= floorCents,
     floor,
-    startCash: Number(startCash),
+    startCash: fromCents(toCents(startCash)),
   }
 }

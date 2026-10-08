@@ -1,3 +1,5 @@
+import { toCents, fromCents, sumCents } from '../money.js'
+
 // Display helpers for a scenario's outlook adjustments (year · group rows where
 // a positive delta means more spending).
 
@@ -11,22 +13,22 @@ export function summarizeOutlookAdjustments(adjustments) {
   if (!rows.length) return null
   const byYearMap = new Map()
   for (const a of rows) {
-    const delta = Number(a.delta_amount)
-    if (!byYearMap.has(a.year)) byYearMap.set(a.year, { year: a.year, items: [], sum: 0 })
+    const delta = fromCents(toCents(a.delta_amount))
+    if (!byYearMap.has(a.year)) byYearMap.set(a.year, { year: a.year, items: [], sumCents: 0 })
     const y = byYearMap.get(a.year)
     y.items.push({ id: a.id, year: a.year, group_name: a.group_name, label: a.label || '', delta })
-    y.sum += delta
+    y.sumCents += toCents(delta)
   }
   const byYear = [...byYearMap.values()]
     .sort((a, b) => a.year - b.year)
     .map((y) => ({
       year: y.year,
-      net: -y.sum,
+      net: fromCents(-y.sumCents),
       items: y.items.sort((a, b) => a.group_name.localeCompare(b.group_name)),
     }))
   return {
     count: rows.length,
-    total: rows.reduce((s, a) => s + Number(a.delta_amount), 0),
+    total: fromCents(sumCents(rows, (a) => toCents(a.delta_amount))),
     minYear: byYear[0].year,
     maxYear: byYear[byYear.length - 1].year,
     byYear,
