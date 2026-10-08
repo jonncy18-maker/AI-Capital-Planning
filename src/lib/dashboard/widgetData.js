@@ -10,6 +10,15 @@ import { cashEffect, isIncomeAdjustment } from '../scenarios/scenarioUtils.js'
 // so income lines have to be filtered out or a bonus lands as an expense.
 const isIncomeGroup = (g) => (g || '').trim().toLowerCase() === 'income'
 
+// Index of the in-progress month for a year: 11 for a past year (every month is
+// actual), -1 for a future year (every month is forecast), else today's month.
+function currentMonthIndex(year, now = new Date()) {
+  const cy = now.getFullYear()
+  if (year < cy) return 11
+  if (year > cy) return -1
+  return now.getMonth()
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 // Spend by group for the full year: actual (YTD, real transactions) + forecast
@@ -24,8 +33,7 @@ export function spendByGroupYear(ctx, yearTxns = [], topN = 8) {
   const categories = ctx?.categories ?? []
   const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
 
-  const now = new Date()
-  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+  const currentMonth = currentMonthIndex(year)
 
   // category_id → group (from line items first, then the category table).
   const catGroup = {}
@@ -226,8 +234,7 @@ export function monthlyBudgetVsActual(ctx, yearTransactions = [], scenarioFilter
     seen[m] = true
   }
 
-  const now = new Date()
-  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+  const currentMonth = currentMonthIndex(year)
 
   // Committed scenario deltas for future months only.
   // scenarioFilter: 'all' = apply all committed, 'baseline' = none, id string = only that one.
@@ -383,11 +390,16 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     (ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
   )
   const now = new Date()
+  const year = ctx?.thisYear ?? now.getFullYear()
 
+  // "To date" = every month up to and including the in-progress one, so a charge
+  // dated later this month counts here exactly as it does in the monthly series
+  // and fullYearActualExpenses. Later months stay forecast-only.
+  const currentMonth = currentMonthIndex(year, now)
   const ytd = yearTxns.filter(t => {
     if (excluded.has(t.category)) return false
     const d = parseLocalDate(t.date)
-    return !isNaN(d.getTime()) && d <= now
+    return !isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() <= currentMonth
   })
 
   const ytdIncome = ytd.filter(t => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0)
@@ -397,7 +409,6 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
 
   // ── Expense forecast (budget/override per month) ─────────────────────────────
   const mbva = monthlyBudgetVsActual(ctx, yearTxns)
-  const currentMonth = mbva.currentMonth
   let fullYearActualExpenses = 0
   let fullYearForecastExpenses = 0
   // Planned income for the same months the expense side is forecasting — months
@@ -422,7 +433,7 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     if (amt === 0) continue
     if (excluded.has(t.category)) continue
     const d = parseLocalDate(t.date)
-    if (Number.isNaN(d.getTime()) || d.getFullYear() !== now.getFullYear()) continue
+    if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     if (amt > 0) incomeByMonth[d.getMonth()] += amt
     else expensesByMonth[d.getMonth()] += Math.abs(amt)
   }
@@ -471,10 +482,7 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
     }
   } else {
     // Fallback: rolling average of completed months
-    let completedIncome = 0
-    for (let m = 0; m < currentMonth; m++) completedIncome += incomeByMonth[m]
-    const avgMonthlyIncome = currentMonth > 0 ? completedIncome / currentMonth
-      : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
+    const avgMonthlyIncome = averageOfCompleted(incomeByMonth, currentMonth)
     fullYearIncome = ytdIncome + avgMonthlyIncome * Math.max(11 - currentMonth, 0)
   }
 
@@ -484,11 +492,8 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   const fullYearSavingsRate = fullYearIncome > 0 ? (fullYearNet / fullYearIncome) * 100 : null
 
   // Rolling averages for display
-  let completedIncome = 0
-  for (let m = 0; m < currentMonth; m++) completedIncome += incomeByMonth[m]
-  const avgMonthlyIncome = currentMonth > 0 ? completedIncome / currentMonth
-    : (currentMonth === 0 ? incomeByMonth[0] : ytdIncome)
-  const avgMonthlyExpenses = currentMonth > 0 ? ytdExpenses / currentMonth : ytdExpenses
+  const avgMonthlyIncome = averageOfCompleted(incomeByMonth, currentMonth)
+  const avgMonthlyExpenses = averageOfCompleted(expensesByMonth, currentMonth)
 
   // Expense forecast per month (budget/override for future months)
   const monthlyExpenseForecast = mbva.months.map(mo => mo.forecast ?? 0)
@@ -538,6 +543,18 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   }
 }
 
+// Average per completed month (m < currentMonth). In January there is no
+// completed month yet, so the in-progress month stands in; a future year
+// (currentMonth -1) has no basis, so 0.
+function averageOfCompleted(byMonth, currentMonth) {
+  if (currentMonth > 0) {
+    let sum = 0
+    for (let m = 0; m < currentMonth; m++) sum += byMonth[m]
+    return sum / currentMonth
+  }
+  return currentMonth === 0 ? byMonth[0] : 0
+}
+
 // Category-level breakdown for a single spend group — used by the drill-down modal.
 // Mirrors the logic of spendByGroupYear but scoped to one group and at category granularity.
 export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
@@ -547,8 +564,7 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
   const categories = ctx?.categories ?? []
   const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
 
-  const now = new Date()
-  const currentMonth = year === now.getFullYear() ? now.getMonth() : 11
+  const currentMonth = currentMonthIndex(year)
 
   // category_id (UUID) → category name string
   const catIdToName = {}
@@ -648,7 +664,10 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
 export function cashFlowForecast(ctx, yearTxns = []) {
   const now = new Date()
   const year = ctx?.thisYear ?? now.getFullYear()
-  const currentMonthIdx = now.getFullYear() === year ? now.getMonth() : 12
+  // First forecast month: the in-progress month is itself forecast, so a past
+  // year has none (12) and a future year starts in January (0).
+  const cmi = currentMonthIndex(year, now)
+  const currentMonthIdx = year === now.getFullYear() ? cmi : cmi + 1
   const commitments = (ctx?.commitments ?? []).filter(c => c.status === 'active')
   const lineItems = ctx?.budgetLineItems ?? []
   const excluded = new Set((ctx?.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category))

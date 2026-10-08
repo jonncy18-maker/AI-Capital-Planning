@@ -63,11 +63,10 @@ describe('incomeVsExpenses', () => {
       expect(r.topYtdGroup).toEqual({ name: 'Housing', amount: 6000 })
     })
 
-    it('averages expenses over elapsed months', () => {
-      // BUG?: numerator includes the in-progress June (6200) but the divisor is
-      // currentMonth (5), so this overstates the average. avgMonthlyIncome uses
-      // completed months on both sides; expenses do not.
-      expect(r.avgMonthlyExpenses).toBe(1240)
+    it('averages expenses over completed months only, like income', () => {
+      // Jan-May: 1000 + 1000 + 1200 + 1000 + 1000 = 5200; / 5 = 1040.
+      // The in-progress June (1000) is excluded from numerator and divisor.
+      expect(r.avgMonthlyExpenses).toBe(1040)
     })
 
     it('has no prior-year rate without prior transactions', () => {
@@ -174,14 +173,93 @@ describe('incomeVsExpenses', () => {
     expect(r.topYtdGroup).toEqual({ name: 'Coffee', amount: 30 })
   })
 
-  it('ytd excludes future-dated transactions but the monthly series and projection keep them', () => {
-    // BUG?: a June 20 charge (after "today", June 15) is dropped from ytdExpenses
-    // yet counted in monthlyExpenses and in fullYearActualExpenses via the
-    // month-level actuals, so the headline numbers disagree.
-    const r = incomeVsExpenses(ctxB(), [...TXNS_B, txn('2026-06-20', 'Dining', -999)])
-    expect(r.ytdExpenses).toBe(6200)
-    expect(r.monthlyExpenses[5]).toBe(1999)
-    expect(r.fullYearActualExpenses).toBe(7199)
+  describe('transactions dated after today', () => {
+    it('counts a later-this-month charge in ytd, the monthly series and the actuals alike', () => {
+      // A June 20 charge (today is June 15): 6200 + 999 = 7199 everywhere.
+      const r = incomeVsExpenses(ctxB(), [...TXNS_B, txn('2026-06-20', 'Dining', -999)])
+      expect(r.ytdExpenses).toBe(7199)
+      expect(r.monthlyExpenses[5]).toBe(1999)
+      expect(r.fullYearActualExpenses).toBe(7199)
+    })
+
+    it('treats income the same way: a June 20 deposit is in ytdIncome and the June series', () => {
+      // ytdIncome 18000 + 500 = 18500; fallback projection 18500 + 3000 avg x 6 remaining = 36500
+      const r = incomeVsExpenses(ctxB(), [...TXNS_B, txn('2026-06-20', 'Salary', 500)])
+      expect(r.ytdIncome).toBe(18500)
+      expect(r.monthlyIncome[5]).toBe(3500)
+      expect(r.fullYearIncome).toBe(36500)
+    })
+
+    it('keeps a charge in a later month out of ytd, since that month is forecast-only', () => {
+      // July 5 rent: in the monthly series (1000) but not ytd (still 6200) and not
+      // fullYearActualExpenses, where July stays on its 1000 forecast.
+      const r = incomeVsExpenses(ctxB(), [...TXNS_B, txn('2026-07-05', 'Rent', -1000)])
+      expect(r.ytdExpenses).toBe(6200)
+      expect(r.monthlyExpenses[6]).toBe(1000)
+      expect(r.fullYearActualExpenses).toBe(6200)
+      expect(r.fullYearExpenses).toBe(12200)
+    })
+  })
+
+  describe('other years', () => {
+    const salaryProfile = { annual_income: 120000, annual_bonus: 12000, bonus_month: 3, benefits_amount: 6000, four01k_pct: 5, four01k_on_bonus: true }
+    const est = { totalTax: 33000 }
+    const ctx2027 = (extra = {}) => ({
+      thisYear: 2027, categories: CATEGORIES, budgetLineItems: lines('Rent', 1000, { year: 2027 }),
+      forecastLineItems: [], scenarios: [], commitments: [], ...extra,
+    })
+
+    it('future year: everything is forecast, nothing is non-finite (no profile)', () => {
+      const ctx = ctx2027({ scenarios: [{ id: 's', state: 'committed', adjustments: [adj(2027, 3, 500, 'Rent', 'Housing')] }] })
+      const r = incomeVsExpenses(ctx, [])
+      expect(r.currentMonth).toBe(-1)
+      expect(r.hasData).toBe(false)
+      expect(r.ytdIncome).toBe(0)
+      expect(r.ytdExpenses).toBe(0)
+      expect(r.avgMonthlyIncome).toBe(0)
+      expect(r.avgMonthlyExpenses).toBe(0)
+      expect(r.fullYearActualExpenses).toBe(0)
+      // 12 x 1000 plan + the committed +500 in March
+      expect(r.fullYearForecastExpenses).toBe(12500)
+      expect(r.fullYearExpenses).toBe(12500)
+      expect(r.fullYearIncome).toBe(0)
+      expect(r.fullYearSavingsRate).toBeNull()
+      expect(r.savingsRate).toBeNull()
+    })
+
+    it('future year with a salary profile: 11 x 6500 + 14900 bonus month = 86400', () => {
+      const r = incomeVsExpenses(ctx2027({ profile: salaryProfile, incomeEstimate: est }), [])
+      expect(r.fullYearIncome).toBeCloseTo(86400)
+      expect(r.fullYearNet).toBeCloseTo(86400 - 12000)
+      expect(r.fullYearSavingsRate).toBeCloseTo(((86400 - 12000) / 86400) * 100)
+    })
+
+    it('future year ignores any transactions already dated in it for the "to date" figures', () => {
+      const r = incomeVsExpenses(ctx2027(), [txn('2027-02-01', 'Rent', -1000), txn('2027-02-02', 'Salary', 2000)])
+      expect(r.ytdExpenses).toBe(0)
+      expect(r.ytdIncome).toBe(0)
+      expect(r.fullYearIncome).toBe(0)
+      expect(Number.isFinite(r.fullYearExpenses)).toBe(true)
+      expect(r.monthlyExpenses[1]).toBe(1000)
+    })
+
+    it('past year: all months are actual, averaged over Jan-Nov, with no extrapolation', () => {
+      const ctx = {
+        thisYear: 2025, categories: CATEGORIES, budgetLineItems: lines('Rent', 1000, { year: 2025 }),
+        forecastLineItems: [], scenarios: [], commitments: [],
+      }
+      const txns = [txn('2025-01-05', 'Salary', 2000), txn('2025-03-05', 'Salary', 2000),
+        txn('2025-01-06', 'Rent', -1000), txn('2025-02-06', 'Rent', -1000)]
+      const r = incomeVsExpenses(ctx, txns)
+      expect(r.currentMonth).toBe(11)
+      expect(r.ytdIncome).toBe(4000)
+      expect(r.ytdExpenses).toBe(2000)
+      expect(r.monthlyIncome[0]).toBe(2000) // bucketed by the ctx year, not the clock's
+      expect(r.avgMonthlyIncome).toBeCloseTo(4000 / 11)
+      expect(r.avgMonthlyExpenses).toBeCloseTo(2000 / 11)
+      expect(r.fullYearIncome).toBe(4000) // no remaining months to project
+      expect(r.fullYearActualExpenses).toBe(2000)
+    })
   })
 
   describe('in January (current month index 0)', () => {
@@ -321,12 +399,53 @@ describe('cashFlowForecast', () => {
     expect(r.forecastNet).toBe(0)
   })
 
-  it('shows no forecast at all for a future year', () => {
-    // BUG?: any year other than the current one gets todayIdx 12, so a 2027
-    // view marks every month "actual" and drops its commitments.
+  describe('future year', () => {
     const c = [{ name: 'Car', status: 'active', cost_structure: { kind: 'monthly', amount: 300 } }]
-    const r = cashFlowForecast({ thisYear: 2027, commitments: c }, [])
-    expect(r.todayIdx).toBe(12)
-    expect(r.data.every(d => d.isActual && d.total === 0)).toBe(true)
+    const vacation = { month: 7, amount: 250, label: 'Vacation', budget_year: 2027, budget_categories: { category: 'Travel', type: 'Non-Monthly' } }
+
+    it('is entirely forecast and carries commitment demand: 12 x 300 = 3600 out', () => {
+      const r = cashFlowForecast({ thisYear: 2027, commitments: c }, [])
+      expect(r.todayIdx).toBe(0)
+      expect(r.data.every(d => !d.isActual && d.commitmentDemand === 300 && d.total === -300)).toBe(true)
+      expect(r.actualNet).toBe(0)
+      expect(r.forecastNet).toBe(-3600)
+      expect(r.halves.map(h => h.total)).toEqual([-1800, -1800])
+    })
+
+    it("adds that year's Non-Monthly budget items and ignores transactions already dated in it", () => {
+      const r = cashFlowForecast({ thisYear: 2027, commitments: c, budgetLineItems: [vacation] }, [txn('2027-02-01', 'Salary', 9999)])
+      expect(r.data[6]).toMatchObject({ isActual: false, commitmentDemand: 300, budgetDemand: 250, total: -550 })
+      expect(r.data[1].total).toBe(-300)
+      expect(r.forecastNet).toBe(-3850)
+    })
+
+    it('adds salary-profile income: 12 months forecast, none actual', () => {
+      const profile = { annual_income: 120000, annual_bonus: 12000, bonus_month: 3, benefits_amount: 6000, four01k_pct: 5, four01k_on_bonus: true }
+      const r = cashFlowForecast({ thisYear: 2027, commitments: c, profile, incomeEstimate: { totalTax: 33000 } }, [])
+      expect(r.data[0].total).toBeCloseTo(6200) // 6500 - 300
+      expect(r.data[2].total).toBeCloseTo(14600) // 14900 - 300
+      expect(r.forecastNet).toBeCloseTo(86400 - 3600)
+    })
   })
+})
+
+describe('non-finite guard across years', () => {
+  const finite = (v, path = '') => {
+    if (typeof v === 'number') expect(Number.isFinite(v), path).toBe(true)
+    else if (Array.isArray(v)) v.forEach((x, i) => finite(x, `${path}[${i}]`))
+    else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => finite(x, `${path}.${k}`))
+  }
+  const profile = { annual_income: 120000, annual_bonus: 12000, bonus_month: 3, benefits_amount: 6000, four01k_pct: 5, four01k_on_bonus: true }
+
+  for (const year of [2025, 2026, 2027]) {
+    for (const withProfile of [false, true]) {
+      it(`incomeVsExpenses and cashFlowForecast return finite numbers for ${year}${withProfile ? ' with a profile' : ''}`, () => {
+        const ctx = ctxB({ thisYear: year, ...(withProfile ? { profile, incomeEstimate: { totalTax: 33000 } } : {}) })
+        const txns = [txn(`${year}-01-05`, 'Salary', 3000), txn(`${year}-01-06`, 'Rent', -1000)]
+        finite(incomeVsExpenses(ctx, txns), 'ive')
+        finite(incomeVsExpenses(ctx, []), 'ive-empty')
+        finite(cashFlowForecast(ctx, txns), 'cff')
+      })
+    }
+  }
 })
