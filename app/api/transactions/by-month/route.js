@@ -22,7 +22,7 @@ export async function GET(request) {
   try {
     const sql = getNeonSql()
     const rows = await sql`
-      SELECT date, amount, "group", category, merchant
+      SELECT date, amount, "group", category, merchant, account
       FROM transactions
       WHERE user_id = ${userId}
         AND date >= ${from}::date

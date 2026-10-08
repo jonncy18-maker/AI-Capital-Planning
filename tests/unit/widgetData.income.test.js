@@ -282,7 +282,8 @@ describe('incomeVsExpenses', () => {
 describe('cashFlowForecast', () => {
   // Elapsed months (Jan-May) use transaction net:
   //   Jan 3000-1000=2000, Feb 2000 (transfer ignored), Mar 3000-1000-200=1800, Apr 2000, May 2000 -> 9800
-  // Forecast months (Jun-Dec) use forecast income minus commitments and Non-Monthly budget items.
+  // Forecast months (Jun-Dec) use forecast income minus the full monthly budget (Rent 1000/mo plus
+  // Non-Monthly items) and any commitment that has no budget line of its own.
   const commitments = [
     { name: 'Car', status: 'active', cost_structure: { kind: 'monthly', amount: 300 } },
     { name: 'Insurance', status: 'active', cost_structure: { kind: 'annual', amount: 1200, month: 9 } },
@@ -295,8 +296,6 @@ describe('cashFlowForecast', () => {
     ...lines('Rent', 1000), // Fixed: not a cash-flow spike item
     nonMonthly(7, 250, 'Vacation'),
     nonMonthly(7, 40, undefined), // no label -> category name
-    nonMonthly(7, 5000, 'Linked', { commitment_id: 'c1' }), // owned by a commitment: skipped
-    nonMonthly(7, 7777, 'Last year', { budget_year: 2025 }), // other budget year
   ]
   const ctx = (extra = {}) => ctxB({ commitments, budgetLineItems, ...extra })
 
@@ -311,38 +310,44 @@ describe('cashFlowForecast', () => {
     })
 
     it('treats the current month as forecast and ignores its transactions', () => {
-      // June has 3000 income / 1000 rent in TXNS_B but is forecast, so only Car 300 hits it.
-      expect(r.data[5]).toMatchObject({ isActual: false, commitmentDemand: 300, budgetDemand: 0, forecastIncome: 0, total: -300 })
+      // June has 3000 income / 1000 rent in TXNS_B but is forecast: budget Rent 1000 + Car 300 go out.
+      expect(r.data[5]).toMatchObject({ isActual: false, commitmentDemand: 300, budgetDemand: 0, forecastIncome: 0, total: -1300 })
     })
 
     it('adds commitment demand and Non-Monthly budget items to forecast months', () => {
-      // Jul: Car 300 + Vacation 250 + unlabeled Travel 40 = 590 out
-      expect(r.data[6]).toMatchObject({ commitmentDemand: 300, budgetDemand: 290, total: -590 })
+      // Jul: Rent 1000 + Car 300 + Vacation 250 + unlabeled Travel 40 = 1590 out
+      expect(r.data[6]).toMatchObject({ commitmentDemand: 300, budgetDemand: 290, total: -1590 })
       expect(r.data[6].sources).toEqual([
         { name: 'Car', kind: 'commitment', amount: 300 },
         { name: 'Vacation', kind: 'budget', amount: 250 },
         { name: 'Travel', kind: 'budget', amount: 40 },
       ])
-      // Sep: Car 300 + Insurance 1200
+      // Sep: Rent 1000 + Car 300 + Insurance 1200
       expect(r.data[8].commitmentDemand).toBe(1500)
-      expect(r.data[8].total).toBe(-1500)
+      expect(r.data[8].total).toBe(-2500)
     })
 
-    it('skips completed commitments, linked budget lines and other budget years', () => {
+    it('skips completed commitments', () => {
       const names = r.data.flatMap(d => d.sources.map(s => s.name))
       expect(names).not.toContain('Paid off')
-      expect(names).not.toContain('Linked')
-      expect(names).not.toContain('Last year')
     })
 
-    it('totals halves and nets: forecast = -(7 x 300 + 290 + 1200) = -3590', () => {
-      // Jun -300, Jul -590, Aug -300, Sep -1500, Oct -300, Nov -300, Dec -300
-      expect(r.forecastNet).toBe(-3590)
+    it('does not double count a commitment that has its own budget line', () => {
+      const linked = [{ id: 'c1', name: 'Car', status: 'active', cost_structure: { kind: 'monthly', amount: 300 } }]
+      const items = [...lines('Rent', 1000), { month: 7, amount: 300, label: 'Car', budget_year: 2026, commitment_id: 'c1', budget_categories: { category: 'Car', type: 'Non-Monthly' } }]
+      const rr = cashFlowForecast(ctxB({ commitments: linked, budgetLineItems: items }), TXNS_B)
+      expect(rr.data[6].total).toBe(-1300) // Rent 1000 + Car line 300, structure demand not added again
+      expect(rr.data[7].total).toBe(-1000) // Aug: a linked commitment's budget lines are the source, so no structure demand
+    })
+
+    it('totals halves and nets: forecast = -(7 x 1000 + 7 x 300 + 290 + 1200) = -10590', () => {
+      // Jun -1300, Jul -1590, Aug -1300, Sep -2500, Oct -1300, Nov -1300, Dec -1300
+      expect(r.forecastNet).toBe(-10590)
       expect(r.halves).toEqual([
-        { label: 'H1 · JAN–JUN', total: 9500 }, // 9800 - 300
-        { label: 'H2 · JUL–DEC', total: -3290 }, // -590-300-1500-300-300-300
+        { label: 'H1 · JAN–JUN', total: 8500 }, // 9800 - 1300
+        { label: 'H2 · JUL–DEC', total: -9290 }, // -1590-1300-2500-1300-1300-1300
       ])
-      expect(r.max).toBe(2000)
+      expect(r.max).toBe(2500)
       expect(r.hasData).toBe(true)
     })
   })
@@ -353,9 +358,9 @@ describe('cashFlowForecast', () => {
 
     it('adds post-tax income (6500/mo) to forecast months', () => {
       expect(r.data[5].forecastIncome).toBeCloseTo(6500)
-      expect(r.data[5].total).toBeCloseTo(6200) // 6500 - 300
-      expect(r.data[6].total).toBeCloseTo(5910) // 6500 - 590
-      expect(r.data[8].total).toBeCloseTo(5000) // 6500 - 1500
+      expect(r.data[5].total).toBeCloseTo(5200) // 6500 - 1300
+      expect(r.data[6].total).toBeCloseTo(4910) // 6500 - 1590
+      expect(r.data[8].total).toBeCloseTo(4000) // 6500 - 2500
     })
 
     it('leaves elapsed months on actual net', () => {
@@ -363,9 +368,19 @@ describe('cashFlowForecast', () => {
       expect(r.data[2].forecastIncome).toBe(0)
     })
 
-    it('sums to forecast net 7 x 6500 - 3590 = 41910', () => {
-      expect(r.forecastNet).toBeCloseTo(41910)
+    it('sums to forecast net 7 x 6500 - 10590 = 34910', () => {
+      expect(r.forecastNet).toBeCloseTo(34910)
     })
+  })
+
+  it('reconciles with incomeVsExpenses on the full-year net', () => {
+    const profile = { annual_income: 120000, annual_bonus: 12000, bonus_month: 3, benefits_amount: 6000, four01k_pct: 5, four01k_on_bonus: true }
+    // Future year: every month is forecast in both widgets (they differ only on how
+    // the in-progress month is treated, so a current-year fixture would not isolate the forecast).
+    const c = ctxB({ thisYear: 2027, profile, incomeEstimate: { totalTax: 33000 }, commitments: [], budgetLineItems: lines('Rent', 1000).map(l => ({ ...l, budget_year: 2027 })) })
+    const cf = cashFlowForecast(c, [])
+    expect(cf.actualNet + cf.forecastNet).toBeCloseTo(incomeVsExpenses(c, []).fullYearNet)
+    expect(cf.forecastNet).toBeCloseTo(86400 - 12000) // 12 months salary incl. bonus, less 12 x Rent
   })
 
   it('stops a commitment after its end date', () => {
