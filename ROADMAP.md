@@ -1004,6 +1004,9 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 ~~**Pin the AI model version**~~ — decided against (2026-07-08): `resolveModel()` (`app/api/ai-chat/route.js`) is kept as-is, resolving to the newest release within a named family (`sonnet`/`haiku`). The family is the intentional pin; the exact version is meant to float so the app always runs on Anthropic's latest release for that family.
 ~~**Verify income forecast math**~~ — confirmed good (2026-07-08). ✓
 
+**Priority #1 (added 2026-10-08): make Income vs. Expenses treat the in-progress month the same way Cash Flow does**
+`incomeVsExpenses` (`src/lib/dashboard/widgetData.js`, ~line 520) takes the in-progress month's income as actuals only (`m <= currentMonth`), so it reads $0 until the first transaction lands, while the same month's expenses use the full forecast when no spend has been seen yet (and partial actuals once some has). The Cash Flow widget treats the in-progress month as a full forecast on both sides. Result: full-year net and savings rate run low by roughly one month of income early in each month (reproduced on a copy of live data: $3.5k vs $9.7k, a difference of exactly one month's income). Fix: one rule for the in-progress month in both widgets (forecast income and forecast expenses), then re-check that full-year net matches between the two. This raises the headline savings rate by about one month of income right now, so confirm the number with John before shipping. Start from the reconciliation test in `tests/unit/widgetData.income.test.js` and extend it to a current-year fixture.
+
 **Reliability (current priority — see `ARCHITECTURE.md` §10 hardening backlog)**
 1. **Integer cents, remaining stages** — stages 1–2 shipped (see session log). Left: CSV parsers (`monarchParser.js`, `budgetParser.js`) parse to cents; replace the ~18 duplicated formatters with `formatMoney`; `pointsEngine.js` `buildSpendMaps` still float-sums.
 
