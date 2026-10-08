@@ -1,4 +1,5 @@
 import { parseLocalDate } from '../dates.js'
+import { toCents, fromCents, allocateCents } from '../money.js'
 
 // Shared commitment → cash-demand scheduling.
 //
@@ -45,7 +46,11 @@ export function commitmentMonthlyDemand(commitment, year, month) {
       const end = commitment.end_date ? parseLocalDate(commitment.end_date) : null
       if (!start || !end) return 0
       const span = Math.max(monthsBetween(start, end), 1)
-      return (Number(cs.amount ?? 0) || 0) / span
+      // Index of this month inside the span decides who gets the extra cents,
+      // so the monthly parts sum exactly to the total.
+      const idx = (year - start.getFullYear()) * 12 + (month - 1 - start.getMonth())
+      const parts = allocateCents(toCents(Number(cs.amount ?? 0) || 0), span)
+      return fromCents(parts[idx] ?? 0)
     }
     case 'custom': {
       const sched = cs.schedule || {}
@@ -74,29 +79,29 @@ export function commitmentTotalProjected(commitment) {
 
   // Without both dates the span is unknown; commitmentMonthlyDemand returns 0
   // for every month in that case, so the total must agree.
-  if (kind === 'total') return start && end ? Number(cs.amount ?? 0) || 0 : 0
+  if (kind === 'total') return start && end ? fromCents(toCents(Number(cs.amount ?? 0) || 0)) : 0
 
   if (!start) return 0
   // Open-ended commitments: project a rolling 12 months as a representative
   // cost. Bounded ones count every calendar month from start through end.
   const monthCount = Math.min(end ? monthsBetween(start, end) : 12, 600)
-  let total = 0
+  let total = 0 // cents
   const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
   for (let i = 0; i < monthCount; i++) {
-    total += commitmentMonthlyDemand(commitment, cursor.getFullYear(), cursor.getMonth() + 1)
+    total += toCents(commitmentMonthlyDemand(commitment, cursor.getFullYear(), cursor.getMonth() + 1))
     cursor.setMonth(cursor.getMonth() + 1)
   }
-  return total
+  return fromCents(total)
 }
 
 // Aggregate a set of commitments into a 12-month cash demand array for a year.
 export function aggregateCommitmentsForYear(commitments, year) {
-  const totals = Array(12).fill(0)
+  const totals = Array(12).fill(0) // cents
   for (const c of commitments) {
     const sched = commitmentYearSchedule(c, year)
-    for (let m = 0; m < 12; m++) totals[m] += sched[m]
+    for (let m = 0; m < 12; m++) totals[m] += toCents(sched[m])
   }
-  return totals
+  return totals.map(fromCents)
 }
 
 // Human-readable summary of a commitment's cadence.
