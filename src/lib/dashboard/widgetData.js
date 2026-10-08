@@ -749,6 +749,12 @@ export function cashFlowForecast(ctx, yearTxns = []) {
 
   // Income forecast per month from salary profile (same model as incomeVsExpenses)
   const monthlyIncomeForecast = monthlyIncomeForecastCents(ctx)
+  // Commitments with budget lines are already inside the monthly forecast;
+  // only unlinked ones need their own demand added to the outflow.
+  const linkedCommitmentIds = new Set(lineItems.filter(li => li.commitment_id).map(li => li.commitment_id))
+  // Forecast outflow and planned income lines come from the same source as
+  // incomeVsExpenses, so both widgets reconcile on the full-year net.
+  const mbva = monthlyBudgetVsActual(ctx, yearTxns)
 
   // Full Jan–Dec: actual months use transaction net; forecast months use income − outflows
   const totalsC = []
@@ -760,12 +766,14 @@ export function cashFlowForecast(ctx, yearTxns = []) {
     }
     const sources = []
     let commitmentDemand = 0
+    let unlinkedCommitmentDemand = 0
     for (const c of commitments) {
       const demand = commitmentMonthlyDemand(c, year, m)
       if (demand > 0) {
         const demandC = toCents(demand)
         sources.push({ name: c.name || 'Commitment', kind: 'commitment', amount: fromCents(demandC) })
         commitmentDemand += demandC
+        if (!linkedCommitmentIds.has(c.id)) unlinkedCommitmentDemand += demandC
       }
     }
     let budgetDemand = 0
@@ -773,12 +781,17 @@ export function cashFlowForecast(ctx, yearTxns = []) {
       sources.push({ name: b.name, kind: 'budget', amount: fromCents(b.amount) })
       budgetDemand += b.amount
     }
-    const forecastIncome = monthlyIncomeForecast ? monthlyIncomeForecast[i] : 0
-    const total = forecastIncome - (commitmentDemand + budgetDemand)
+    const forecastIncome = (monthlyIncomeForecast ? monthlyIncomeForecast[i] : 0)
+      + toCents(mbva.forecastIncome?.[i] ?? 0) + toCents(mbva.scenarioIncomeDeltas?.[i] ?? 0)
+    // Total planned spend for the month (regular + non-monthly + linked commitments);
+    // commitment/budget demand above is the itemised part shown in tooltips.
+    const outflow = toCents(mbva.months[i].forecast ?? 0) + unlinkedCommitmentDemand
+    const total = forecastIncome - outflow
     totalsC.push(total)
     return {
       year, month: m, label, isActual: false,
       commitmentDemand: fromCents(commitmentDemand), budgetDemand: fromCents(budgetDemand),
+      forecastOutflow: fromCents(outflow),
       forecastIncome: fromCents(forecastIncome), total: fromCents(total), sources,
     }
   })
