@@ -1,3 +1,5 @@
+import { parseCentsStrict } from '../money.js'
+
 // Currency stays in integer cents until the final aggregate is returned.
 export const MAX_ITEM_AMOUNT = 10000000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -10,11 +12,12 @@ export function isBillAmountItemsEligible(bill) {
 }
 
 export function amountToCents(amount) {
-  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > MAX_ITEM_AMOUNT
-    || Math.abs(amount * 100 - Math.round(amount * 100)) > 0.000001) {
+  const cents = typeof amount === 'number' && amount >= 0 && amount <= MAX_ITEM_AMOUNT
+    ? parseCentsStrict(amount) : null
+  if (cents === null) {
     throw new Error('Item amount must be between $0 and $10,000,000 with at most two decimal places.')
   }
-  return Math.round(amount * 100)
+  return cents
 }
 
 export function normalizeBillAmountItems(items) {

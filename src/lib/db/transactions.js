@@ -80,5 +80,8 @@ export async function getExpenseActualsByCategories(_userId, categories, startYe
 export async function getTransactionsByMonth(_userId, fromDate, toDate) {
   const params = new URLSearchParams({ from: fromDate, to: toDate })
   const res = await apiFetch(`/api/transactions/by-month?${params}`, { credentials: 'include' })
-  return parseJsonOrThrow(res)
+  const rows = await parseJsonOrThrow(res)
+  // Neon returns numeric columns as strings; normalize once at this boundary
+  // so every consumer sees a number (display and stored data are unchanged).
+  return Array.isArray(rows) ? rows.map(r => ({ ...r, amount: Number(r.amount) })) : rows
 }
