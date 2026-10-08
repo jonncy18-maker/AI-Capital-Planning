@@ -231,17 +231,94 @@ describe('monthlyBudgetVsActual', () => {
     expect(r.months[0].isPast).toBe(true)
   })
 
-  it('never applies committed scenarios to a future year', () => {
-    // BUG?: for any year other than the current one currentMonth is 11, so the
-    // "future months only" scenario filter drops every adjustment for next year.
-    const ctx = {
+  describe('future year (2027 viewed in 2026)', () => {
+    // Plan: Rent 100/mo for 2027, plus a committed +500 Rent adjustment in March 2027.
+    const ctx27 = (extra = {}) => ({
       thisYear: 2027,
       categories: CATEGORIES,
       budgetLineItems: lines('Rent', 100, { year: 2027 }),
       scenarios: [{ id: 's', state: 'committed', adjustments: [adj(2027, 3, 500, 'Rent', 'Housing')] }],
+      ...extra,
+    })
+
+    it('is all forecast (currentMonth -1) and applies committed scenario adjustments', () => {
+      const r = monthlyBudgetVsActual(ctx27(), [])
+      expect(r.currentMonth).toBe(-1)
+      expect(r.months.every(m => m.isFuture && !m.isCurrent && !m.isPast)).toBe(true)
+      expect(r.months[2].forecast).toBe(600) // 100 + 500
+      expect(r.months[0].forecast).toBe(100)
+      expect(r.months.reduce((s, m) => s + m.forecast, 0)).toBe(1700) // 12 x 100 + 500
+      expect(r.annualBudget).toBe(1200)
+      expect(r.fullYearPct).toBeCloseTo((1700 / 1200) * 100)
+    })
+
+    it('honours the scenario filter: baseline skips it, an id picks only that scenario', () => {
+      expect(monthlyBudgetVsActual(ctx27(), [], 'baseline').months[2].forecast).toBe(100)
+      expect(monthlyBudgetVsActual(ctx27(), [], 's').months[2].forecast).toBe(600)
+      expect(monthlyBudgetVsActual(ctx27(), [], 'other').months[2].forecast).toBe(100)
+    })
+
+    it('never reports actuals even when transactions are already dated in that year', () => {
+      const r = monthlyBudgetVsActual(ctx27(), [txn('2027-02-01', 'Rent', -100)])
+      expect(r.months.every(m => m.actual === null && !m.hasActual && m.status === 'none')).toBe(true)
+    })
+
+    it('projects forecast only: yearProjection and budgetVsActual stay finite', () => {
+      const yp = yearProjection(ctx27(), [])
+      expect(yp).toMatchObject({ actualToDate: 0, forecastRemaining: 1700, projectedTotal: 1700, hasActuals: false })
+      const bva = budgetVsActual(ctx27(), [])
+      expect(bva).toMatchObject({ planned: 1200, projected: 1700, variance: 500 })
+      expect(bva.pct).toBeCloseTo((1700 / 1200) * 100)
+    })
+
+    it('spendByGroupYear and spendByCategoryForGroup treat every month as forecast', () => {
+      const g = spendByGroupYear(ctx27(), [])
+      expect(g.rows).toEqual([{ group: 'Housing', actual: 0, forecast: 1200, projected: 1200, budget: 1200 }])
+      const c = spendByCategoryForGroup(ctx27(), [], 'Housing')
+      expect(c.currentMonth).toBe(-1)
+      expect(c.rows[0]).toMatchObject({ category: 'Rent', actual: 0, forecast: 1200, projected: 1200, fullBudget: 1200, ytdBudget: 0 })
+    })
+
+    it('stays finite with no budget at all', () => {
+      const r = monthlyBudgetVsActual({ thisYear: 2027 }, [])
+      expect(r.currentMonth).toBe(-1)
+      expect(r.annualBudget).toBe(0)
+      expect(r.fullYearPct).toBeNull()
+      expect(r.ytdPct).toBeNull()
+    })
+  })
+
+  describe('past year (2025 viewed in 2026)', () => {
+    const ctx25 = () => ({
+      thisYear: 2025,
+      categories: CATEGORIES,
+      budgetLineItems: lines('Rent', 100, { year: 2025 }),
+      scenarios: [{ id: 's', state: 'committed', adjustments: [adj(2025, 3, 500, 'Rent', 'Housing')] }],
+    })
+
+    it('ignores committed scenario adjustments, since every month already happened', () => {
+      const r = monthlyBudgetVsActual(ctx25(), [])
+      expect(r.currentMonth).toBe(11)
+      expect(r.months[2].forecast).toBe(100)
+      expect(r.annualForecast).toBe(1200)
+    })
+
+    it('spendByGroupYear counts only actuals (no forecast leaks into a closed year)', () => {
+      const g = spendByGroupYear(ctx25(), [txn('2025-03-01', 'Rent', -100)])
+      expect(g.rows).toEqual([{ group: 'Housing', actual: 100, forecast: 0, projected: 100, budget: 1200 }])
+    })
+  })
+
+  it('current year still applies a committed adjustment only to months after today', () => {
+    const ctx = {
+      thisYear: 2026,
+      categories: CATEGORIES,
+      budgetLineItems: lines('Rent', 100),
+      scenarios: [{ id: 's', state: 'committed', adjustments: [adj(2026, 3, 500, 'Rent', 'Housing'), adj(2026, 8, 200, 'Rent', 'Housing')] }],
     }
     const r = monthlyBudgetVsActual(ctx, [])
-    expect(r.months[2].forecast).toBe(100)
+    expect(r.months[2].forecast).toBe(100) // March is past: skipped
+    expect(r.months[7].forecast).toBe(300) // August is future: applied
   })
 })
 
@@ -337,10 +414,10 @@ describe('spendByGroupYear', () => {
     expect(rows.find(x => x.group === 'Food').forecast).toBe(3000) // budget fallback
   })
 
-  it('counts a month with no transactions as $0 rather than its forecast', () => {
-    // BUG?: April has no data. yearProjection fills it with the 1500 forecast
-    // (total 16800) but the group totals treat it as 0 (10000 + 5300 = 15300),
-    // so the two dashboard figures disagree by exactly April's plan.
+  it('counts a past month with no transactions as $0 rather than its forecast', () => {
+    // Intended: "spend" shows what actually happened, and no spending in April
+    // really was $0. yearProjection instead fills such gaps with the forecast
+    // (it is a plan-for-the-year number), so the two differ by April's 1500.
     const sum = r.rows.reduce((s, x) => s + x.projected, 0)
     expect(sum).toBe(15300)
     expect(yearProjection(budgetCtx(), TXNS_2026).projectedTotal - sum).toBe(1500)
