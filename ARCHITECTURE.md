@@ -792,7 +792,7 @@ The founding architecture held. These are the notable implementation details tha
 2. Add React error boundary
 3. Strengthen CI (lint + tests, not just build)
 4. Preview-before-write for AI scenario creation
-5. Move currency math to integer cents
+5. ~~Move currency math to integer cents~~ (stages 1–2 done 2026-10-07: `src/lib/money.js`, engines converted; CSV parsers and formatters remain)
 6. Surface errors instead of swallowing them
 
 ---
