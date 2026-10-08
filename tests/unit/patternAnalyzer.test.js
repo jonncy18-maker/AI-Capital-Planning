@@ -23,7 +23,7 @@ describe('analyzeTransactions', () => {
       expect(a.categories.map(c => c.category)).toEqual(['Groceries'])
     })
 
-    it('counts the span from every transaction, income included', () => {
+    it('counts the span from months that contain an expense', () => {
       expect(a.spanMonths).toBe(1)
     })
 
@@ -179,12 +179,24 @@ describe('analyzeTransactions', () => {
       expect(find(a, 'Food').total).toBeCloseTo(25.5)
     })
 
-    it('counts income-only months toward the span', () => {
-      // BUG?: a month with only income still widens spanMonths, which dilutes
-      // every category's frequency and annualized total.
+    it('does not count income-only months toward the span', () => {
+      // Feb has only income, so the span is Jan alone: 120 / 1 * 12 = 1440.
       const a = analyzeTransactions([t('2026-01-05', 'Food', -120), t('2026-02-05', 'Salary', 3000)])
+      expect(a.spanMonths).toBe(1)
+      expect(find(a, 'Food').annualTotal).toBe(1440)
+    })
+
+    it('does not count a zero-amount transaction as an expense month', () => {
+      const a = analyzeTransactions([t('2026-01-05', 'Food', -120), t('2026-02-05', 'Food', 0)])
+      expect(a.spanMonths).toBe(1)
+    })
+
+    it('still counts months with at least one expense even if they also hold income', () => {
+      const a = analyzeTransactions([
+        t('2026-01-05', 'Food', -120), t('2026-02-05', 'Salary', 3000), t('2026-02-06', 'Food', -80),
+      ])
       expect(a.spanMonths).toBe(2)
-      expect(find(a, 'Food').annualTotal).toBe(720) // 120 / 2 * 12
+      expect(find(a, 'Food').annualTotal).toBe(1200) // 200 / 2 * 12
     })
   })
 
@@ -211,13 +223,26 @@ describe('analyzeTransactions', () => {
       expect(find(a, 'Groceries').group).toBe('Food')
     })
 
-    it('ignores the configured type: the inferred one wins', () => {
-      // BUG?: the code comment says a user-configured type is honored, but
-      // `...stats` is spread after `type: matched?.type ?? stats.type` and
-      // stats.type overwrites it. Rent is configured Non-Monthly yet reports Fixed.
+    it('honors the configured type and keeps the inferred one alongside', () => {
+      // Rent is configured Non-Monthly; it hit both months with equal amounts,
+      // so the inferred type is Fixed.
       const r = find(a, 'Rent')
-      expect(r.type).toBe('Fixed')
+      expect(r.type).toBe('Non-Monthly')
       expect(r.inferredType).toBe('Fixed')
+    })
+
+    it('falls back to the inferred type when none is configured', () => {
+      const g = find(a, 'Groceries')
+      expect(g.type).toBe(g.inferredType)
+    })
+
+    it('feeds the configured type into generateBudgetDraft (Non-Monthly spreads by histogram)', () => {
+      // span = Jan, Feb = 2; Rent annual = 2000 / 2 * 12 = 12000, histogram Jan 1000 / Feb 1000
+      // -> 6000 in each of Jan and Feb, nothing elsewhere.
+      const items = generateBudgetDraft(a, 2027).filter(i => i.category === 'Rent')
+      expect(items.map(i => [i.month, i.amount, i.type])).toEqual([
+        [1, 6000, 'Non-Monthly'], [2, 6000, 'Non-Monthly'],
+      ])
     })
 
     it('leaves unmatched categories with null id and group', () => {
@@ -226,9 +251,9 @@ describe('analyzeTransactions', () => {
       expect(m.group).toBeNull()
     })
 
-    it('still counts an excluded category toward the span', () => {
+    it('does not count an excluded-only month toward the span', () => {
       const b = analyzeTransactions([t('2026-01-05', 'Food', -10), t('2026-03-05', 'Transfer', -500)], categories)
-      expect(b.spanMonths).toBe(2)
+      expect(b.spanMonths).toBe(1)
     })
   })
 })

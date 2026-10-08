@@ -19,9 +19,6 @@ function monthsBetween(start, end) {
 
 // Is the commitment active during the given calendar month/year?
 function isActiveInMonth(commitment, year, month) {
-  if (commitment.status === 'completed') {
-    // completed commitments still count for past months, not future
-  }
   const start = commitment.start_date ? parseLocalDate(commitment.start_date) : null
   const end = commitment.end_date ? parseLocalDate(commitment.end_date) : null
   const pointer = new Date(year, month - 1, 15) // mid-month probe
@@ -75,7 +72,9 @@ export function commitmentTotalProjected(commitment) {
   const cs = commitment.cost_structure || {}
   const kind = cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
 
-  if (kind === 'total') return Number(cs.amount ?? 0) || 0
+  // Without both dates the span is unknown; commitmentMonthlyDemand returns 0
+  // for every month in that case, so the total must agree.
+  if (kind === 'total') return start && end ? Number(cs.amount ?? 0) || 0 : 0
 
   if (!start) return 0
   // Open-ended commitments: project a rolling 12 months as a representative
@@ -108,8 +107,10 @@ export function describeCostStructure(cs = {}) {
   switch (kind) {
     case 'monthly':
       return `${fmt(cs.amount ?? cs.monthly_amount)}/mo`
-    case 'annual':
-      return `${fmt(cs.amount ?? cs.annual_total)}/yr (${MONTHS[(Number(cs.month ?? cs.due_month ?? 1)) - 1]})`
+    case 'annual': {
+      const monthName = MONTHS[(Number(cs.month ?? cs.due_month ?? 1)) - 1]
+      return `${fmt(cs.amount ?? cs.annual_total)}/yr${monthName ? ` (${monthName})` : ''}`
+    }
     case 'total':
       return `${fmt(cs.amount)} total`
     case 'custom':

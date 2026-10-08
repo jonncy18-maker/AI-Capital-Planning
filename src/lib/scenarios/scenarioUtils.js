@@ -173,8 +173,9 @@ export function buildComparisonRows(adjustments, ctx) {
     .map(p => {
       const periodDelta = p.rows.reduce((s, r) => s + r.delta, 0)
       const periodCashDelta = p.rows.reduce((s, r) => s + r.cashDelta, 0)
-      const baselineRows = p.rows.filter(r => r.baseline != null)
-      const periodBaseline = baselineRows.length > 0 ? baselineRows.reduce((s, r) => s + r.baseline, 0) : null
+      // Rows with no baseline contribute 0, so baseline + deltas cover the same rows.
+      const hasBaseline = p.rows.some(r => r.baseline != null)
+      const periodBaseline = hasBaseline ? p.rows.reduce((s, r) => s + (r.baseline ?? 0), 0) : null
       const periodScenario = periodBaseline != null ? periodBaseline + periodDelta : null
       return {
         ...p,
