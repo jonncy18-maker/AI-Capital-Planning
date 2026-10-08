@@ -229,9 +229,27 @@ describe('buildComparisonRows', () => {
     const [p] = buildComparisonRows([spend(2026, 3, 500), income(2026, 3, 200)], ctx)
     expect(p.periodDelta).toBe(700) // raw: 500 + 200
     expect(p.periodCashDelta).toBe(-300) // -500 + 200
-    // BUG?: periodScenario adds the delta of rows that have no baseline (the
-    // Salary +200) onto a baseline that only covers Auto Lease: 1000 + 700.
+    // Semantics-preserving: periodBaseline is now explicitly the sum of
+    // (baseline ?? 0). Salary (+200) has no baseline, so it adds 0 + 200:
+    // periodBaseline = 1000 + 0; periodScenario = 1000 + (500 + 200) = 1700.
+    expect(p.periodBaseline).toBe(1000)
+    expect(p.periodScenario).toBe(p.periodBaseline + p.periodDelta)
     expect(p.periodScenario).toBe(1700)
+  })
+
+  it('period scenario equals the sum of per-row (baseline ?? 0) + delta', () => {
+    const ctx = { budgetLineItems: [
+      { month: 3, amount: 1000, budget_categories: { category: 'Auto Lease' } },
+      { month: 3, amount: 400, budget_categories: { category: 'Food' } },
+    ] }
+    const adj = [
+      spend(2026, 3, 100, 'Food'),
+      spend(2026, 3, 50, 'Unbudgeted'),
+    ]
+    const [p] = buildComparisonRows(adj, ctx)
+    // Food: 400 + 100 = 500; Unbudgeted: 0 + 50 = 50 -> 550
+    expect(p.periodBaseline).toBe(400)
+    expect(p.periodScenario).toBe(550)
   })
 
   it('labels a category-less adjustment with an em dash and defaults label to empty', () => {

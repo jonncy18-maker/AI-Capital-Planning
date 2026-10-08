@@ -20,16 +20,23 @@ function stddev(nums) {
   return Math.sqrt(variance)
 }
 
+// Single source of truth for "this transaction is real spend": an outflow in a
+// category that isn't excluded. Shared by the totals and the span denominator.
+function isCountedExpense(t, excluded) {
+  if ((Number(t.amount) || 0) >= 0) return false
+  const category = t.category || 'Uncategorized'
+  return !(excluded && excluded.has(category))
+}
+
 // Group expense transactions by category → month-key → summed outflow (positive $).
 // Income (amount > 0) is ignored; budgets here track planned outflows.
 // `excluded` is a Set of category names to drop entirely (transfers / payments).
 function buildCategoryMonthlyTotals(transactions, excluded) {
   const byCategory = {}
   for (const t of transactions) {
+    if (!isCountedExpense(t, excluded)) continue
     const amount = Number(t.amount) || 0
-    if (amount >= 0) continue // outflow only
     const category = t.category || 'Uncategorized'
-    if (excluded && excluded.has(category)) continue // not a real expense
     const d = parseLocalDate(t.date)
     if (isNaN(d)) continue
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -39,11 +46,13 @@ function buildCategoryMonthlyTotals(transactions, excluded) {
   return byCategory
 }
 
-// Count distinct months spanned by the transaction set (the denominator for
-// "how often does this category appear").
-function countSpanMonths(transactions) {
+// Count distinct months containing at least one counted expense (the
+// denominator for "how often does this category appear"). Income-only or
+// excluded-transfer-only months would otherwise dilute every category.
+function countSpanMonths(transactions, excluded) {
   const keys = new Set()
   for (const t of transactions) {
+    if (!isCountedExpense(t, excluded)) continue
     const d = parseLocalDate(t.date)
     if (isNaN(d)) continue
     keys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
@@ -96,10 +105,10 @@ function classifyCategory(monthlyTotalsMap, spanMonths) {
 
 // Full analysis: returns a per-category breakdown joined to budget_categories.
 export function analyzeTransactions(transactions, categories = []) {
-  const spanMonths = countSpanMonths(transactions)
   // Categories flagged exclude_from_totals (transfers, CC payments) never seed a
   // budget line — they aren't real spend.
   const excluded = new Set(categories.filter(c => c.exclude_from_totals).map(c => c.category))
+  const spanMonths = countSpanMonths(transactions, excluded)
   const totals = buildCategoryMonthlyTotals(transactions, excluded)
 
   // Map category name → budget_categories row (for id, group, configured type).
@@ -114,10 +123,10 @@ export function analyzeTransactions(transactions, categories = []) {
       category: categoryName,
       category_id: matched?.id ?? null,
       group: matched?.group ?? null,
-      // Honor a user-configured type if present; otherwise use the inferred one.
+      ...stats,
+      // After the spread so stats.type doesn't clobber a user-configured type.
       type: matched?.type ?? stats.type,
       inferredType: stats.type,
-      ...stats,
     })
   }
 

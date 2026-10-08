@@ -163,8 +163,7 @@ describe('commitmentMonthlyDemand', () => {
   })
 
   it('still counts completed commitments (status is not consulted)', () => {
-    // BUG?: isActiveInMonth has an empty `status === 'completed'` branch, so a
-    // completed commitment keeps producing demand. Callers filter by status.
+    // Callers filter by status; the schedule itself only looks at dates.
     expect(commitmentMonthlyDemand(monthly(100, { status: 'completed' }), 2026, 1)).toBe(100)
   })
 })
@@ -178,8 +177,14 @@ describe('commitmentYearSchedule', () => {
 })
 
 describe('commitmentTotalProjected', () => {
-  it('returns the stated amount for a total commitment, dates or not', () => {
-    expect(commitmentTotalProjected({ cost_structure: { kind: 'total', amount: 4800 } })).toBe(4800)
+  it('returns 0 for a total commitment with no dates (span unknown)', () => {
+    expect(commitmentTotalProjected({ cost_structure: { kind: 'total', amount: 4800 } })).toBe(0)
+  })
+
+  it('returns 0 for a total commitment with only an end date', () => {
+    const c = { cost_structure: { kind: 'total', amount: 4800 }, end_date: '2026-12-31' }
+    expect(commitmentTotalProjected(c)).toBe(0)
+    expect(commitmentYearSchedule(c, 2026)).toEqual(zeros(12))
   })
 
   it('sums a bounded monthly commitment: Mar..Aug = 6 x 100', () => {
@@ -220,13 +225,17 @@ describe('commitmentTotalProjected', () => {
     expect(commitmentTotalProjected({ cost_structure: { kind: 'x' }, start_date: '2026-01-01' })).toBe(0)
   })
 
-  it('disagrees with the monthly demand for a total commitment missing an end date', () => {
-    // BUG?: total with only a start date projects the full amount here but
-    // commitmentMonthlyDemand returns 0 for every month, so Cash Flow shows
-    // nothing while the summary shows the lump sum.
+  it('agrees with the monthly demand for a total commitment missing an end date (both 0)', () => {
+    // Span is unknown without an end date, so neither view can place the lump sum.
     const c = { cost_structure: { kind: 'total', amount: 1000 }, start_date: '2026-01-01' }
-    expect(commitmentTotalProjected(c)).toBe(1000)
+    expect(commitmentTotalProjected(c)).toBe(0)
     expect(commitmentYearSchedule(c, 2026)).toEqual(zeros(12))
+  })
+
+  it('keeps the stated amount for a total commitment with both dates', () => {
+    const c = { cost_structure: { kind: 'total', amount: 1200 }, start_date: '2026-01-01', end_date: '2026-12-31' }
+    expect(commitmentTotalProjected(c)).toBe(1200)
+    expect(commitmentYearSchedule(c, 2026).reduce((a, b) => a + b, 0)).toBeCloseTo(1200) // 12 x 100
   })
 })
 
@@ -279,8 +288,8 @@ describe('describeCostStructure', () => {
     expect(describeCostStructure({ kind: 'weekly' })).toBe('—')
   })
 
-  it('prints "undefined" for an out-of-range annual month', () => {
-    // BUG?: month 13 indexes past the MONTHS array.
-    expect(describeCostStructure({ kind: 'annual', amount: 600, month: 13 })).toBe('$600/yr (undefined)')
+  it('omits the month for an out-of-range annual month', () => {
+    expect(describeCostStructure({ kind: 'annual', amount: 600, month: 13 })).toBe('$600/yr')
+    expect(describeCostStructure({ kind: 'annual', amount: 600, month: 0 })).toBe('$600/yr')
   })
 })
