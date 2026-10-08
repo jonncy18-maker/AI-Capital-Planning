@@ -1003,12 +1003,11 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 ~~**Verify income forecast math**~~ — confirmed good (2026-07-08). ✓
 
 **Reliability (current priority — see `ARCHITECTURE.md` §10 hardening backlog)**
-1. ~~**Add Vitest unit tests** for pure modeling functions — `widgetData.js`, `patternAnalyzer.js`, `schedule.js`, scenario delta math.~~ Done 2026-10-07 (224 tests; `npm test`). ✓
-2. ~~**Move currency math to integer cents** — dollar amounts are currently JS floats throughout; no visible bug yet, but a known rounding-error risk as data volume grows.~~ Stages 1–2 done 2026-10-07 (see session log); CSV parsers and formatter consolidation remain. ✓ (partial)
+1. **Integer cents, remaining stages** — stages 1–2 shipped (see session log). Left: CSV parsers (`monarchParser.js`, `budgetParser.js`) parse to cents; replace the ~18 duplicated formatters with `formatMoney`; `pointsEngine.js` `buildSpendMaps` still float-sums.
 
 **Polish**
-3. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile. **In progress (2026-07-08):** dashboard has a slight horizontal scroll on mobile (should fit edge-to-edge); Forecast module's mobile view (stacked month blocks) is under review for a better layout.
-4. **Make the repo public** — held from Phase 11, now that the AI proxy/key handling is confirmed solid post-migration.
+2. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile. **In progress (2026-07-08):** dashboard has a slight horizontal scroll on mobile (should fit edge-to-edge); Forecast module's mobile view (stacked month blocks) is under review for a better layout.
+3. **Make the repo public** — held from Phase 11, now that the AI proxy/key handling is confirmed solid post-migration.
 
 ~~**Transactions backfill**~~ — resolved via the live browser-verification re-upload (2026-07-05); no gap worth closing. ✓
 ~~**Security cleanup**~~ — `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from build workflow and `.env`; GitHub secret confirmed empty. ✓
