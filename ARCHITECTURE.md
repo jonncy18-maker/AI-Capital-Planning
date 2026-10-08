@@ -141,6 +141,8 @@ what it wrote with an Undo where one exists.
 ### 4.2 Cash Flow Timing
 Month-by-month view of when money actually moves. Surfaces large and irregular expenses before they arrive. Powered entirely by the Non-Monthly commitment structure in Neon — no AI required to render.
 
+The dashboard Cash Flow widget is cash-basis for credit cards: spend on a card counts when its statement is paid (`computeCardCashTiming` in `src/lib/cashflow/cashflowEngine.js`), with Monarch accounts matched to cards by `src/lib/cashflow/cardAccountMatch.js`. Over a year, net cash differs from net income only by the card balance carried in from last year minus the balance carried out to next year.
+
 Key views:
 - 12-month rolling cash demand calendar
 - Upcoming spike alerts (configurable threshold)
