@@ -22,7 +22,7 @@ export default function ModuleHeader({ icon, title, subtitle, actions, mobile, m
         // onto their own line instead of squeezing the title.
         ...(mobile ? null : { flexWrap: 'wrap' }),
       }}>
-        <div style={mobile ? { minWidth: 0 } : { flex: '1 1 320px', minWidth: 0 }}>
+        <div style={mobile ? { minWidth: 0 } : { flex: '1 1 320px', minWidth: 0, textAlign: 'left' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {icon && <span style={headerStyles.icon(hue)}>{icon}</span>}
             <h1 style={headerStyles.title(mobile)}>{title}</h1>
