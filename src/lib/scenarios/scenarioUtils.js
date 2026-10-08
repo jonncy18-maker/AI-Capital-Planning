@@ -1,4 +1,5 @@
 // Pure helpers for scenario analysis views — no AI calls, all computed from DB data.
+import { toCents, fromCents, sumCents, sumDollars, addDollars, mulCents } from '../money.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -16,9 +17,13 @@ export function isIncomeAdjustment(a) {
 }
 
 // Signed effect on cash: positive = better off, negative = worse off.
-export function cashEffect(a) {
-  const delta = Number(a?.delta_amount) || 0
+function cashEffectCents(a) {
+  const delta = toCents(a?.delta_amount)
   return isIncomeAdjustment(a) ? delta : -delta
+}
+
+export function cashEffect(a) {
+  return fromCents(cashEffectCents(a))
 }
 
 // Convert a GROSS income figure to the NET cash that actually lands, using the
@@ -27,20 +32,21 @@ export function cashEffect(a) {
 // knows the headline (gross) number, so this derives the net for them.
 // taxCtx: { effectiveRate: 0..1, four01kPct: percent }.
 export function grossToNet(gross, { taxable = true, applies401k = false } = {}, taxCtx = {}) {
-  const g = Number(gross) || 0
+  const gc = toCents(gross)
   const effRate = Number(taxCtx?.effectiveRate) || 0
   const k401Pct = Number(taxCtx?.four01kPct) || 0
-  const tax = taxable ? g * effRate : 0
-  const k401 = applies401k ? g * (k401Pct / 100) : 0
-  return { gross: g, tax, k401, net: g - tax - k401, effRatePct: Math.round(effRate * 100), k401Pct }
+  const taxC = taxable ? mulCents(gc, effRate) : 0
+  const k401C = applies401k ? mulCents(gc, k401Pct / 100) : 0
+  return { gross: fromCents(gc), tax: fromCents(taxC), k401: fromCents(k401C), net: fromCents(gc - taxC - k401C), effRatePct: Math.round(effRate * 100), k401Pct }
 }
 
 // Average monthly income from the trailing 12 months of context transactions.
 function monthlyIncomeRunRate(ctx) {
-  const incomeYear = (ctx?.transactions ?? [])
-    .filter(t => Number(t.amount) > 0)
-    .reduce((s, t) => s + Number(t.amount), 0)
-  return incomeYear / 12
+  const incomeYearCents = sumCents(
+    (ctx?.transactions ?? []).filter(t => Number(t.amount) > 0),
+    t => toCents(t.amount)
+  )
+  return incomeYearCents / 12 / 100
 }
 
 // Derive key impact metrics for a set of adjustments.
@@ -53,28 +59,30 @@ export function computeImpactSummary(adjustments, ctx) {
       cashTotal: 0, cashMonthlyAvg: 0, cashAnnualized: 0, isOneTime: false,
       incomeRunRate: monthlyIncomeRunRate(ctx),
       pctOfIncome: null,
-      budgetPlanned: lineItems.reduce((s, li) => s + Number(li.amount || 0), 0),
+      budgetPlanned: sumDollars(lineItems, li => li.amount),
       budgetProjected: 0,
       hasBudget: lineItems.length > 0,
       hasIncome: monthlyIncomeRunRate(ctx) > 0,
     }
   }
 
-  const netTotal = adjustments.reduce((s, a) => s + Number(a.delta_amount), 0)
+  const netTotalCents = sumCents(adjustments, a => toCents(a.delta_amount))
+  const netTotal = fromCents(netTotalCents)
 
   const periodSet = new Set(adjustments.map(a => `${a.year}-${String(a.month).padStart(2, '0')}`))
   const monthCount = periodSet.size
-  const monthlyAvg = monthCount > 0 ? netTotal / monthCount : 0
-  const annualized = monthlyAvg * 12
+  const monthlyAvg = monthCount > 0 ? netTotalCents / monthCount / 100 : 0
+  const annualized = monthCount > 0 ? netTotalCents / monthCount * 12 / 100 : 0
 
   // Cash-effect view: income adds, spending subtracts, so a scenario mixing the
   // two nets out correctly and the sign always means better/worse off.
-  const cashTotal = adjustments.reduce((s, a) => s + cashEffect(a), 0)
-  const cashMonthlyAvg = monthCount > 0 ? cashTotal / monthCount : 0
+  const cashTotalCents = sumCents(adjustments, cashEffectCents)
+  const cashTotal = fromCents(cashTotalCents)
+  const cashMonthlyAvg = monthCount > 0 ? cashTotalCents / monthCount / 100 : 0
   // Extrapolating a single month to a year turns a one-off bonus into a salary,
   // so callers get the flag and show the total instead.
   const isOneTime = monthCount === 1
-  const cashAnnualized = cashMonthlyAvg * 12
+  const cashAnnualized = monthCount > 0 ? cashTotalCents / monthCount * 12 / 100 : 0
 
   // Horizon string
   const sortedPeriods = [...periodSet].sort()
@@ -92,10 +100,11 @@ export function computeImpactSummary(adjustments, ctx) {
   const adjCategoryNames = new Set(
     adjustments.map(a => a.budget_categories?.category).filter(Boolean)
   )
-  const budgetPlanned = lineItems
-    .filter(li => adjCategoryNames.has(li.budget_categories?.category))
-    .reduce((s, li) => s + Number(li.amount || 0), 0)
-  const budgetProjected = budgetPlanned + netTotal
+  const budgetPlanned = sumDollars(
+    lineItems.filter(li => adjCategoryNames.has(li.budget_categories?.category)),
+    li => li.amount
+  )
+  const budgetProjected = addDollars(budgetPlanned, netTotal)
 
   return {
     netTotal,
@@ -129,7 +138,7 @@ export function buildComparisonRows(adjustments, ctx) {
     const cat = (li.budget_categories?.category || '').trim()
     if (!cat) continue
     const key = `${cat}::${li.month}`
-    budgetIndex[key] = (budgetIndex[key] || 0) + Number(li.amount || 0)
+    budgetIndex[key] = (budgetIndex[key] || 0) + toCents(li.amount)
   }
   // Forecast baseline: sum forecast lines when initialized, else the budget.
   let forecastIndex
@@ -139,7 +148,7 @@ export function buildComparisonRows(adjustments, ctx) {
       const cat = (fi.budget_categories?.category || '').trim()
       if (!cat) continue
       const key = `${cat}::${fi.month}`
-      forecastIndex[key] = (forecastIndex[key] || 0) + Number(fi.amount || 0)
+      forecastIndex[key] = (forecastIndex[key] || 0) + toCents(fi.amount)
     }
   } else {
     forecastIndex = { ...budgetIndex }
@@ -153,7 +162,7 @@ export function buildComparisonRows(adjustments, ctx) {
 
     const catName = a.budget_categories?.category ?? '—'
     const budgetKey = `${catName}::${a.month}`
-    const baseline = forecastIndex[budgetKey] != null ? forecastIndex[budgetKey] : null
+    const baseline = forecastIndex[budgetKey] != null ? fromCents(forecastIndex[budgetKey]) : null
     const delta = Number(a.delta_amount)
 
     byPeriod[periodKey].rows.push({
@@ -164,19 +173,19 @@ export function buildComparisonRows(adjustments, ctx) {
       delta,
       isIncome: isIncomeAdjustment(a),
       cashDelta: cashEffect(a),
-      scenario: baseline != null ? baseline + delta : null,
+      scenario: baseline != null ? addDollars(baseline, delta) : null,
     })
   }
 
   return Object.values(byPeriod)
     .sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
     .map(p => {
-      const periodDelta = p.rows.reduce((s, r) => s + r.delta, 0)
-      const periodCashDelta = p.rows.reduce((s, r) => s + r.cashDelta, 0)
+      const periodDelta = sumDollars(p.rows, r => r.delta)
+      const periodCashDelta = sumDollars(p.rows, r => r.cashDelta)
       // Rows with no baseline contribute 0, so baseline + deltas cover the same rows.
       const hasBaseline = p.rows.some(r => r.baseline != null)
-      const periodBaseline = hasBaseline ? p.rows.reduce((s, r) => s + (r.baseline ?? 0), 0) : null
-      const periodScenario = periodBaseline != null ? periodBaseline + periodDelta : null
+      const periodBaseline = hasBaseline ? sumDollars(p.rows, r => r.baseline ?? 0) : null
+      const periodScenario = periodBaseline != null ? addDollars(periodBaseline, periodDelta) : null
       return {
         ...p,
         periodLabel: parsePeriodLabel(p.year, p.month),
@@ -195,7 +204,7 @@ export function buildCumulativeTimeline(adjustments) {
   const byPeriod = {}
   for (const a of adjustments) {
     const key = `${a.year}-${String(a.month).padStart(2, '0')}`
-    byPeriod[key] = (byPeriod[key] || 0) + cashEffect(a)
+    byPeriod[key] = (byPeriod[key] || 0) + cashEffectCents(a)
   }
 
   const sorted = Object.entries(byPeriod).sort(([a], [b]) => (a < b ? -1 : 1))
@@ -204,8 +213,8 @@ export function buildCumulativeTimeline(adjustments) {
     return `${MONTHS[parseInt(m) - 1]} ${y}`
   })
 
-  let running = 0
-  const values = sorted.map(([, delta]) => { running += delta; return running })
+  let running = 0 // cents
+  const values = sorted.map(([, delta]) => { running += delta; return fromCents(running) })
 
   return {
     labels,

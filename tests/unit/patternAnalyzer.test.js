@@ -373,3 +373,19 @@ describe('generateBudgetDraft', () => {
     expect(items.every(i => i.amount === 900)).toBe(true)
   })
 })
+
+describe('integer-cents exactness', () => {
+  it('accumulates many small outflows without float drift', () => {
+    const txs = Array.from({ length: 10 }, () => t('2026-01-05', 'Coffee', '-0.10'))
+    const c = find(analyzeTransactions(txs), 'Coffee')
+    expect(c.total).toBe(1)
+    expect(c.monthHistogram[0]).toBe(1)
+  })
+
+  it('totals 19.99 x 3 exactly and annualizes from cents', () => {
+    const txs = [1, 2, 3].map(() => t('2026-03-05', 'Misc', -19.99))
+    const c = find(analyzeTransactions(txs), 'Misc')
+    expect(c.total).toBe(59.97)
+    expect(c.annualTotal).toBeCloseTo(59.97 * 12, 10)
+  })
+})

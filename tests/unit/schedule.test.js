@@ -293,3 +293,37 @@ describe('describeCostStructure', () => {
     expect(describeCostStructure({ kind: 'annual', amount: 600, month: 0 })).toBe('$600/yr')
   })
 })
+
+describe('integer-cents exactness', () => {
+  it('splits a total across its span so the months sum exactly', () => {
+    const c = { cost_structure: { kind: 'total', amount: 100 }, start_date: '2026-01-01', end_date: '2026-03-31' }
+    const parts = commitmentYearSchedule(c, 2026).slice(0, 3)
+    expect(parts).toEqual([33.34, 33.33, 33.33])
+    expect(commitmentTotalProjected(c)).toBe(100)
+  })
+
+  it('total spanning a year boundary hands out the extra cent by month index', () => {
+    const c = { cost_structure: { kind: 'total', amount: '0.05' }, start_date: '2026-11-01', end_date: '2027-02-28' }
+    expect(commitmentMonthlyDemand(c, 2026, 11)).toBe(0.02)
+    expect(commitmentMonthlyDemand(c, 2027, 1)).toBe(0.01)
+    expect(commitmentMonthlyDemand(c, 2027, 2)).toBe(0.01)
+  })
+
+  it('commitmentTotalProjected accumulates 10 x 0.1 exactly', () => {
+    const c = { cost_structure: { kind: 'monthly', amount: 0.1 }, start_date: '2026-01-01', end_date: '2026-10-31' }
+    expect(commitmentTotalProjected(c)).toBe(1)
+  })
+
+  it('aggregates many line items without float drift', () => {
+    expect(aggregateCommitmentsForYear(Array.from({ length: 3 }, () => monthly(19.99)), 2026)[0]).toBe(59.97)
+    expect(aggregateCommitmentsForYear(Array.from({ length: 10 }, () => monthly('0.10')), 2026)[0]).toBe(1)
+  })
+})
+
+describe('sub-cent total amounts', () => {
+  it('commitmentTotalProjected rounds a total with >2 decimals to the cent', () => {
+    // 10.005 -> 1000.5 cents -> rounds half away from zero to 1001 cents = 10.01
+    const c = { cost_structure: { kind: 'total', amount: 10.005 }, start_date: '2026-01-01', end_date: '2026-03-31' }
+    expect(commitmentTotalProjected(c)).toBe(10.01)
+  })
+})

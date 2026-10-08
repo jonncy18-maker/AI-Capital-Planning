@@ -290,3 +290,56 @@ describe('buildCumulativeTimeline', () => {
     expect(tl.max).toBe(200)
   })
 })
+
+describe('integer-cents exactness', () => {
+  it('sums ten 0.1 deltas to exactly 1', () => {
+    const adjs = Array.from({ length: 10 }, () => adj(2026, 1, '0.10', 'Auto', 'Housing'))
+    expect(computeImpactSummary(adjs, {}).netTotal).toBe(1)
+    expect(computeImpactSummary(adjs, {}).cashTotal).toBe(-1)
+    expect(buildComparisonRows(adjs, {})[0].periodDelta).toBe(1)
+    expect(buildCumulativeTimeline(adjs).values).toEqual([-1])
+  })
+
+  it('handles Neon-style string deltas and 19.99 x 3', () => {
+    const adjs = [adj(2026, 1, ' 19.99 ', 'A', 'Fun'), adj(2026, 1, '19.99', 'B', 'Fun'), adj(2026, 1, 19.99, 'C', 'Fun')]
+    expect(computeImpactSummary(adjs, {}).netTotal).toBe(59.97)
+    expect(cashEffect(adj(2026, 1, '-12.50', 'A', 'Fun'))).toBe(12.5)
+  })
+
+  it('grossToNet rounds tax once to the cent', () => {
+    const r = grossToNet(1000.1, {}, { effectiveRate: 0.1, four01kPct: 3 })
+    expect(r.tax).toBe(100.01)
+    expect(r.net).toBe(900.09)
+  })
+
+  it('baseline plus delta is exact', () => {
+    const ctx = { budgetLineItems: [{ month: 1, amount: '0.10', budget_categories: { category: 'A' } }, { month: 1, amount: '0.20', budget_categories: { category: 'A' } }] }
+    const row = buildComparisonRows([adj(2026, 1, '0.01', 'A', 'Fun')], ctx)[0]
+    expect(row.periodBaseline).toBe(0.3)
+    expect(row.periodScenario).toBe(0.31)
+  })
+})
+
+describe('rounding pins', () => {
+  it('grossToNet rounds an exact half cent away from zero', () => {
+    // 0.05 -> 5 cents; 5 * 0.1 = 0.5 cent -> rounds to 1 cent (a floor would give 0)
+    const pos = grossToNet(0.05, {}, { effectiveRate: 0.1 })
+    expect(pos.tax).toBe(0.01)
+    expect(pos.net).toBe(0.04)
+    // -5 cents * 0.1 = -0.5 cent -> -1 cent (away from zero, not toward +inf)
+    const neg = grossToNet(-0.05, {}, { effectiveRate: 0.1 })
+    expect(neg.tax).toBe(-0.01)
+    expect(neg.net).toBe(-0.04)
+  })
+
+  it('buildComparisonRows row.scenario is exact: baseline 0.5 + 0.2 plus delta 0.1 = 0.8', () => {
+    // 50 + 20 = 70 cents baseline; + 10 cents = 80 cents (float 0.7 + 0.1 = 0.7999999999999999)
+    const ctx = { budgetLineItems: [
+      { month: 1, amount: 0.5, budget_categories: { category: 'A' } },
+      { month: 1, amount: 0.2, budget_categories: { category: 'A' } },
+    ] }
+    const row = buildComparisonRows([adj(2026, 1, 0.1, 'A', 'Fun')], ctx)[0].rows[0]
+    expect(row.baseline).toBe(0.7)
+    expect(row.scenario).toBe(0.8)
+  })
+})

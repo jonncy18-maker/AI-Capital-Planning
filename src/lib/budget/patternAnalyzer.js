@@ -1,4 +1,5 @@
 import { parseLocalDate } from '../dates.js'
+import { toCents, fromCents, sumCents, sumDollars } from '../money.js'
 // Historical pattern analyzer for the Annual Budget Builder.
 //
 // Ingests raw transactions + budget_categories and classifies each spending
@@ -28,7 +29,8 @@ function isCountedExpense(t, excluded) {
   return !(excluded && excluded.has(category))
 }
 
-// Group expense transactions by category → month-key → summed outflow (positive $).
+// Group expense transactions by category → month-key → summed outflow (positive
+// integer CENTS; classifyCategory converts back to dollars).
 // Income (amount > 0) is ignored; budgets here track planned outflows.
 // `excluded` is a Set of category names to drop entirely (transfers / payments).
 function buildCategoryMonthlyTotals(transactions, excluded) {
@@ -41,7 +43,7 @@ function buildCategoryMonthlyTotals(transactions, excluded) {
     if (isNaN(d)) continue
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     byCategory[category] = byCategory[category] || {}
-    byCategory[category][key] = (byCategory[category][key] || 0) + Math.abs(amount)
+    byCategory[category][key] = (byCategory[category][key] || 0) + Math.abs(toCents(amount))
   }
   return byCategory
 }
@@ -64,18 +66,21 @@ function countSpanMonths(transactions, excluded) {
 function classifyCategory(monthlyTotalsMap, spanMonths) {
   const monthKeys = Object.keys(monthlyTotalsMap)
   const activeMonths = monthKeys.length
-  const amounts = Object.values(monthlyTotalsMap)
-  const total = amounts.reduce((a, b) => a + b, 0)
+  const amountsCents = Object.values(monthlyTotalsMap)
+  const amounts = amountsCents.map(fromCents)
+  const totalCents = sumCents(amountsCents)
+  const total = fromCents(totalCents)
   const frequency = activeMonths / spanMonths
-  const avgWhenActive = activeMonths ? total / activeMonths : 0
+  const avgWhenActive = activeMonths ? totalCents / activeMonths / 100 : 0
   const cov = avgWhenActive ? stddev(amounts) / avgWhenActive : 0 // coefficient of variation
 
   // Which calendar months (1-12) does this category historically hit?
-  const monthHistogram = Array(12).fill(0)
+  const histogramCents = Array(12).fill(0)
   for (const [key, amt] of Object.entries(monthlyTotalsMap)) {
     const m = parseInt(key.slice(5, 7), 10)
-    if (m >= 1 && m <= 12) monthHistogram[m - 1] += amt
+    if (m >= 1 && m <= 12) histogramCents[m - 1] += amt
   }
+  const monthHistogram = histogramCents.map(fromCents)
 
   let type
   if (frequency >= 0.6 && cov < 0.2) {
@@ -87,7 +92,7 @@ function classifyCategory(monthlyTotalsMap, spanMonths) {
   }
 
   // Annualize: extrapolate the observed window to a full 12-month year.
-  const annualTotal = spanMonths > 0 ? (total / spanMonths) * 12 : total
+  const annualTotal = (spanMonths > 0 ? (totalCents / spanMonths) * 12 : totalCents) / 100
   const monthlyAvg = annualTotal / 12
 
   return {
@@ -147,7 +152,7 @@ export function generateBudgetDraft(analysis, year) {
     if (cat.annualTotal < 1) continue
 
     if (cat.type === 'Non-Monthly') {
-      const histTotal = cat.monthHistogram.reduce((a, b) => a + b, 0)
+      const histTotal = sumDollars(cat.monthHistogram)
       for (let m = 0; m < 12; m++) {
         const share = histTotal > 0 ? cat.monthHistogram[m] / histTotal : 0
         const amount = Math.round(cat.annualTotal * share)
