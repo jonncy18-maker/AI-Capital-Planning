@@ -32,14 +32,15 @@ function isActiveInMonth(commitment, year, month) {
 export function commitmentMonthlyDemand(commitment, year, month) {
   if (!isActiveInMonth(commitment, year, month)) return 0
   const cs = commitment.cost_structure || {}
-  const kind = cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
+  const kind =
+    cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
 
   switch (kind) {
     case 'monthly':
       return Number(cs.amount ?? cs.monthly_amount ?? 0) || 0
     case 'annual': {
       const hitMonth = Number(cs.month ?? cs.due_month ?? 1)
-      return month === hitMonth ? (Number(cs.amount ?? cs.annual_total ?? 0) || 0) : 0
+      return month === hitMonth ? Number(cs.amount ?? cs.annual_total ?? 0) || 0 : 0
     }
     case 'total': {
       const start = commitment.start_date ? parseLocalDate(commitment.start_date) : null
@@ -75,7 +76,8 @@ export function commitmentTotalProjected(commitment) {
   const start = commitment.start_date ? parseLocalDate(commitment.start_date) : null
   const end = commitment.end_date ? parseLocalDate(commitment.end_date) : null
   const cs = commitment.cost_structure || {}
-  const kind = cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
+  const kind =
+    cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
 
   // Without both dates the span is unknown; commitmentMonthlyDemand returns 0
   // for every month in that case, so the total must agree.
@@ -88,7 +90,9 @@ export function commitmentTotalProjected(commitment) {
   let total = 0 // cents
   const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
   for (let i = 0; i < monthCount; i++) {
-    total += toCents(commitmentMonthlyDemand(commitment, cursor.getFullYear(), cursor.getMonth() + 1))
+    total += toCents(
+      commitmentMonthlyDemand(commitment, cursor.getFullYear(), cursor.getMonth() + 1)
+    )
     cursor.setMonth(cursor.getMonth() + 1)
   }
   return fromCents(total)
@@ -106,14 +110,28 @@ export function aggregateCommitmentsForYear(commitments, year) {
 
 // Human-readable summary of a commitment's cadence.
 export function describeCostStructure(cs = {}) {
-  const kind = cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
-  const fmt = n => '$' + Math.round(Number(n) || 0).toLocaleString()
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const kind =
+    cs.kind || (cs.monthly_amount != null ? 'monthly' : cs.annual_total != null ? 'annual' : null)
+  const fmt = (n) => '$' + Math.round(Number(n) || 0).toLocaleString()
+  const MONTHS = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ]
   switch (kind) {
     case 'monthly':
       return `${fmt(cs.amount ?? cs.monthly_amount)}/mo`
     case 'annual': {
-      const monthName = MONTHS[(Number(cs.month ?? cs.due_month ?? 1)) - 1]
+      const monthName = MONTHS[Number(cs.month ?? cs.due_month ?? 1) - 1]
       return `${fmt(cs.amount ?? cs.annual_total)}/yr${monthName ? ` (${monthName})` : ''}`
     }
     case 'total':
