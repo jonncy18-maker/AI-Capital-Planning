@@ -12,6 +12,11 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 ## Current Status — Session Log
 
+- **Vitest unit tests (2026-10-07):** Added Vitest (`npm test`, `npm run test:watch`; CI runs `npm test` before build). 224 tests in `tests/unit/` cover `schedule.js`, `patternAnalyzer.js`, `scenarioUtils.js` and all exported `widgetData.js` functions with hand-derived expectations; the two node:test suites (outlook, bill-amount-items) still run under the same `npm test`. No app code changed.
+  - **Loop:** approved before/after table; Sonnet build agent + separate Sonnet audit agent; 2 iterations. Audit passed all criteria, recalculated ~40 expected values by hand, and 13 of 14 deliberate mutations failed the suite; the survivor (`cov < 0.2` Fixed/Flexible threshold) got boundary tests in iteration 2.
+  - **Suspected bugs, NOT fixed** (asserted at current behavior with `// BUG?:` comments; fixing one means updating its test): (1) `analyzeTransactions` — a user-configured category type is overwritten by the inferred one (spread order); (2) `spanMonths` counts income-only months, diluting frequency; (3) `spendByGroupYear` counts a no-transaction month as $0 while `yearProjection` uses the forecast; (4) `incomeVsExpenses.avgMonthlyExpenses` includes the in-progress month but divides by `currentMonth`; (5) `incomeVsExpenses` `ytd` drops future-dated transactions that `monthlyExpenses`/`fullYearActualExpenses` keep; (6) future-year views: `monthlyBudgetVsActual` skips scenario adjustments, `cashFlowForecast` shows no forecast; (7) `commitmentTotalProjected` vs `commitmentMonthlyDemand` disagree for `total` kind with no end date; (8) completed commitments still produce demand (empty `status === 'completed'` branch); (9) `describeCostStructure` prints "(undefined)" for month 13; (10) `buildComparisonRows` period scenario adds baseline-less deltas onto a partial baseline.
+  - **Not verified:** `npm run build`; CI run on GitHub (workflow edited, not yet executed). Money is still floats, so these tests need revisiting when the integer-cents item lands.
+
 - **5-year outlook — multi-year planning (2026-10-04):** The next budget year stays the detailed category × month budget; the four years after it are a driver-based outlook, one annual number per budget group. Budget gets a "Detailed · {year} | 5-year outlook" toggle (`src/modules/budget/OutlookView.jsx`): columns NEXT..NEXT+4, each group compounds from the base year at its own rate or the inflation default, take-home income grows at its own rate, commitments are placed by their real dates with no inflation (a highlighted cell marks the year after one ends), planned events are one-time, and net savings closes the table. Base year is NEXT when it has a budget, else the current year with a visible "Starting from the {year} budget" label. Math is pure in `src/lib/outlook/outlookEngine.js`.
   - **Scenarios:** new "Outlook (year · group)" adjustment type for outlook years only, badged "Outlook year", stored in `scenario_outlook_adjustments` and computed live (never materialized into `forecast_line_items`). Committed scenarios' outlook adjustments are always in the baseline outlook; a modeled/idea scenario can be overlaid as a delta. Scenario detail shows an "Outlook impact" block with a deep link (`/budget?view=outlook&scenario=<id>`); list cards get a cash-terms chip like "−$1,200 · 2029 outlook". Clone copies outlook adjustments.
   - **Wealth:** "Use 5-year outlook" toggle feeds outlook net savings into projection years 1–5 (`projectTrajectory` `yearContributions`); the without-commitments series adds that year's commitments back so the commitments toggle stays meaningful; the slider takes over after year 5. Disabled with a reason when income or a base budget is missing — "—", never an invented number.
@@ -987,7 +992,7 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 ~~**Verify income forecast math**~~ — confirmed good (2026-07-08). ✓
 
 **Reliability (current priority — see `ARCHITECTURE.md` §10 hardening backlog)**
-1. **Add Vitest unit tests** for pure modeling functions — `widgetData.js`, `patternAnalyzer.js`, `schedule.js`, scenario delta math.
+1. ~~**Add Vitest unit tests** for pure modeling functions — `widgetData.js`, `patternAnalyzer.js`, `schedule.js`, scenario delta math.~~ Done 2026-10-07 (224 tests; `npm test`). ✓
 2. **Move currency math to integer cents** — dollar amounts are currently JS floats throughout; no visible bug yet, but a known rounding-error risk as data volume grows.
 
 **Polish**
@@ -1239,7 +1244,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 - Remitly / Western Union supplemental transfer data
 - Google Sheets sync
 - Social Security and tax modeling (Wealth Trajectory expansion)
-- Vitest unit tests for `widgetData.js`, `patternAnalyzer.js`, `schedule.js`, scenario delta math
 
 ---
 
