@@ -21,6 +21,7 @@ import { getBudgetCategories } from '../../lib/db/budgetCategories.js'
 import { getBudgetLineItems } from '../../lib/db/budgetLineItems.js'
 import { getForecastLineItems } from '../../lib/db/forecastLineItems.js'
 import { computePointsForecast, estimateTotalValue, estimateMonthlyEarnRate } from '../../lib/creditcards/pointsEngine.js'
+import { routeForecastToCards } from '../../lib/cashflow/cashflowEngine.js'
 
 // v5: decision-first default — surfaces the four decision-driver widgets up top,
 // groups secondary cards in the middle, and collapses the redundant plan-vs-actual
@@ -900,7 +901,7 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
   const forecastStartLabel = cf.todayIdx < 12 ? IVE_MONTHS[cf.todayIdx] : null
 
   return (
-    <WideCard hue={BLOCK_HUE.cashFlow} title="Cash Flow" subtitle="Full year · net (income − expenses)" onCollapse={onCollapse} isCollapsed={isCollapsed}>
+    <WideCard hue={BLOCK_HUE.cashFlow} title="Cash Flow" subtitle={cf.basis === 'cash' ? 'Full year · net cash (card payments lag spend)' : 'Full year · net (income − expenses)'} onCollapse={onCollapse} isCollapsed={isCollapsed}>
       <div style={{ position: 'relative', marginTop: 4 }}>
         {/* Tooltip */}
         {hover !== null && cf.data[hover] && (() => {
@@ -916,6 +917,12 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
               <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--tx-3)', textTransform: 'uppercase', marginBottom: 8 }}>
                 {d.label}{!d.isActual ? ' · forecast' : ''}
               </div>
+              {d.cardPayments > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0' }}>
+                  <span style={{ color: 'var(--tx-3)' }}>Card payments due</span>
+                  <span style={{ color: 'var(--tx-2)', fontVariantNumeric: 'tabular-nums' }}>−{fmtMoney(d.cardPayments)}</span>
+                </div>
+              )}
               {d.isActual ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 11.5, padding: '2px 0' }}>
                   <span style={{ color: 'var(--tx-3)' }}>Net cash flow</span>
@@ -1057,6 +1064,11 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
           isForecast
         />
       </div>
+      {cf.basis === 'cash' && (
+        <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 10 }}>
+          Cash basis: card spend counts when each statement is paid. Carried in from last year: {fmtMoney(cf.carryIn)} · carried out to next year: {fmtMoney(cf.carryOut)}{cf.carryIn === 0 ? ' (no prior-year card data)' : ''}
+        </div>
+      )}
     </WideCard>
   )
 }
@@ -1095,7 +1107,7 @@ function CfLegend({ color, solid, dashed, label }) {
 
 // ── widget definitions ───────────────────────────────────────────────────────
 
-function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = false) {
+function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = false, cardTiming = null) {
   const sgy = spendByGroupYear(ctx, yearTxns, 12)
   const rr = yearProjection(ctx, yearTxns)
   const bva = budgetVsActual(ctx, yearTxns)
@@ -1104,7 +1116,7 @@ function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = 
   const ws = wealthSummary(ctx)
   const si = scenarioImpact(ctx)
   const ive = incomeVsExpenses(ctx, yearTxns, priorYearTxns)
-  const cf = cashFlowForecast(ctx, yearTxns)
+  const cf = cashFlowForecast(ctx, yearTxns, { ...cardTiming, priorYearTxns })
 
   return [
     {
@@ -1242,6 +1254,33 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
     return () => { cancelled = true }
   }, [userId, context?.thisYear])
 
+  const [cardInputs, setCardInputs] = useState(null)
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    const year = context?.thisYear ?? new Date().getFullYear()
+    async function load() {
+      try {
+        const [cards, settings, rates, cats] = await Promise.all([
+          getCreditCards(userId), getCCSettings(userId), getEarnRates(userId), getBudgetCategories(userId),
+        ])
+        if (!cards.some(c => c.statement_close_day)) { if (!cancelled) setCardInputs(null); return }
+        const [lineItems, forecastLines] = await Promise.all([
+          getBudgetLineItems(userId, { year }),
+          getForecastLineItems(userId, year),
+        ])
+        const { cardDollarsByMonth } = routeForecastToCards({
+          budgetCategories: cats, lineItems: lineItems ?? [], forecastLines: forecastLines ?? [],
+          cards, earnRateMap: buildEarnRateMap(rates),
+          coveragePct: settings.coveragePct, optimizationPct: settings.optimizationPct,
+        })
+        if (!cancelled) setCardInputs({ cards, cardDollarsByMonth })
+      } catch { if (!cancelled) setCardInputs(null) }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [userId, context?.thisYear, reloadSignal])
+
   const [scenarioMode, setScenarioMode] = useState('all')
   const committedScenarios = useMemo(
     () => (context?.scenarios ?? []).filter(s => s.state === 'committed'),
@@ -1262,8 +1301,8 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
   const blocks = useMemo(() => [
     { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} scenarioMode={scenarioMode} onScenarioModeChange={setScenarioMode} committedScenarios={committedScenarios} /> },
     { id: 'creditPoints', title: 'Credit Card Points', subtitle: 'Balance · earning rate · estimated value', render: () => <PointsSummaryWidget userId={userId} /> },
-    ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile),
-  ], [context, summary, yearTxns, priorYearTxns, monthly, mobile, userId, onThresholdChange, scenarioMode, committedScenarios])
+    ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile, cardInputs),
+  ], [context, summary, yearTxns, priorYearTxns, cardInputs, monthly, mobile, userId, onThresholdChange, scenarioMode, committedScenarios])
 
   const ordered = useMemo(() => {
     const byId = Object.fromEntries(blocks.map(b => [b.id, b]))

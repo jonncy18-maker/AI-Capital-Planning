@@ -22,7 +22,8 @@ import {
   resolveMonthlySpend,
   bestCardForCategory,
 } from '../creditcards/pointsEngine.js'
-import { toCents, fromCents, mulCents } from '../money.js'
+import { toCents, fromCents, mulCents, sumCents } from '../money.js'
+import { parseLocalDate } from '../dates.js'
 
 // Days in a 1-indexed month (month 1..12).
 export function daysInMonth(year, month) {
@@ -175,4 +176,107 @@ export function projectedBillAmounts({ bills, statementsByCard, year, month }) {
     if (due) map[b.id] = due.balance
   }
   return map
+}
+
+// Cash-basis card payments for `year`, lagging spend by statement close + due
+// date. Unlike computeStatementForecast this also reads the PRIOR year's spend,
+// so a December statement paid in January is counted, and reports what is
+// carried in from last year and out to next.
+//
+// Spend by purchase month is split into early (days <= close day) and late
+// (days > close day) halves. The statement closing in month M is
+// early(M) + late(M-1) and is paid in full on close + due_days_after_close.
+// Actual months (prior year, and `year` months before currentMonthIdx) use the
+// exact transaction dates of rows whose account maps to the card; later months
+// use the proportional split of forecastCardDollarsByMonth[cardId][month].
+//
+// Identity: card spend of `year` + carryIn - sum(paymentsByMonth) = carryOut.
+// Only cards with statement_close_day participate.
+export function computeCardCashTiming({
+  cards, accountCardMap, year, currentMonthIdx,
+  yearTxns, priorYearTxns, excludedCategories, forecastCardDollarsByMonth,
+}) {
+  const excluded = excludedCategories instanceof Set ? excludedCategories : new Set(excludedCategories ?? [])
+  const timingCards = (cards ?? []).filter(c => c.statement_close_day)
+  const byCard = new Map(timingCards.map(c => [c.id, c]))
+  const paymentsC = Array(12).fill(0)
+  const actualSpendC = Array(12).fill(0)
+  let carryInC = 0
+  let carryOutC = 0
+
+  // early/late cents per card, by calendar year then month index 0..11
+  const split = {}
+  for (const c of timingCards) {
+    split[c.id] = {
+      [year - 1]: { early: Array(12).fill(0), late: Array(12).fill(0) },
+      [year]: { early: Array(12).fill(0), late: Array(12).fill(0) },
+    }
+  }
+
+  const addRows = (rows, rowYear, lastMonthExclusive) => {
+    for (const t of rows ?? []) {
+      const cardId = accountCardMap?.get?.(t.account)
+      if (cardId == null || !byCard.has(cardId)) continue
+      if (excluded.has(t.category)) continue
+      const amt = Number(t.amount) || 0
+      if (amt === 0) continue
+      const d = parseLocalDate(t.date)
+      if (Number.isNaN(d.getTime()) || d.getFullYear() !== rowYear) continue
+      const mi = d.getMonth()
+      if (mi >= lastMonthExclusive) continue
+      const closeD = Math.min(byCard.get(cardId).statement_close_day, daysInMonth(rowYear, mi + 1))
+      split[cardId][rowYear][d.getDate() <= closeD ? 'early' : 'late'][mi] -= toCents(amt)
+    }
+  }
+  addRows(priorYearTxns, year - 1, 12)
+  addRows(yearTxns, year, currentMonthIdx)
+
+  for (const c of timingCards) {
+    const bucket = split[c.id][year]
+    for (let mi = Math.max(currentMonthIdx, 0); mi < 12; mi++) {
+      const dim = daysInMonth(year, mi + 1)
+      const closeD = Math.min(c.statement_close_day, dim)
+      const total = toCents(forecastCardDollarsByMonth?.[c.id]?.[mi + 1] ?? 0)
+      const early = mulCents(total, closeD / dim)
+      bucket.early[mi] = early
+      bucket.late[mi] = total - early
+    }
+    for (let mi = 0; mi < Math.min(currentMonthIdx, 12); mi++) {
+      actualSpendC[mi] += bucket.early[mi] + bucket.late[mi]
+    }
+
+    const dueOffset = c.due_days_after_close ?? 21
+    // Statements closing Jan(year-1)..Dec(year), then a virtual Jan(year+1)
+    // holding only December's late half.
+    for (let n = 0; n <= 24; n++) {
+      const sy = year - 1 + Math.floor(n / 12)
+      const mi = n % 12
+      const closeD = Math.min(c.statement_close_day, daysInMonth(sy, mi + 1))
+      const dueDate = new Date(sy, mi, closeD + dueOffset)
+
+      const early = sy <= year ? split[c.id][sy].early[mi] : 0
+      const lateMi = (mi + 11) % 12
+      const lateYear = mi === 0 ? sy - 1 : sy
+      const late = lateYear >= year - 1 ? split[c.id][lateYear].late[lateMi] : 0
+
+      // Year-1 spend: the whole of a year-1 statement, plus the December late
+      // half sitting in January's statement.
+      const priorPart = (sy === year - 1 ? early : 0) + (lateYear === year - 1 ? late : 0)
+
+      if (dueDate.getFullYear() === year) {
+        paymentsC[dueDate.getMonth()] += early + late
+        carryInC += priorPart
+      } else if (dueDate.getFullYear() > year) {
+        carryOutC += early + late - priorPart
+      }
+    }
+  }
+
+  return {
+    paymentsByMonth: paymentsC.map(fromCents),
+    carryIn: fromCents(carryInC),
+    carryOut: fromCents(carryOutC),
+    cardActualSpendByMonth: actualSpendC.map(fromCents),
+    hasData: timingCards.length > 0 && (sumCents(paymentsC) !== 0 || carryInC !== 0 || carryOutC !== 0),
+  }
 }

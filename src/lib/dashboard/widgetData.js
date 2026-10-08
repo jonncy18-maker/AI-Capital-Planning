@@ -5,6 +5,8 @@ import { parseLocalDate } from '../dates.js'
 import { aggregateCommitmentsForYear, commitmentMonthlyDemand } from '../commitments/schedule.js'
 import { cashEffect, isIncomeAdjustment } from '../scenarios/scenarioUtils.js'
 import { toCents, fromCents, sumCents, sumDollars, mulCents, allocateCents } from '../money.js'
+import { matchAccountsToCards } from '../cashflow/cardAccountMatch.js'
+import { computeCardCashTiming } from '../cashflow/cashflowEngine.js'
 
 // All money below is summed in integer cents and converted back to dollars only
 // in the returned objects. Averages and percentages stay unrounded floats.
@@ -714,7 +716,12 @@ export function spendByCategoryForGroup(ctx, yearTxns = [], groupName) {
 // Full-year net cash flow: income minus expenses for actual months; forecast
 // income (salary profile) minus commitment + non-monthly budget demand for
 // future months. Bars can be positive or negative.
-export function cashFlowForecast(ctx, yearTxns = []) {
+//
+// With opts.cards holding at least one card that has a statement close day, the
+// widget switches to cash basis: spend on a matched card account counts when its
+// statement is paid (computeCardCashTiming), not on the purchase date.
+// opts = { cards, priorYearTxns, cardDollarsByMonth }.
+export function cashFlowForecast(ctx, yearTxns = [], opts = {}) {
   const now = new Date()
   const year = ctx?.thisYear ?? now.getFullYear()
   // First forecast month: the in-progress month is itself forecast, so a past
@@ -736,15 +743,31 @@ export function cashFlowForecast(ctx, yearTxns = []) {
     budgetByYM[key].push({ name: li.label || cat.category || 'Budget item', amount: toCents(li.amount) })
   }
 
-  // Net cash flow per actual month (income − expenses, sign preserved), in cents
+  const timingCards = (opts.cards ?? []).filter(c => c.statement_close_day)
+  const cashBasis = timingCards.length > 0
+  const accountCardMap = new Map()
+  if (cashBasis) {
+    const names = new Set()
+    for (const t of [...yearTxns, ...(opts.priorYearTxns ?? [])]) if (t.account) names.add(t.account)
+    const timingIds = new Set(timingCards.map(c => c.id))
+    for (const [account, cardId] of matchAccountsToCards(opts.cards, names)) {
+      if (timingIds.has(cardId)) accountCardMap.set(account, cardId)
+    }
+  }
+
+  // Net cash flow per actual month (income − expenses, sign preserved), in cents.
+  // On cash basis, card-account rows are left out: they land via statement payments.
   const netByMonth = Array(12).fill(0)
+  const nonCardSpendByMonth = Array(12).fill(0)
   for (const t of yearTxns) {
     const amt = Number(t.amount) || 0
     if (amt === 0) continue
     if (excluded.has(t.category)) continue
+    if (cashBasis && accountCardMap.has(t.account)) continue
     const d = parseLocalDate(t.date)
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year) continue
     netByMonth[d.getMonth()] += toCents(amt)
+    if (amt < 0) nonCardSpendByMonth[d.getMonth()] -= toCents(amt)
   }
 
   // Income forecast per month from salary profile (same model as incomeVsExpenses)
@@ -756,24 +779,64 @@ export function cashFlowForecast(ctx, yearTxns = []) {
   // incomeVsExpenses, so both widgets reconcile on the full-year net.
   const mbva = monthlyBudgetVsActual(ctx, yearTxns)
 
+  // Planned outflow per forecast month (cents), shared by both bases.
+  const unlinkedDemandByMonth = Array(12).fill(0)
+  const outflowByMonth = Array(12).fill(0)
+  for (let i = Math.max(currentMonthIdx, 0); i < 12; i++) {
+    for (const c of commitments) {
+      if (linkedCommitmentIds.has(c.id)) continue
+      const demand = commitmentMonthlyDemand(c, year, i + 1)
+      if (demand > 0) unlinkedDemandByMonth[i] += toCents(demand)
+    }
+    outflowByMonth[i] = toCents(mbva.months[i].forecast ?? 0) + unlinkedDemandByMonth[i]
+  }
+
+  let timing = null
+  const inMonthCardByMonth = Array(12).fill(0)
+  if (cashBasis) {
+    // Card dollars can never exceed the month's planned outflow; scale them down
+    // so in-month cash spend stays >= 0 and the totals reconcile.
+    const scaledCardDollars = {}
+    for (const c of timingCards) scaledCardDollars[c.id] = {}
+    for (let i = Math.max(currentMonthIdx, 0); i < 12; i++) {
+      const perCard = timingCards.map(c => toCents(opts.cardDollarsByMonth?.[c.id]?.[i + 1] ?? 0))
+      const total = sumCents(perCard)
+      const cap = Math.max(outflowByMonth[i], 0)
+      const scale = total > cap ? cap / total : 1
+      timingCards.forEach((c, k) => {
+        const scaled = scale === 1 ? perCard[k] : mulCents(perCard[k], scale)
+        scaledCardDollars[c.id][i + 1] = fromCents(scaled)
+        inMonthCardByMonth[i] += scaled
+      })
+    }
+    timing = computeCardCashTiming({
+      cards: timingCards, accountCardMap, year, currentMonthIdx,
+      yearTxns, priorYearTxns: opts.priorYearTxns, excludedCategories: excluded,
+      forecastCardDollarsByMonth: scaledCardDollars,
+    })
+  }
+  const paymentsC = (i) => (timing ? toCents(timing.paymentsByMonth[i]) : 0)
+
   // Full Jan–Dec: actual months use transaction net; forecast months use income − outflows
   const totalsC = []
   const data = MONTHS.map((label, i) => {
     const m = i + 1
     if (i < currentMonthIdx) {
-      totalsC.push(netByMonth[i])
-      return { year, month: m, label, isActual: true, commitmentDemand: 0, budgetDemand: 0, forecastIncome: 0, total: fromCents(netByMonth[i]), sources: [] }
+      const net = netByMonth[i] - paymentsC(i)
+      totalsC.push(net)
+      return {
+        year, month: m, label, isActual: true, commitmentDemand: 0, budgetDemand: 0, forecastIncome: 0, total: fromCents(net), sources: [],
+        ...(cashBasis && { cardPayments: fromCents(paymentsC(i)), inMonthSpend: fromCents(nonCardSpendByMonth[i]) }),
+      }
     }
     const sources = []
     let commitmentDemand = 0
-    let unlinkedCommitmentDemand = 0
     for (const c of commitments) {
       const demand = commitmentMonthlyDemand(c, year, m)
       if (demand > 0) {
         const demandC = toCents(demand)
         sources.push({ name: c.name || 'Commitment', kind: 'commitment', amount: fromCents(demandC) })
         commitmentDemand += demandC
-        if (!linkedCommitmentIds.has(c.id)) unlinkedCommitmentDemand += demandC
       }
     }
     let budgetDemand = 0
@@ -785,14 +848,16 @@ export function cashFlowForecast(ctx, yearTxns = []) {
       + toCents(mbva.forecastIncome?.[i] ?? 0) + toCents(mbva.scenarioIncomeDeltas?.[i] ?? 0)
     // Total planned spend for the month (regular + non-monthly + linked commitments);
     // commitment/budget demand above is the itemised part shown in tooltips.
-    const outflow = toCents(mbva.months[i].forecast ?? 0) + unlinkedCommitmentDemand
-    const total = forecastIncome - outflow
+    const outflow = outflowByMonth[i]
+    const inMonthSpend = cashBasis ? Math.max(outflow - inMonthCardByMonth[i], 0) : outflow
+    const total = forecastIncome - inMonthSpend - paymentsC(i)
     totalsC.push(total)
     return {
       year, month: m, label, isActual: false,
       commitmentDemand: fromCents(commitmentDemand), budgetDemand: fromCents(budgetDemand),
       forecastOutflow: fromCents(outflow),
       forecastIncome: fromCents(forecastIncome), total: fromCents(total), sources,
+      ...(cashBasis && { cardPayments: fromCents(paymentsC(i)), inMonthSpend: fromCents(inMonthSpend) }),
     }
   })
 
@@ -804,7 +869,12 @@ export function cashFlowForecast(ctx, yearTxns = []) {
   const actualNet = fromCents(sumCents(totalsC.filter((_, i) => data[i].isActual)))
   const forecastNet = fromCents(sumCents(totalsC.filter((_, i) => !data[i].isActual)))
 
-  return { data, max, hasData: data.some(d => d.total !== 0), halves, todayIdx: currentMonthIdx, actualNet, forecastNet }
+  return {
+    data, max, hasData: data.some(d => d.total !== 0), halves, todayIdx: currentMonthIdx, actualNet, forecastNet,
+    basis: cashBasis ? 'cash' : 'accrual',
+    carryIn: timing?.carryIn ?? 0,
+    carryOut: timing?.carryOut ?? 0,
+  }
 }
 
 export { MONTHS }
