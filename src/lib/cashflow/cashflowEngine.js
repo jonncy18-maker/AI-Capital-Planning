@@ -22,6 +22,7 @@ import {
   resolveMonthlySpend,
   bestCardForCategory,
 } from '../creditcards/pointsEngine.js'
+import { toCents, fromCents, mulCents } from '../money.js'
 
 // Days in a 1-indexed month (month 1..12).
 export function daysInMonth(year, month) {
@@ -54,10 +55,16 @@ export function routeForecastToCards({
   const coverageFactor = (coveragePct ?? 80) / 100
   const optimizationFactor = (optimizationPct ?? 100) / 100
 
-  const pushCash = (m, cat, amount, kind) => {
-    cashByMonth[m] += amount
+  // Accumulated in integer cents; converted back to dollars before returning.
+  const cardCents = {}
+  for (const c of (cards ?? [])) cardCents[c.id] = {}
+  const cashCents = {}
+  for (let m = 1; m <= 12; m++) cashCents[m] = 0
+
+  const pushCash = (m, cat, amountCents, kind) => {
+    cashCents[m] += amountCents
     cashDetailByMonth[m].push({
-      categoryId: cat.id, name: cat.category, group: cat.group, amount, kind,
+      categoryId: cat.id, name: cat.category, group: cat.group, amount: fromCents(amountCents), kind,
     })
   }
 
@@ -66,7 +73,7 @@ export function routeForecastToCards({
     const ccCat = cat.cc_category || 'other'
 
     for (let m = 1; m <= 12; m++) {
-      const spend = resolveMonthlySpend(cat.id, m, spendMaps)
+      const spend = toCents(resolveMonthlySpend(cat.id, m, spendMaps))
       if (spend <= 0) continue
 
       // Cash-only categories, or any spend when no cards exist, leave as in-month cash.
@@ -75,23 +82,29 @@ export function routeForecastToCards({
         continue
       }
 
-      const cardable = spend * coverageFactor
+      const cardable = mulCents(spend, coverageFactor)
       const uncovered = spend - cardable
-      if (uncovered > 0.005) pushCash(m, cat, uncovered, 'uncovered')
+      if (uncovered > 0) pushCash(m, cat, uncovered, 'uncovered')
 
       // Pinned card overrides earn-rate optimization for this category.
       const pinnedCard = cat.pinned_card_id ? (cards ?? []).find(c => c.id === cat.pinned_card_id) : null
       const best = pinnedCard ? { cardId: pinnedCard.id } : bestCardForCategory(ccCat, cards, earnRateMap)
-      const optimizedSpend = cardable * optimizationFactor
-      const defaultSpend = cardable * (1 - optimizationFactor)
+      // The default share is the remainder, so the two parts always sum to cardable.
+      const optimizedSpend = mulCents(cardable, optimizationFactor)
+      const defaultSpend = cardable - optimizedSpend
       if (best) {
-        cardDollarsByMonth[best.cardId][m] = (cardDollarsByMonth[best.cardId][m] ?? 0) + optimizedSpend
+        cardCents[best.cardId][m] = (cardCents[best.cardId][m] ?? 0) + optimizedSpend
       }
       if (defaultCard) {
-        cardDollarsByMonth[defaultCard.id][m] = (cardDollarsByMonth[defaultCard.id][m] ?? 0) + defaultSpend
+        cardCents[defaultCard.id][m] = (cardCents[defaultCard.id][m] ?? 0) + defaultSpend
       }
     }
   }
+
+  for (const id of Object.keys(cardCents)) {
+    for (const m of Object.keys(cardCents[id])) cardDollarsByMonth[id][m] = fromCents(cardCents[id][m])
+  }
+  for (let m = 1; m <= 12; m++) cashByMonth[m] = fromCents(cashCents[m])
 
   return { cardDollarsByMonth, cashByMonth, cashDetailByMonth }
 }
@@ -117,18 +130,18 @@ export function computeStatementForecast({ cardDollarsByMonth, cards, year }) {
       const dim = daysInMonth(year, M)
       const closeD = Math.min(D, dim)
       const fracEarly = closeD / dim
-      let balance = (byMonth[M] ?? 0) * fracEarly
+      let balance = mulCents(toCents(byMonth[M] ?? 0), fracEarly)
 
       const prev = M - 1
       if (prev >= 1) {
         const dimPrev = daysInMonth(year, prev)
         const fracLatePrev = 1 - (Math.min(D, dimPrev) / dimPrev)
-        balance += (byMonth[prev] ?? 0) * fracLatePrev
+        balance += mulCents(toCents(byMonth[prev] ?? 0), fracLatePrev)
       }
 
       const closeDate = new Date(year, M - 1, closeD)
       const dueDate = new Date(closeDate.getTime() + dueOffset * 86400000)
-      statements.push({ month: M, closeDate, dueDate, balance })
+      statements.push({ month: M, closeDate, dueDate, balance: fromCents(balance) })
     }
     out[card.id] = statements
   }
@@ -140,13 +153,15 @@ export function computeStatementForecast({ cardDollarsByMonth, cards, year }) {
 export function statementDueIn(statements, year, month) {
   if (!statements) return null
   let match = null
+  let balanceCents = 0
   for (const s of statements) {
     if (s.dueDate.getFullYear() === year && s.dueDate.getMonth() + 1 === month) {
       if (!match) match = { balance: 0, closeDate: s.closeDate, dueDate: s.dueDate }
-      match.balance += s.balance
+      balanceCents += toCents(s.balance)
       if (s.dueDate < match.dueDate) { match.dueDate = s.dueDate; match.closeDate = s.closeDate }
     }
   }
+  if (match) match.balance = fromCents(balanceCents)
   return match
 }
 
