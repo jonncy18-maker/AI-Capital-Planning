@@ -289,6 +289,34 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
                       background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
                     }}
                   >
+                    {/* Net margin chip */}
+                    {(() => {
+                      const inc = d.incomeIsPast ? d.income : d.incForecast
+                      const exp = d.expenseIsPast ? d.expenses : d.expForecast
+                      const net = inc - exp
+                      if (inc === 0 && exp === 0) return null
+                      return (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: Math.max(incH, expH) + 5,
+                          fontFamily: "'DM Mono', monospace",
+                          fontSize: 8,
+                          fontWeight: 600,
+                          color: net >= 0 ? 'var(--good)' : 'var(--warn)',
+                          background: net >= 0 ? 'var(--good-bg)' : 'var(--warn-bg)',
+                          border: `1px solid ${net >= 0 ? 'var(--accent-bd)' : 'rgba(240,180,41,0.3)'}`,
+                          padding: '1px 4px',
+                          borderRadius: 999,
+                          lineHeight: 1.1,
+                          pointerEvents: 'none',
+                          whiteSpace: 'nowrap',
+                          opacity: isHov ? 1 : 0.82,
+                          zIndex: 3,
+                        }}>
+                          {net > 0 ? '+' : ''}{fmtK(net)}
+                        </div>
+                      )
+                    })()}
                     {/* Income bar */}
                     {showInc && (
                       <div style={{
@@ -296,7 +324,7 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
                         height: Math.max(incH, 2),
                         background: incIsFcst ? 'var(--forecast-fill)' : 'var(--accent)',
                         border: incIsFcst ? '1px dashed var(--accent)' : 'none',
-                        borderRadius: '3px 3px 0 0',
+                        borderRadius: '5px 5px 0 0',
                         opacity: isHov ? 1 : incIsFcst ? 0.9 : 0.88,
                         boxSizing: 'border-box',
                       }} />
@@ -307,7 +335,7 @@ function IncomeVsExpensesWidget({ ive, mobile, onCollapse, isCollapsed }) {
                       height: Math.max(expH, 2),
                       background: expIsFcst ? 'var(--forecast-fill)' : 'var(--warn)',
                       border: expIsFcst ? '1px dashed var(--warn)' : 'none',
-                      borderRadius: '3px 3px 0 0',
+                      borderRadius: '5px 5px 0 0',
                       opacity: isHov ? 1 : expIsFcst ? 0.9 : 0.8,
                       boxSizing: 'border-box',
                     }} />
@@ -881,7 +909,8 @@ function PointsSummaryWidget({ userId }) {
 
 function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
   const [hover, setHover] = useState(null)
-  const chartHalf = mobile ? 70 : 100
+  const [cfView, setCfView] = useState('divergence')
+  const chartTotalH = mobile ? 130 : 170
 
   if (!cf.hasData) {
     return (
@@ -893,6 +922,43 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
 
   const actualEndLabel = cf.todayIdx > 0 ? IVE_MONTHS[cf.todayIdx - 1] : null
   const forecastStartLabel = cf.todayIdx < 12 ? IVE_MONTHS[cf.todayIdx] : null
+
+  // Dynamic Y-axis scale based on actual cash inflow (positive) and outflow (negative)
+  const totals = cf.data.map(d => d.total)
+  const maxPos = Math.max(0, ...totals)
+  const maxNeg = Math.max(0, ...totals.map(v => -v))
+  const hasPos = maxPos > 0
+  const hasNeg = maxNeg > 0
+
+  let zeroRatio = 0.5
+  if (hasPos && hasNeg) {
+    const rawRatio = maxPos / (maxPos + maxNeg)
+    zeroRatio = Math.max(0.25, Math.min(0.75, rawRatio))
+  } else if (hasPos) {
+    zeroRatio = 0.88
+  } else if (hasNeg) {
+    zeroRatio = 0.12
+  }
+
+  const posAreaH = Math.round(zeroRatio * chartTotalH)
+  const negAreaH = chartTotalH - posAreaH
+  const zeroTop = posAreaH
+
+  // Cumulative Cushion calculations
+  const cushionSeries = cf.data.map((_, i) =>
+    cf.data.slice(0, i + 1).reduce((sum, d) => sum + d.total, 0)
+  )
+  const minCushion = Math.min(0, ...cushionSeries)
+  const maxCushion = Math.max(1, ...cushionSeries)
+  const cushionRange = maxCushion - minCushion || 1
+
+  const chartW = 340
+  const padX = 14
+  const padY = 16
+  const getCushionX = i => padX + (i * (chartW - 2 * padX)) / 11
+  const getCushionY = v => chartTotalH - padY - ((v - minCushion) / cushionRange) * (chartTotalH - 2 * padY)
+  const cushionPoints = cushionSeries.map((v, i) => `${i === 0 ? 'M' : 'L'} ${getCushionX(i)} ${getCushionY(v)}`).join(' ')
+  const cushionAreaPath = `${cushionPoints} L ${getCushionX(11)} ${chartTotalH - padY} L ${getCushionX(0)} ${chartTotalH - padY} Z`
 
   return (
     <WideCard hue={BLOCK_HUE.cashFlow} title="Cash Flow" subtitle={cf.basis === 'cash' ? 'Full year · net cash (card payments lag spend)' : 'Full year · net (income − expenses)'} onCollapse={onCollapse} isCollapsed={isCollapsed}>
@@ -954,57 +1020,129 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
           )
         })()}
 
-        {/* Chart: zero line in the middle; positive bars grow up, negative bars grow down */}
-        <div style={{ position: 'relative' }}>
-          <div style={{ position: 'absolute', left: 0, right: 0, top: chartHalf, height: 1, background: 'var(--bd)', zIndex: 1 }} />
-          <div style={{ display: 'flex', gap: mobile ? 6 : 14, height: chartHalf * 2, position: 'relative' }}>
-            {cf.data.map((d, i) => {
-              const posH = d.total > 0 ? Math.max((d.total / cf.max) * chartHalf, 3) : 0
-              const negH = d.total < 0 ? Math.max((Math.abs(d.total) / cf.max) * chartHalf, 3) : 0
-              const isHov = hover === i
-              const barW = mobile ? '75%' : '65%'
-              return (
-                <div
-                  key={i}
-                  onMouseEnter={() => setHover(i)}
-                  onMouseLeave={() => setHover(null)}
-                  style={{
-                    flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    cursor: 'default', position: 'relative', zIndex: 2,
-                    background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
-                  }}
-                >
-                  {/* Upper half: positive bars align to bottom */}
-                  <div style={{ height: chartHalf, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', width: '100%' }}>
-                    {posH > 0 && (
-                      <div style={{
-                        width: barW, maxWidth: 44, height: posH,
-                        background: 'var(--accent)',
-                        opacity: d.isActual ? (isHov ? 0.8 : 0.6) : (isHov ? 0.5 : 0.3),
-                        borderRadius: '3px 3px 0 0',
-                        border: !d.isActual ? '1px dashed var(--accent)' : 'none',
-                        boxSizing: 'border-box',
-                      }} />
-                    )}
-                  </div>
-                  {/* Lower half: negative bars align to top */}
-                  <div style={{ height: chartHalf, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', width: '100%' }}>
-                    {negH > 0 && (
-                      <div style={{
-                        width: barW, maxWidth: 44, height: negH,
-                        background: 'var(--warn)',
-                        opacity: d.isActual ? (isHov ? 0.9 : 0.75) : (isHov ? 0.6 : 0.4),
-                        borderRadius: '0 0 3px 3px',
-                        border: !d.isActual ? '1px dashed var(--warn)' : 'none',
-                        boxSizing: 'border-box',
-                      }} />
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+        {/* View Switcher Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'inline-flex', background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 8, padding: 2, gap: 2 }}>
+            <button
+              onClick={() => setCfView('divergence')}
+              style={{
+                fontFamily: "'DM Mono', monospace", fontSize: 10, padding: '3px 9px', borderRadius: 6, border: 'none',
+                background: cfView === 'divergence' ? 'var(--bg-card)' : 'transparent',
+                color: cfView === 'divergence' ? 'var(--tx-1)' : 'var(--tx-3)',
+                boxShadow: cfView === 'divergence' ? '0 1px 4px rgba(0,0,0,0.2)' : 'none',
+                cursor: 'pointer', fontWeight: cfView === 'divergence' ? 600 : 400,
+              }}
+            >
+              Net Flow (Dynamic)
+            </button>
+            <button
+              onClick={() => setCfView('cushion')}
+              style={{
+                fontFamily: "'DM Mono', monospace", fontSize: 10, padding: '3px 9px', borderRadius: 6, border: 'none',
+                background: cfView === 'cushion' ? 'var(--bg-card)' : 'transparent',
+                color: cfView === 'cushion' ? 'var(--tx-1)' : 'var(--tx-3)',
+                boxShadow: cfView === 'cushion' ? '0 1px 4px rgba(0,0,0,0.2)' : 'none',
+                cursor: 'pointer', fontWeight: cfView === 'cushion' ? 600 : 400,
+              }}
+            >
+              Cash Cushion Wave
+            </button>
           </div>
+          {cfView === 'divergence' ? (
+            <div style={{ display: 'flex', gap: 12, fontSize: 10, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace" }}>
+              <span>{hasPos ? `+${fmtK(maxPos)} peak inflow` : ''}</span>
+              <span>{hasNeg ? `-${fmtK(maxNeg)} peak outflow` : ''}</span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 10, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>
+              Cumulative net trajectory
+            </div>
+          )}
         </div>
+
+        {/* Chart View Content */}
+        {cfView === 'cushion' ? (
+          <div style={{ position: 'relative', height: chartTotalH }}>
+            <svg viewBox={`0 0 ${chartW} ${chartTotalH}`} style={{ width: '100%', height: chartTotalH, overflow: 'visible' }}>
+              <defs>
+                <linearGradient id="cfCushionGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+                </linearGradient>
+              </defs>
+              <line x1={padX} x2={chartW - padX} y1={getCushionY(0)} y2={getCushionY(0)} stroke="var(--bd)" strokeDasharray="3 3" />
+              <path d={cushionAreaPath} fill="url(#cfCushionGrad)" />
+              <path d={cushionPoints} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              {cushionSeries.map((v, i) => {
+                const cx = getCushionX(i)
+                const cy = getCushionY(v)
+                const isCur = i === cf.todayIdx
+                return (
+                  <g key={i}>
+                    <circle cx={cx} cy={cy} r={isCur ? 4.5 : 3} fill={v >= 0 ? 'var(--accent)' : 'var(--warn)'} stroke="var(--bg-card)" strokeWidth="1.5" />
+                    {isCur && (
+                      <text x={cx} y={Math.max(12, cy - 8)} textAnchor="middle" fill="var(--tx-1)" fontSize="10" fontFamily="'DM Mono', monospace">
+                        {fmtK(v)}
+                      </text>
+                    )}
+                  </g>
+                )
+              })}
+            </svg>
+          </div>
+        ) : (
+          /* Chart: dynamic zero line; positive bars grow up, negative bars grow down */
+          <div style={{ position: 'relative' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: zeroTop, height: 1, background: 'var(--bd)', zIndex: 1 }} />
+            <div style={{ display: 'flex', gap: mobile ? 6 : 14, height: chartTotalH, position: 'relative' }}>
+              {cf.data.map((d, i) => {
+                const posH = d.total > 0 && maxPos > 0 ? Math.max((d.total / maxPos) * (posAreaH - 4), 3) : 0
+                const negH = d.total < 0 && maxNeg > 0 ? Math.max((Math.abs(d.total) / maxNeg) * (negAreaH - 4), 3) : 0
+                const isHov = hover === i
+                const barW = mobile ? '75%' : '65%'
+                return (
+                  <div
+                    key={i}
+                    onMouseEnter={() => setHover(i)}
+                    onMouseLeave={() => setHover(null)}
+                    style={{
+                      flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
+                      cursor: 'default', position: 'relative', zIndex: 2,
+                      background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
+                    }}
+                  >
+                    {/* Upper area: positive bars align to bottom */}
+                    <div style={{ height: posAreaH, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', width: '100%' }}>
+                      {posH > 0 && (
+                        <div style={{
+                          width: barW, maxWidth: 44, height: posH,
+                          background: 'var(--accent)',
+                          opacity: d.isActual ? (isHov ? 0.8 : 0.6) : (isHov ? 0.5 : 0.3),
+                          borderRadius: '3px 3px 0 0',
+                          border: !d.isActual ? '1px dashed var(--accent)' : 'none',
+                          boxSizing: 'border-box',
+                        }} />
+                      )}
+                    </div>
+                    {/* Lower area: negative bars align to top */}
+                    <div style={{ height: negAreaH, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', width: '100%' }}>
+                      {negH > 0 && (
+                        <div style={{
+                          width: barW, maxWidth: 44, height: negH,
+                          background: 'var(--warn)',
+                          opacity: d.isActual ? (isHov ? 0.9 : 0.75) : (isHov ? 0.6 : 0.4),
+                          borderRadius: '0 0 3px 3px',
+                          border: !d.isActual ? '1px dashed var(--warn)' : 'none',
+                          boxSizing: 'border-box',
+                        }} />
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Month labels + TODAY marker */}
         <div style={{ display: 'flex', gap: mobile ? 6 : 14, marginTop: 6 }}>
@@ -1099,18 +1237,241 @@ function CfLegend({ color, solid, dashed, label }) {
   )
 }
 
+// ── Executive Hero Verdict & Attention Strip ──────────────────────────────────
+
+function HeroVerdict({ ive, bva, mobile }) {
+  const fullYearNet = ive?.fullYearNet ?? 0
+  const savingsRate = ive?.savingsRate
+  const variance = bva?.variance ?? 0
+  const budgetPct = bva?.pct != null ? Math.round(bva.pct) : null
+
+  const now = new Date()
+  const currentMonthIdx = ive?.currentMonth ?? now.getMonth()
+  const yearElapsedPct = Math.min(100, Math.max(0, Math.round(((currentMonthIdx + 1) / 12) * 100)))
+
+  const verdictHeadline = fullYearNet > 0
+    ? `On track to save ${fmtK(fullYearNet)} this year`
+    : fullYearNet < 0
+      ? `Projected annual deficit of ${fmtK(Math.abs(fullYearNet))}`
+      : 'Projected to break even this year'
+
+  const paceDesc = variance < 0
+    ? `Spending runs ${fmtK(Math.abs(variance))} under budget plan.`
+    : variance > 0
+      ? `Spending is currently projected ${fmtK(variance)} over plan.`
+      : 'Spending is tracking in line with annual plan.'
+
+  const months = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
+  let running = 0
+  const netSeries = months.map((_, m) => {
+    const isPast = m <= currentMonthIdx
+    const inc = isPast
+      ? (ive?.monthlyIncome?.[m] ?? ive?.monthlyIncomeForecast?.[m] ?? 0)
+      : (ive?.monthlyIncomeForecast?.[m] ?? 0)
+    const exp = isPast
+      ? (ive?.monthlyExpenses?.[m] ?? ive?.monthlyExpenseForecast?.[m] ?? 0)
+      : (ive?.monthlyExpenseForecast?.[m] ?? 0)
+    const net = inc - exp
+    running += net
+    return running
+  })
+
+  const minVal = Math.min(0, ...netSeries)
+  const maxVal = Math.max(1, ...netSeries)
+  const range = maxVal - minVal || 1
+  const chartW = 340
+  const chartH = 96
+  const padX = 12
+  const padY = 14
+  const getX = i => padX + (i * (chartW - 2 * padX)) / 11
+  const getY = v => chartH - padY - ((v - minVal) / range) * (chartH - 2 * padY)
+  const points = netSeries.map((v, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(v)}`).join(' ')
+  const currentX = getX(currentMonthIdx)
+  const currentY = getY(netSeries[currentMonthIdx] ?? 0)
+
+  return (
+    <div style={{
+      border: '1px solid var(--bd)',
+      borderRadius: 14,
+      background: 'linear-gradient(135deg, var(--bg-card) 45%, var(--accent-bg))',
+      boxShadow: 'var(--elev-1)',
+      padding: mobile ? '18px 16px' : '22px 24px',
+      marginBottom: 16,
+      display: 'grid',
+      gridTemplateColumns: mobile ? '1fr' : 'minmax(0, 1.25fr) minmax(280px, 1fr)',
+      gap: mobile ? 18 : 24,
+      alignItems: 'center',
+    }}>
+      <div>
+        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--tx-3)' }}>
+          Annual Outlook · {now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+        </div>
+        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: mobile ? 24 : 30, color: 'var(--tx-1)', margin: '6px 0 6px', letterSpacing: '-0.01em', lineHeight: 1.15 }}>
+          {verdictHeadline}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--tx-2)', lineHeight: 1.45, maxWidth: '52ch' }}>
+          {paceDesc}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16 }}>
+          <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>SAVINGS RATE</div>
+            <div style={{ ...figureStyle, fontSize: 19, color: 'var(--tx-1)', marginTop: 2 }}>
+              {savingsRate != null ? `${Number(savingsRate).toFixed(1)}%` : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: savingsRate >= 20 ? 'var(--good)' : 'var(--tx-3)', marginTop: 2 }}>
+              {savingsRate >= 20 ? '▲ Strong' : 'Target 20%+'}
+            </div>
+          </div>
+          <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>BUDGET USED</div>
+            <div style={{ ...figureStyle, fontSize: 19, color: budgetPct > 100 ? 'var(--warn)' : 'var(--tx-1)', marginTop: 2 }}>
+              {budgetPct != null ? `${budgetPct}%` : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 2 }}>
+              {yearElapsedPct}% elapsed
+            </div>
+          </div>
+          <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>NET SAVINGS</div>
+            <div style={{ ...figureStyle, fontSize: 19, color: fullYearNet >= 0 ? 'var(--accent)' : 'var(--warn)', marginTop: 2 }}>
+              {fmtK(fullYearNet)}
+            </div>
+            <div style={{ fontSize: 11, color: fullYearNet >= 0 ? 'var(--good)' : 'var(--bad)', marginTop: 2 }}>
+              {fullYearNet >= 0 ? '▲ Surplus' : '▼ Deficit'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ borderLeft: mobile ? 'none' : '1px solid var(--bd-light)', paddingLeft: mobile ? 0 : 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 11, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>CUMULATIVE NET SAVINGS</span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999,
+            fontSize: 11, fontWeight: 600, background: fullYearNet >= 0 ? 'var(--good-bg)' : 'var(--warn-bg)',
+            color: fullYearNet >= 0 ? 'var(--good)' : 'var(--warn)',
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+            {fullYearNet >= 0 ? 'Positive Pace' : 'Deficit Pace'}
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
+          <line x1={padX} x2={chartW - padX} y1={getY(0)} y2={getY(0)} stroke="var(--bd)" strokeDasharray="3 3" />
+          <path d={points} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx={currentX} cy={currentY} r="4.5" fill="var(--accent)" stroke="var(--bg-card)" strokeWidth="2" />
+          <text x={currentX} y={Math.max(10, currentY - 8)} textAnchor="middle" fill="var(--tx-1)" fontSize="10.5" fontFamily="'DM Mono', monospace">
+            {fmtK(netSeries[currentMonthIdx] ?? 0)}
+          </text>
+          {months.map((m, i) => (
+            i % 2 === 0 && (
+              <text key={i} x={getX(i)} y={chartH - 1} textAnchor="middle" fill="var(--tx-4)" fontSize="9.5" fontFamily="'DM Mono', monospace">
+                {m}
+              </text>
+            )
+          ))}
+        </svg>
+      </div>
+    </div>
+  )
+}
+
+function AttentionStrip({ sgy, spike, bva, varianceThreshold = 10, mobile }) {
+  const alerts = []
+
+  if (sgy?.rows?.length) {
+    const threshMultiplier = 1 + varianceThreshold / 100
+    const overGroups = sgy.rows.filter(r => r.budget > 0 && r.projected > r.budget * threshMultiplier)
+    if (overGroups.length > 0) {
+      const topOver = overGroups[0]
+      const overPct = Math.round(((topOver.projected - topOver.budget) / topOver.budget) * 100)
+      alerts.push({
+        type: 'warn',
+        icon: '!',
+        title: `${topOver.group || topOver.name} is ${overPct}% over plan`,
+        sub: `Projected ${fmtK(topOver.projected)} vs ${fmtK(topOver.budget)} budget`,
+      })
+    }
+  }
+
+  if (spike?.hasData && spike.amount > 0) {
+    alerts.push({
+      type: 'spike',
+      icon: '◔',
+      title: `${spike.month} commitment spike ahead`,
+      sub: `${fmtK(spike.amount)} demand (${fmtK(spike.yearTotal)} total this year)`,
+    })
+  }
+
+  if (bva?.hasBudget && bva.variance < 0) {
+    alerts.push({
+      type: 'good',
+      icon: '✓',
+      title: `Overall spend is ${fmtK(Math.abs(bva.variance))} under plan`,
+      sub: `Projected ${fmtK(bva.projected)} vs ${fmtK(bva.planned)} annual budget`,
+    })
+  }
+
+  if (alerts.length === 0) return null
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: mobile ? '1fr' : `repeat(${Math.min(alerts.length, 3)}, 1fr)`,
+      gap: 10,
+      marginBottom: 16,
+    }}>
+      {alerts.slice(0, 3).map((a, i) => {
+        const isGood = a.type === 'good'
+        const isWarn = a.type === 'warn'
+        const iconBg = isGood ? 'var(--good-bg)' : isWarn ? 'var(--bad-bg)' : 'var(--warn-bg)'
+        const iconColor = isGood ? 'var(--good)' : isWarn ? 'var(--bad)' : 'var(--warn)'
+        return (
+          <div key={i} style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--bd)',
+            borderRadius: 12,
+            padding: '12px 14px',
+            boxShadow: 'var(--elev-1)',
+          }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8,
+              background: iconBg, color: iconColor,
+              display: 'grid', placeItems: 'center',
+              fontWeight: 700, fontSize: 13, flexShrink: 0,
+            }}>
+              {a.icon}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {a.title}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--tx-3)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {a.sub}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── widget definitions ───────────────────────────────────────────────────────
 
-function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = false, cardTiming = null) {
-  const sgy = spendByGroupYear(ctx, yearTxns, 12)
-  const rr = yearProjection(ctx, yearTxns)
-  const bva = budgetVsActual(ctx, yearTxns)
-  const spike = cashFlowSpike(ctx)
-  const cs = commitmentsSummary(ctx)
-  const ws = wealthSummary(ctx)
-  const si = scenarioImpact(ctx)
-  const ive = incomeVsExpenses(ctx, yearTxns, priorYearTxns)
-  const cf = cashFlowForecast(ctx, yearTxns, { ...cardTiming, priorYearTxns })
+function buildWidgets(ctx, summary, yearTxns = [], priorYearTxns = [], mobile = false, cardTiming = null, d = null) {
+  const sgy = d?.sgy ?? spendByGroupYear(ctx, yearTxns, 12)
+  const rr = d?.rr ?? yearProjection(ctx, yearTxns)
+  const bva = d?.bva ?? budgetVsActual(ctx, yearTxns)
+  const spike = d?.spike ?? cashFlowSpike(ctx)
+  const cs = d?.cs ?? commitmentsSummary(ctx)
+  const ws = d?.ws ?? wealthSummary(ctx)
+  const si = d?.si ?? scenarioImpact(ctx)
+  const ive = d?.ive ?? incomeVsExpenses(ctx, yearTxns, priorYearTxns)
+  const cf = d?.cf ?? cashFlowForecast(ctx, yearTxns, { ...cardTiming, priorYearTxns })
 
   return [
     {
@@ -1292,11 +1653,24 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
     try { localStorage.setItem(LS_LAYOUT, JSON.stringify(next)) } catch { /* ignore */ }
   }, [])
 
+  const dashboardData = useMemo(() => {
+    const sgy = spendByGroupYear(context, yearTxns, 12)
+    const rr = yearProjection(context, yearTxns)
+    const bva = budgetVsActual(context, yearTxns)
+    const spike = cashFlowSpike(context)
+    const cs = commitmentsSummary(context)
+    const ws = wealthSummary(context)
+    const si = scenarioImpact(context)
+    const ive = incomeVsExpenses(context, yearTxns, priorYearTxns)
+    const cf = cashFlowForecast(context, yearTxns, { ...cardInputs, priorYearTxns })
+    return { sgy, rr, bva, spike, cs, ws, si, ive, cf }
+  }, [context, yearTxns, priorYearTxns, cardInputs])
+
   const blocks = useMemo(() => [
     { id: 'monthlyChart', title: 'Monthly Budget vs. Actuals', fullWidth: true, render: ({ onCollapse, isCollapsed } = {}) => <BudgetActualsChart data={monthly} mobile={mobile} onThresholdChange={onThresholdChange} onCollapse={onCollapse} isCollapsed={isCollapsed} scenarioMode={scenarioMode} onScenarioModeChange={setScenarioMode} committedScenarios={committedScenarios} /> },
     { id: 'creditPoints', title: 'Credit Card Points', subtitle: 'Balance · earning rate · estimated value', render: () => <PointsSummaryWidget userId={userId} /> },
-    ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile, cardInputs),
-  ], [context, summary, yearTxns, priorYearTxns, cardInputs, monthly, mobile, userId, onThresholdChange, scenarioMode, committedScenarios])
+    ...buildWidgets(context, summary, yearTxns, priorYearTxns, mobile, cardInputs, dashboardData),
+  ], [context, summary, yearTxns, priorYearTxns, cardInputs, dashboardData, monthly, mobile, userId, onThresholdChange, scenarioMode, committedScenarios])
 
   const ordered = useMemo(() => {
     const byId = Object.fromEntries(blocks.map(b => [b.id, b]))
@@ -1473,6 +1847,19 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
         <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', letterSpacing: '0.04em', marginBottom: 14 }}>
           DRAG TO REARRANGE · TAP THE EYE TO SHOW/HIDE
         </div>
+      )}
+
+      {!configure && (
+        <>
+          <HeroVerdict ive={dashboardData.ive} bva={dashboardData.bva} mobile={mobile} />
+          <AttentionStrip
+            sgy={dashboardData.sgy}
+            spike={dashboardData.spike}
+            bva={dashboardData.bva}
+            varianceThreshold={context?.varianceThreshold ?? 10}
+            mobile={mobile}
+          />
+        </>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
