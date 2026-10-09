@@ -20,7 +20,7 @@ just generic best practice.
 
 ## Subagent routing
 
-Follow "Subagent models" in `~/.claude/CLAUDE.md`: Haiku for searches, sweeps and mechanical edits, Sonnet for implementation and reviews, Opus for planning and final review. Agentic Loop: Phase 1 file reading on Haiku; Phase 2 instructions by Opus (or the main session); Phase 3 Build and Phase 4 Audit on Sonnet, with a costly or ambiguous audit on Opus.
+Follow "Subagent models" in `~/.claude/CLAUDE.md`: Haiku (5.5) for all exploratory jobs (exploration, searches, file reads), sweeps and mechanical edits, Sonnet for implementation and reviews, Opus for planning and final review. Agentic Loop: Phase 1 file reading on Haiku; Phase 2 instructions by Opus (or the main session); Phase 3 Build and Phase 4 Audit on Sonnet, with a costly or ambiguous audit on Opus.
 
 ## Git workflow (set by John, 2026-10-03)
 
