@@ -1682,7 +1682,6 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             const today = new Date()
             const isCurrentMonth = navYear === today.getFullYear() && navMonth === (today.getMonth() + 1)
             const curDay = today.getDate()
-            const isP1Current = isCurrentMonth && curDay < payDay2
             const isP2Current = isCurrentMonth && curDay >= payDay2
 
             const daysInMonth = new Date(navYear, navMonth, 0).getDate()
@@ -1702,7 +1701,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
               ? Math.max(0, activePeriodTotal + minCheckingBal - Number(activeChecking))
               : null
 
-            let paydayText = ''
+            let paydayText
             if (isCurrentMonth) {
               if (curDay < payDay1) {
                 const diff = payDay1 - curDay

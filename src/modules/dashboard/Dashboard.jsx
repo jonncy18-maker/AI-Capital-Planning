@@ -1241,8 +1241,10 @@ function CfLegend({ color, solid, dashed, label }) {
 
 function HeroVerdict({ ive, bva, mobile }) {
   const fullYearNet = ive?.fullYearNet ?? 0
-  const savingsRate = ive?.savingsRate
+  const savingsRate = ive?.fullYearSavingsRate
   const variance = bva?.variance ?? 0
+  const hasBudget = (bva?.planned ?? 0) > 0
+  const hasData = [...(ive?.monthlyIncome ?? []), ...(ive?.monthlyExpenses ?? []), ...(ive?.monthlyIncomeForecast ?? []), ...(ive?.monthlyExpenseForecast ?? [])].some(v => Number(v) !== 0)
   const budgetPct = bva?.pct != null ? Math.round(bva.pct) : null
 
   const now = new Date()
@@ -1253,13 +1255,13 @@ function HeroVerdict({ ive, bva, mobile }) {
     ? `On track to save ${fmtK(fullYearNet)} this year`
     : fullYearNet < 0
       ? `Projected annual deficit of ${fmtK(Math.abs(fullYearNet))}`
-      : 'Projected to break even this year'
+      : hasData ? 'Projected to break even this year' : 'Not enough data yet'
 
   const paceDesc = variance < 0
     ? `Spending runs ${fmtK(Math.abs(variance))} under budget plan.`
     : variance > 0
       ? `Spending is currently projected ${fmtK(variance)} over plan.`
-      : 'Spending is tracking in line with annual plan.'
+      : hasBudget ? 'Spending is tracking in line with annual plan.' : 'No annual budget set'
 
   const months = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
   let running = 0
@@ -1315,7 +1317,7 @@ function HeroVerdict({ ive, bva, mobile }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16 }}>
           <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 10, padding: '10px 12px' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>SAVINGS RATE</div>
+            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>PROJECTED SAVINGS RATE</div>
             <div style={{ ...figureStyle, fontSize: 19, color: 'var(--tx-1)', marginTop: 2 }}>
               {savingsRate != null ? `${Number(savingsRate).toFixed(1)}%` : '—'}
             </div>
@@ -1324,7 +1326,7 @@ function HeroVerdict({ ive, bva, mobile }) {
             </div>
           </div>
           <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 10, padding: '10px 12px' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>BUDGET USED</div>
+            <div style={{ fontSize: 10.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>PROJECTED VS PLAN</div>
             <div style={{ ...figureStyle, fontSize: 19, color: budgetPct > 100 ? 'var(--warn)' : 'var(--tx-1)', marginTop: 2 }}>
               {budgetPct != null ? `${budgetPct}%` : '—'}
             </div>
