@@ -152,7 +152,10 @@ function SplitChip({ label, value, accent = false }) {
   )
 }
 
-function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, scalarBusy, onItemsSave, period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0 }) {
+function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, scalarBusy, onItemsSave, period, label, payDay, bills, amountsMap, forecastAmountsMap = {}, cardStatementMap = {}, primaryChecking, balancesMap, onAmountChange, onAmountBlur, onBalanceChange, onBalanceBlur, minCheckingBalance = 0, isCurrent }) {
+  const [settledBills, setSettledBills] = useState({})
+  const toggleSettle = id => setSettledBills(prev => ({ ...prev, [id]: !prev[id] }))
+
   const total = bills.reduce((sum, b) => {
     return sum + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0)
   }, 0)
@@ -163,31 +166,46 @@ function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, sca
 
   const balanceKey = primaryChecking ? `${primaryChecking.id}-${period}` : null
   const checkingBalance = balanceKey ? (balancesMap[balanceKey] ?? '') : ''
-  // The minimum balance is what should be left over once the bills clear.
   const transferNeeded = checkingBalance !== '' ? Math.max(0, total + minCheckingBalance - Number(checkingBalance)) : null
 
-  // Split the transfer into its auto and manual halves. The auto-debits are a
-  // known, fixed draw, so they carry their full amount; manual is the unknown
-  // being solved for and absorbs the checking balance, the minimum to leave
-  // behind, and the rounding — the two chips always sum to the transfer shown.
   const autoTransfer = transferNeeded != null ? Math.min(Math.round(autoTotal), Math.round(transferNeeded)) : 0
   const manualTransfer = transferNeeded != null ? Math.round(transferNeeded) - autoTransfer : 0
 
   return (
     <div style={{
-      border: '1px solid var(--bd)', borderRadius: 12,
-      background: 'var(--bg-card)', overflow: 'hidden',
+      border: `1px solid ${isCurrent ? 'var(--accent-bd)' : 'var(--bd)'}`,
+      borderRadius: 14,
+      background: 'var(--bg-card)',
+      boxShadow: isCurrent ? '0 0 0 1px var(--accent-bd), var(--elev-1)' : 'var(--elev-1)',
+      overflow: 'hidden',
     }}>
       {/* Card header */}
       <div style={{
         padding: '14px 18px 12px',
         borderBottom: '1px solid var(--bd)',
-        background: 'var(--bg-app)',
+        background: 'var(--bg-card-2)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: 10,
       }}>
-        <MonoLabel>{label}</MonoLabel>
-        <div style={{ marginTop: 4, fontSize: 13, color: 'var(--tx-2)' }}>
-          Bills due on or before the <strong style={{ color: 'var(--tx-1)' }}>{ordinal(payDay)}</strong>
+        <div>
+          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 17, color: 'var(--tx-1)' }}>
+            {label}
+          </div>
+          <div style={{ marginTop: 2, fontSize: 12, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace" }}>
+            Bills due on or before <strong style={{ color: 'var(--tx-2)' }}>{ordinal(payDay)}</strong>
+          </div>
         </div>
+        {isCurrent && (
+          <span style={{
+            fontFamily: "'DM Mono', monospace", fontSize: 9.5, fontWeight: 600,
+            padding: '2px 8px', borderRadius: 999,
+            background: 'var(--accent-bg)', color: 'var(--accent)', border: '1px solid var(--accent-bd)',
+          }}>
+            ACTIVE WINDOW
+          </span>
+        )}
       </div>
 
       {/* Bill rows */}
@@ -201,29 +219,56 @@ function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, sca
             const isForecastLinked = bill.forecast_category_id != null
             const forecastAmount = forecastAmountsMap[bill.id] ?? null
             const hasManualOverride = amountsMap[bill.id] != null
-            // Forecast-linked bills are forecast-driven (the resolver ignores any
-            // stale per-month entry), so always surface the FORECAST badge when a
-            // forecast value exists — matching how Rent and other linked bills read.
             const showForecastBadge = isForecastLinked && forecastAmount != null
             const cardProjected = bill.credit_card_id != null && cardStatementMap[bill.id] != null
             const showProjectedBadge = cardProjected && !hasManualOverride && !showForecastBadge
             const amount = bill.resolvedAmount
             const amountRow = amountScope === currentScope ? amountRows[bill.id] : null
             const showInput = !showForecastBadge && bill.fixed_amount == null && amountRow?.items == null
+            const isSettled = !!settledBills[bill.id]
             return (
               <div
                 key={bill.id}
                 style={{
                   display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
-                  padding: '11px 0', borderBottom: '0.5px solid var(--bd-light)',
+                  padding: '10px 0', borderBottom: '0.5px solid var(--bd-light)',
+                  opacity: isSettled ? 0.55 : 1,
+                  transition: 'opacity 0.2s ease',
                 }}
               >
+                <button
+                  type="button"
+                  onClick={() => toggleSettle(bill.id)}
+                  title={isSettled ? 'Mark pending' : 'Mark settled / paid'}
+                  style={{
+                    width: 18, height: 18, borderRadius: 5,
+                    border: `1.5px solid ${isSettled ? 'var(--good)' : 'var(--bd)'}`,
+                    background: isSettled ? 'var(--good)' : 'var(--bg-app)',
+                    color: isSettled ? 'var(--accent-tx-on)' : 'transparent',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', padding: 0, fontSize: 10.5, flexShrink: 0,
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  ✓
+                </button>
+                <span style={{
+                  fontFamily: "'DM Mono', monospace", fontSize: 9.5,
+                  color: 'var(--tx-3)', background: 'var(--bg-app)',
+                  border: '1px solid var(--bd-light)', padding: '1px 5px',
+                  borderRadius: 4, flexShrink: 0,
+                }}>
+                  {ordinal(bill.pay_day)}
+                </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: 'var(--tx-1)', fontWeight: 500, marginBottom: 2 }}>
+                  <div style={{
+                    fontSize: 13, color: isSettled ? 'var(--tx-3)' : 'var(--tx-1)',
+                    fontWeight: 500, marginBottom: 1,
+                    textDecoration: isSettled ? 'line-through' : 'none',
+                  }}>
                     {bill.name}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <MonoLabel style={{ fontSize: 9 }}>{ordinal(bill.pay_day)}</MonoLabel>
                     <Badge label={bill.payment_method === 'auto' ? 'AUTO' : 'MANUAL'} variant={bill.payment_method === 'auto' ? 'auto' : 'manual'} />
                   </div>
                 </div>
@@ -289,23 +334,36 @@ function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, sca
       </div>
 
       {/* Period summary */}
-      <div style={{ padding: '14px 18px', background: 'var(--bg-app)', borderTop: '1px solid var(--bd)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <MonoLabel>TOTAL DUE</MonoLabel>
-          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18, color: 'var(--tx-1)' }}>
-            {fmt(total)}
+      <div style={{ padding: '14px 18px', background: 'var(--bg-card-2)', borderTop: '1px solid var(--bd)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div>
+            <MonoLabel style={{ fontSize: 9 }}>TOTAL DUE</MonoLabel>
+            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: 'var(--tx-1)', marginTop: 2 }}>
+              {fmt(total)}
+            </div>
           </div>
-        </div>
-        {bills.length > 0 && transferNeeded === null && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 6 }}>
             {autoTotal > 0 && <SplitChip label="AUTO" value={autoTotal} />}
             {manualTotal > 0 && <SplitChip label="MANUAL" value={manualTotal} accent />}
           </div>
-        )}
+        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <MonoLabel style={{ whiteSpace: 'nowrap' }}>CHECKING BAL.</MonoLabel>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 12px', background: 'var(--bg-app)', border: '1px solid var(--bd)',
+          borderRadius: 8, marginBottom: 10,
+        }}>
+          <div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>
+              PRIMARY CHECKING BAL.
+            </div>
+            {minCheckingBalance > 0 && (
+              <div style={{ fontSize: 9.5, color: 'var(--tx-4)' }}>
+                Min buffer: {fmt(minCheckingBalance)}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)' }}>$</span>
             <input
               type="number"
@@ -317,7 +375,7 @@ function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, sca
               disabled={!primaryChecking}
               title={!primaryChecking ? 'Add a checking account in the Accounts tab to save balances' : ''}
               style={{
-                flex: 1, background: 'var(--bg-card)', border: '1px solid var(--bd)',
+                width: 90, background: 'var(--bg-card)', border: '1px solid var(--bd)',
                 borderRadius: 6, padding: '5px 8px',
                 fontFamily: "'DM Mono', monospace", fontSize: 12,
                 color: primaryChecking ? 'var(--tx-1)' : 'var(--tx-3)',
@@ -330,42 +388,37 @@ function PeriodCard({ amountRows, amountScope, currentScope, amountsLoading, sca
 
         {transferNeeded !== null && (
           <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '8px 10px', borderRadius: 7,
-            background: transferNeeded > 0 ? 'var(--warn-bg)' : 'var(--accent-bg)',
+            borderRadius: 9, padding: '10px 14px',
+            background: transferNeeded > 0 ? 'var(--warn-bg)' : 'var(--good-bg)',
             border: `1px solid ${transferNeeded > 0 ? 'var(--warn)' : 'var(--accent-bd)'}`,
-            marginTop: 4,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           }}>
-            <MonoLabel style={{ color: transferNeeded > 0 ? 'var(--warn)' : 'var(--accent)', fontSize: 9 }}>
-              {transferNeeded > 0 ? 'TRANSFER NEEDED' : '✓ COVERED'}
-            </MonoLabel>
-            <div style={{
-              fontFamily: "'DM Serif Display', serif", fontSize: 15,
-              color: transferNeeded > 0 ? 'var(--warn)' : 'var(--accent)',
-            }}>
-              {transferNeeded > 0 ? fmt(transferNeeded) : fmt(Number(checkingBalance) - total - minCheckingBalance)}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{
+                fontFamily: "'DM Mono', monospace", fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
+                color: transferNeeded > 0 ? 'var(--warn)' : 'var(--good)',
+              }}>
+                {transferNeeded > 0 ? '⚠️ TRANSFER NEEDED TO CHECKING' : '✓ FULLY COVERED'}
+              </div>
+              <div style={{
+                fontFamily: "'DM Serif Display', serif", fontSize: 18,
+                color: transferNeeded > 0 ? 'var(--warn)' : 'var(--good)',
+              }}>
+                {transferNeeded > 0 ? fmt(transferNeeded) : fmt(Number(checkingBalance) - total - minCheckingBalance)}
+              </div>
             </div>
-          </div>
-        )}
-
-        {transferNeeded > 0 && bills.length > 0 && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 6, justifyContent: 'flex-end' }}>
-            {autoTransfer > 0 && <SplitChip label="AUTO" value={autoTransfer} />}
-            {manualTransfer > 0 && <SplitChip label="MANUAL" value={manualTransfer} accent />}
-          </div>
-        )}
-
-        {transferNeeded !== null && (
-          <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 5, fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em', lineHeight: 1.5 }}>
-            {fmt(total)} due − {fmt(Number(checkingBalance))} in checking
-            {minCheckingBalance > 0 && ` + ${fmt(minCheckingBalance)} min. balance`}
-            {transferNeeded > 0 && Number(checkingBalance) > 0 && (
-              <div style={{ color: 'var(--tx-4)' }}>
-                checking applied against the manual portion
+            <div style={{ fontSize: 9.5, color: 'var(--tx-3)', fontFamily: "'DM Mono', monospace", marginTop: 4 }}>
+              {fmt(total)} due − {fmt(Number(checkingBalance))} checking{minCheckingBalance > 0 ? ` + ${fmt(minCheckingBalance)} buffer` : ''}
+            </div>
+            {transferNeeded > 0 && bills.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                {autoTransfer > 0 && <span style={{ fontSize: 9.5, color: 'var(--dom-payperiods)', fontFamily: "'DM Mono', monospace" }}>Auto debits: {fmt(autoTransfer)}</span>}
+                {manualTransfer > 0 && <span style={{ fontSize: 9.5, color: 'var(--warn)', fontFamily: "'DM Mono', monospace" }}>· Manual: {fmt(manualTransfer)}</span>}
               </div>
             )}
           </div>
         )}
+
         {transferNeeded === null && minCheckingBalance > 0 && (
           <div style={{ fontSize: 10, color: 'var(--tx-3)', marginTop: 4, fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em' }}>
             {fmt(minCheckingBalance)} min. balance reserved
@@ -1624,36 +1677,208 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             </div>
           )}
 
-          {/* Month nav + Upload History */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <button onClick={prevMonth} style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', color: 'var(--tx-2)', fontSize: 14 }}>‹</button>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 18, color: 'var(--tx-1)', minWidth: 140, textAlign: 'center' }}>
-                {MONTH_NAMES[navMonth - 1]} {navYear}
+          {/* ── Bi-Weekly Payday Horizon HUD ── */}
+          {(() => {
+            const today = new Date()
+            const isCurrentMonth = navYear === today.getFullYear() && navMonth === (today.getMonth() + 1)
+            const curDay = today.getDate()
+            const isP2Current = isCurrentMonth && curDay >= payDay2
+
+            const daysInMonth = new Date(navYear, navMonth, 0).getDate()
+            const timelinePct = isCurrentMonth
+              ? Math.min(100, Math.max(0, Math.round((curDay / daysInMonth) * 100)))
+              : 0
+
+            const p1Total = period1.reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
+            const p2Total = period2.reduce((s, b) => s + (b.resolvedAmount != null ? Number(b.resolvedAmount) : 0), 0)
+            const monthTotal = p1Total + p2Total
+
+            const activePeriodNum = isP2Current ? 2 : 1
+            const activePeriodTotal = isP2Current ? p2Total : p1Total
+            const activeBalanceKey = primaryChecking ? `${primaryChecking.id}-${activePeriodNum}` : null
+            const activeChecking = activeBalanceKey ? (balancesMap[activeBalanceKey] ?? '') : ''
+            const activeTransfer = activeChecking !== ''
+              ? Math.max(0, activePeriodTotal + minCheckingBal - Number(activeChecking))
+              : null
+
+            let paydayText
+            if (isCurrentMonth) {
+              if (curDay < payDay1) {
+                const diff = payDay1 - curDay
+                paydayText = `Period 1 Active · Next Payday ${diff === 0 ? 'Today' : `in ${diff}d`} (${ordinal(payDay1)})`
+              } else if (curDay < payDay2) {
+                const diff = payDay2 - curDay
+                paydayText = `Period 1 Active · Next Payday ${diff === 0 ? 'Today' : `in ${diff}d`} (${ordinal(payDay2)})`
+              } else {
+                const diff = daysInMonth - curDay + payDay1
+                paydayText = `Period 2 Active · Next Payday in ${diff}d (${ordinal(payDay1)} next mo.)`
+              }
+            } else {
+              const isPast = navYear < today.getFullYear() || (navYear === today.getFullYear() && navMonth < today.getMonth() + 1)
+              paydayText = isPast ? 'Historical Period Record' : 'Future Projected Period'
+            }
+
+            return (
+              <div style={{
+                background: 'var(--bg-card)',
+                border: '1px solid var(--bd)',
+                borderRadius: 14,
+                padding: mobile ? '14px 16px' : '16px 20px',
+                marginBottom: 20,
+                boxShadow: 'var(--elev-1)',
+              }}>
+                {/* Top bar: month nav + pulse badge + upload */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 12,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button
+                      onClick={prevMonth}
+                      style={{
+                        background: 'var(--bg-card-2)', border: '1px solid var(--bd)',
+                        borderRadius: 8, width: 32, height: 32, cursor: 'pointer',
+                        color: 'var(--tx-2)', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      title="Previous month"
+                    >
+                      ‹
+                    </button>
+                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: 'var(--tx-1)', minWidth: 140, textAlign: 'center' }}>
+                      {MONTH_NAMES[navMonth - 1]} {navYear}
+                    </div>
+                    <button
+                      onClick={nextMonth}
+                      style={{
+                        background: 'var(--bg-card-2)', border: '1px solid var(--bd)',
+                        borderRadius: 8, width: 32, height: 32, cursor: 'pointer',
+                        color: 'var(--tx-2)', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      title="Next month"
+                    >
+                      ›
+                    </button>
+                  </div>
+
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '5px 12px',
+                    borderRadius: 999,
+                    background: isCurrentMonth ? 'rgba(56, 189, 248, 0.12)' : 'var(--bg-card-2)',
+                    border: `1px solid ${isCurrentMonth ? 'rgba(56, 189, 248, 0.35)' : 'var(--bd)'}`,
+                    color: isCurrentMonth ? 'var(--dom-payperiods)' : 'var(--tx-3)',
+                    fontFamily: "'DM Mono', monospace",
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}>
+                    {isCurrentMonth && (
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        background: 'currentColor',
+                        boxShadow: '0 0 8px currentColor',
+                        display: 'inline-block',
+                      }} />
+                    )}
+                    <span>{paydayText}</span>
+                  </div>
+
+                  <div>
+                    <input
+                      ref={amountsFileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={handleAmountsFileUpload}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      onClick={() => amountsFileInputRef.current?.click()}
+                      disabled={amountsParseLoading}
+                      style={{
+                        background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 7,
+                        padding: '6px 12px', cursor: amountsParseLoading ? 'not-allowed' : 'pointer',
+                        fontSize: 11.5, color: 'var(--tx-2)', opacity: amountsParseLoading ? 0.6 : 1,
+                        fontFamily: "'DM Mono', monospace",
+                      }}
+                    >
+                      {amountsParseLoading ? 'Parsing…' : '↑ Upload History'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Timeline bar (only for current month) */}
+                {isCurrentMonth && (
+                  <div style={{ margin: '14px 0 6px' }}>
+                    <div style={{
+                      height: 6,
+                      background: 'var(--bg-card-2)',
+                      borderRadius: 999,
+                      position: 'relative',
+                      overflow: 'hidden',
+                      border: '1px solid var(--bd)',
+                    }}>
+                      <div style={{
+                        position: 'absolute',
+                        left: 0, top: 0, bottom: 0,
+                        width: `${timelinePct}%`,
+                        background: 'linear-gradient(90deg, var(--dom-payperiods), var(--accent))',
+                        borderRadius: 999,
+                      }} />
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      marginTop: 6,
+                      fontFamily: "'DM Mono', monospace",
+                      fontSize: 10,
+                      color: 'var(--tx-3)',
+                    }}>
+                      <span>Day 1</span>
+                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Today ({MONTH_NAMES[navMonth - 1].slice(0, 3)} {curDay})</span>
+                      <span>P1 Cutoff ({ordinal(payDay2 - 1)})</span>
+                      <span>Day {daysInMonth}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Executive Metric Ribbon */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+                  gap: 10,
+                  marginTop: 14,
+                  paddingTop: 14,
+                  borderTop: '1px solid var(--bd)',
+                }}>
+                  <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>TOTAL MONTH BILLS</div>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--tx-1)', marginTop: 2 }}>{fmt(monthTotal)}</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>PERIOD 1 (1ST–{payDay2 - 1})</div>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--dom-payperiods)', marginTop: 2 }}>{fmt(p1Total)}</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>PERIOD 2 ({payDay2}–END)</div>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--tx-1)', marginTop: 2 }}>{fmt(p2Total)}</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-card-2)', border: '1px solid var(--bd)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: 'var(--tx-3)', letterSpacing: '0.05em' }}>ACTIVE TRANSFER NEEDED</div>
+                    <div style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: 17, fontWeight: 500, marginTop: 2,
+                      color: activeTransfer !== null && activeTransfer > 0 ? 'var(--warn)' : 'var(--good)',
+                    }}>
+                      {activeTransfer !== null ? fmt(activeTransfer) : '—'}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <button onClick={nextMonth} style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 7, padding: '6px 12px', cursor: 'pointer', color: 'var(--tx-2)', fontSize: 14 }}>›</button>
-            </div>
-            <div>
-              <input
-                ref={amountsFileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleAmountsFileUpload}
-                style={{ display: 'none' }}
-              />
-              <button
-                onClick={() => amountsFileInputRef.current?.click()}
-                disabled={amountsParseLoading}
-                style={{
-                  background: 'none', border: '1px solid var(--bd)', borderRadius: 7,
-                  padding: '7px 14px', cursor: amountsParseLoading ? 'not-allowed' : 'pointer',
-                  fontSize: 12, color: 'var(--tx-2)', opacity: amountsParseLoading ? 0.6 : 1,
-                }}
-              >
-                {amountsParseLoading ? 'Parsing…' : '↑ Upload History'}
-              </button>
-            </div>
-          </div>
+            )
+          })()}
 
           {/* Minimum checking balance setting */}
           <div style={{
@@ -1866,54 +2091,66 @@ export default function PayPeriodPlanner({ userId, mobile }) {
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-                <PeriodCard
-                  period={1}
-                  label={`PERIOD 1 · AROUND THE ${ordinal(payDay1).toUpperCase()}`}
-                  payDay={payDay2 - 1}
-                  bills={period1}
-                  amountRows={amountRows}
-                  amountScope={amountScope}
-                  currentScope={currentScope}
-                  amountsLoading={amountsLoading}
-                  scalarBusy={scalarBusy}
-                  onItemsSave={handleItemsSave}
-                  amountsMap={amountScope === currentScope ? amountsMap : {}}
-                  forecastAmountsMap={forecastAmountsMap}
-                  cardStatementMap={cardStatementMap}
-                  primaryChecking={primaryChecking}
-                  balancesMap={balancesMap}
-                  onAmountChange={handleAmountChange}
-                  onAmountBlur={handleAmountBlur}
-                  onBalanceChange={handleBalanceChange}
-                  onBalanceBlur={handleBalanceBlur}
-                  minCheckingBalance={minCheckingBal}
-                  mobile={mobile}
-                />
-                <PeriodCard
-                  period={2}
-                  label={`PERIOD 2 · AROUND THE ${ordinal(payDay2).toUpperCase()}`}
-                  payDay={31}
-                  bills={period2}
-                  amountRows={amountRows}
-                  amountScope={amountScope}
-                  currentScope={currentScope}
-                  amountsLoading={amountsLoading}
-                  scalarBusy={scalarBusy}
-                  onItemsSave={handleItemsSave}
-                  amountsMap={amountScope === currentScope ? amountsMap : {}}
-                  forecastAmountsMap={forecastAmountsMap}
-                  cardStatementMap={cardStatementMap}
-                  primaryChecking={primaryChecking}
-                  balancesMap={balancesMap}
-                  onAmountChange={handleAmountChange}
-                  onAmountBlur={handleAmountBlur}
-                  onBalanceChange={handleBalanceChange}
-                  onBalanceBlur={handleBalanceBlur}
-                  minCheckingBalance={minCheckingBal}
-                  mobile={mobile}
-                />
-              </div>
+              {(() => {
+                const now = new Date()
+                const isCurMonth = navYear === now.getFullYear() && navMonth === (now.getMonth() + 1)
+                const cDay = now.getDate()
+                const isP1 = isCurMonth && cDay < payDay2
+                const isP2 = isCurMonth && cDay >= payDay2
+
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+                    <PeriodCard
+                      period={1}
+                      label={`PERIOD 1 · AROUND THE ${ordinal(payDay1).toUpperCase()}`}
+                      payDay={payDay2 - 1}
+                      bills={period1}
+                      amountRows={amountRows}
+                      amountScope={amountScope}
+                      currentScope={currentScope}
+                      amountsLoading={amountsLoading}
+                      scalarBusy={scalarBusy}
+                      onItemsSave={handleItemsSave}
+                      amountsMap={amountScope === currentScope ? amountsMap : {}}
+                      forecastAmountsMap={forecastAmountsMap}
+                      cardStatementMap={cardStatementMap}
+                      primaryChecking={primaryChecking}
+                      balancesMap={balancesMap}
+                      onAmountChange={handleAmountChange}
+                      onAmountBlur={handleAmountBlur}
+                      onBalanceChange={handleBalanceChange}
+                      onBalanceBlur={handleBalanceBlur}
+                      minCheckingBalance={minCheckingBal}
+                      mobile={mobile}
+                      isCurrent={isP1}
+                    />
+                    <PeriodCard
+                      period={2}
+                      label={`PERIOD 2 · AROUND THE ${ordinal(payDay2).toUpperCase()}`}
+                      payDay={31}
+                      bills={period2}
+                      amountRows={amountRows}
+                      amountScope={amountScope}
+                      currentScope={currentScope}
+                      amountsLoading={amountsLoading}
+                      scalarBusy={scalarBusy}
+                      onItemsSave={handleItemsSave}
+                      amountsMap={amountScope === currentScope ? amountsMap : {}}
+                      forecastAmountsMap={forecastAmountsMap}
+                      cardStatementMap={cardStatementMap}
+                      primaryChecking={primaryChecking}
+                      balancesMap={balancesMap}
+                      onAmountChange={handleAmountChange}
+                      onAmountBlur={handleAmountBlur}
+                      onBalanceChange={handleBalanceChange}
+                      onBalanceBlur={handleBalanceBlur}
+                      minCheckingBalance={minCheckingBal}
+                      mobile={mobile}
+                      isCurrent={isP2}
+                    />
+                  </div>
+                )
+              })()}
 
               {/* ── Savings Transfer Plan ── */}
               {(() => {
