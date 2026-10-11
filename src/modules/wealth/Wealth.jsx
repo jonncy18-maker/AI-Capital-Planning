@@ -665,6 +665,8 @@ export default function Wealth({ userId, mobile }) {
   async function removeSnapshot(id) {
     try {
       await deleteWealthSnapshot(id)
+      // A later plan save can discard load()'s result, so drop the row locally too.
+      if (activeUserRef.current === userId) setSnapshots((old) => old.filter((s) => s.id !== id))
       await load()
     } catch (e) {
       setError(e.message)

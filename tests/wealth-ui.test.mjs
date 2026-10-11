@@ -122,9 +122,14 @@ function harness({ storage = new Map(), blocked = false } = {}) {
   const stubs = {
     react: hooks,
     '../../lib/db/wealthSnapshots.js': {
-      getWealthSnapshots: async () => rows,
+      getWealthSnapshots: async () => rows.map((r) => ({ ...r })),
       saveWealthSnapshot: async () => ({}),
-      deleteWealthSnapshot: async () => {},
+      deleteWealthSnapshot: async (id) => {
+        rows.splice(
+          rows.findIndex((r) => r.id === id),
+          1
+        )
+      },
     },
     '../../lib/db/wealthPlans.js': {
       getWealthPlans: async () =>
@@ -345,10 +350,11 @@ test('a refresh started before saving a plan cannot remove the new row or select
   const h = harness()
   let tree = await h.settle()
   const oldRows = h.fixtures.alice.slice()
+  const deleteButtons = (t) =>
+    h.all(t).filter((n) => n.type === 'button' && n.props.children[0] === 'Delete')
+  const before = deleteButtons(tree).length
   h.delayPlans('alice')
-  h.all(tree)
-    .find((n) => n.type === 'button' && n.props.children[0] === 'Delete')
-    .props.onClick()
+  deleteButtons(tree)[0].props.onClick()
   tree = await h.settle()
   h.all(tree)
     .find((n) => n.type === 'button' && n.props.children.includes('Save new baseline'))
@@ -367,4 +373,5 @@ test('a refresh started before saving a plan cannot remove the new row or select
   assert.ok(version, 'saved baseline must remain in the loaded plans after an older response')
   assert.deepEqual([...h.storage.values()], ['saved'])
   assert.ok(h.all(version).some((n) => n.type === 'option' && n.props.value === 'saved'))
+  assert.equal(deleteButtons(tree).length, before - 1, 'deleted snapshot must leave history')
 })
