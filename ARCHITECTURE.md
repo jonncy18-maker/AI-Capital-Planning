@@ -103,8 +103,8 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
   The dev server runs as a systemd user service (`capital-dev@<copy>`, wrapper
   `~/.local/bin/capital-dev`, machine-local and not in the repo): the main copy
   starts automatically on port 3000 when the container boots. The agent copies
-  are on demand with `capital-dev start|stop|status|logs antigravity` (port
-  3001) or `codex` (port 3002). Those copies' `.env.local` is a symlink to the
+  are on demand with `capital-dev start|stop|status|logs codex` (port
+  3002). Those copies' `.env.local` is a symlink to the
   main copy's, so there is one place to change; each port is on `dev-local`'s
   trusted domains; the first start runs `npm ci`. Run one or two at a time
   (the container has a 6 GB RAM limit).

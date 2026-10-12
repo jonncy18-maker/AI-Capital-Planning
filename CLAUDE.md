@@ -13,8 +13,13 @@ tools to find the **most recently dated** file in that folder (don't assume a fi
 filename — a newer one may have been added) and weigh suggestions against it, not
 just generic best practice.
 
-## Response style
-- **Always use visual artifacts** (charts, tables, diagrams, dashboards) when explaining data, showing audit results, comparing before/after changes, or summarizing a set of items. Prefer a rendered visual over a plain text list whenever the content benefits from structure or layout.
+## Reporting to John
+
+When you give John information (a plan, review, status, comparison, folder or branch layout, audit result), include a visual with it.
+
+- Lead with the visual: an inline diagram or chart for structure, flow, branches and numbers, or a published artifact when the answer is long, multi-part or something John will return to.
+- Follow with a short text explanation. Do not repeat in text what the visual already shows.
+- A one- or two-sentence answer can be said directly, with no visual.
 - Keep text responses short and direct.
 - No trailing summaries — the diff speaks for itself.
 
@@ -36,4 +41,8 @@ A scheduled job refactors this repo every morning and commits straight to `main`
 2. Behind only: fast-forward (`git merge --ff-only origin/main`).
 3. Diverged: rebase local-only commits onto `origin/main`. If the local commits are already on GitHub as a squash (`git diff main origin/main` is empty), `git reset --hard origin/main` is safe. If the content differs or the rebase conflicts in a way that changes behavior, stop and ask John.
 4. Tell John in one line what the fetch found, then continue.
-5. Do the same before handing Codex or Antigravity a task: their copies sync from local `main`, so local `main` must be current first.
+5. Do the same before cutting a worktree for Codex: its branch starts from local `main`, so `main` must be current first.
+
+## Integrating agent branches
+
+You are the integrator. For each finished `codex/<topic>` branch: merge `main` into the branch first and resolve conflicts there, drop anything the handoff note marks as scaffolding, run `npm test` and `npm run build`, squash-merge into `main`, then delete the branch, its worktree and its handoff note. Full steps: https://raw.githubusercontent.com/jonncy18-maker/Agentic-Loop/main/BRANCHING.md
