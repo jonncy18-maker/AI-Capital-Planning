@@ -383,7 +383,7 @@ test('a refresh started before saving a plan cannot remove the new row or select
   assert.equal(deleteButtons(tree).length, before - 1, 'deleted snapshot must leave history')
 })
 
-test('a previous user\'s late delete refresh cannot drop the current user\'s read', async () => {
+test("a previous user's late delete refresh cannot drop the current user's read", async () => {
   const h = harness()
   let tree = await h.settle()
   h.holdDeletes()
