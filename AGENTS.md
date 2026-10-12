@@ -159,7 +159,7 @@ Applies when your working directory is under `~/code/_worktrees/<repo>/`. Each w
 2. Do your work on that branch; never edit `main`.
 3. When you finish, leave a handoff note in the inbox (`~/code/_inbox/`); Claude Code integrates the branch and deletes it.
 
-To see your changes running, start this copy's dev server (against the `dev-local` Neon branch, never live data) with `capital-dev start codex` (port 3002), and stop it with `capital-dev stop <copy>`. See "Local development" in `ARCHITECTURE.md`.
+To see your changes running, link the worktree's `.env.local` to the main clone's, run `npm ci` once, then `PORT=3002 npm run dev` (it runs against the `dev-local` Neon branch, never live data). See "Local development" in `ARCHITECTURE.md`.
 
 ## Branching
 
