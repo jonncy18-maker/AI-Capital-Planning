@@ -45,4 +45,4 @@ A scheduled job refactors this repo every morning and commits straight to `main`
 
 ## Integrating agent branches
 
-You are the integrator. For each finished `codex/<topic>` branch: merge `main` into the branch first and resolve conflicts there, drop anything the handoff note marks as scaffolding, run `npm test` and `npm run build`, squash-merge into `main`, then delete the branch, its worktree and its handoff note. Full steps: https://raw.githubusercontent.com/jonncy18-maker/Agentic-Loop/main/BRANCHING.md
+You are the integrator. For each finished `codex/<topic>` branch: merge `main` into the branch first and resolve conflicts there, drop anything the handoff note marks as scaffolding, run `npm test` and `npm run build`, squash-merge into `main`, then, once the merge is on GitHub, delete the merged branch there and locally along with its worktree and handoff note, and run `git fetch --prune`. Full steps: https://raw.githubusercontent.com/jonncy18-maker/Agentic-Loop/main/BRANCHING.md
