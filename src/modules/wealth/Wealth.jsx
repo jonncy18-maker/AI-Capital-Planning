@@ -556,6 +556,8 @@ export default function Wealth({ userId, mobile }) {
     [userId, choosePlan]
   )
   const load = useCallback(() => {
+    // A late call from a previous user's handler must not bump the revision and drop the current user's read.
+    if (activeUserRef.current !== userId) return Promise.resolve()
     const revision = ++readRevision.current
     return readWealthData(userId).then((results) => {
       if (revision === readRevision.current) applyResults(results)

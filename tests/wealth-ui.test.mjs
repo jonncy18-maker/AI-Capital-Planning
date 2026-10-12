@@ -66,7 +66,9 @@ function harness({ storage = new Map(), blocked = false } = {}) {
   let cells = [],
     index = 0,
     pending = [],
-    owner = 'alice'
+    owner = 'alice',
+    deleteGate = null,
+    releaseDelete = null
   const delayed = new Map(),
     resolvers = new Map()
   const storageApi = {
@@ -125,10 +127,9 @@ function harness({ storage = new Map(), blocked = false } = {}) {
       getWealthSnapshots: async () => rows.map((r) => ({ ...r })),
       saveWealthSnapshot: async () => ({}),
       deleteWealthSnapshot: async (id) => {
-        rows.splice(
-          rows.findIndex((r) => r.id === id),
-          1
-        )
+        if (deleteGate) await deleteGate
+        const i = rows.findIndex((r) => r.id === id)
+        if (i !== -1) rows.splice(i, 1)
       },
     },
     '../../lib/db/wealthPlans.js': {
@@ -222,6 +223,12 @@ function harness({ storage = new Map(), blocked = false } = {}) {
     storage,
     fixtures,
     delayPlans: (id) => delayed.set(id, true),
+    holdDeletes: () => {
+      deleteGate = new Promise((resolve) => {
+        releaseDelete = resolve
+      })
+    },
+    releaseDeletes: () => releaseDelete(),
     resolvePlans: (id) => resolvers.get(id)(fixtures[id]),
     render,
     settle,
@@ -374,4 +381,21 @@ test('a refresh started before saving a plan cannot remove the new row or select
   assert.deepEqual([...h.storage.values()], ['saved'])
   assert.ok(h.all(version).some((n) => n.type === 'option' && n.props.value === 'saved'))
   assert.equal(deleteButtons(tree).length, before - 1, 'deleted snapshot must leave history')
+})
+
+test('a previous user\'s late delete refresh cannot drop the current user\'s read', async () => {
+  const h = harness()
+  let tree = await h.settle()
+  h.holdDeletes()
+  h.all(tree)
+    .find((n) => n.type === 'button' && n.props.children[0] === 'Delete')
+    .props.onClick()
+  h.setUser('bob')
+  h.delayPlans('bob')
+  tree = await h.settle()
+  h.releaseDeletes()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  h.resolvePlans('bob')
+  tree = await h.settle()
+  assert.equal(h.version(tree)?.props.value, 'bob-plan')
 })
