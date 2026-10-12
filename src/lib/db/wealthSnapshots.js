@@ -21,20 +21,25 @@ export async function getWealthSnapshots(_userId, limit = 24) {
   return data ?? []
 }
 
-export async function getLatestWealthSnapshot(_userId) {
+export async function getLatestWealthSnapshot() {
   const res = await apiFetch('/api/wealth-snapshots?latest=true', { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
 
-export async function saveWealthSnapshot(_userId, {
-  snapshot_date,
-  net_worth,
-  investment_balance,
-  retirement_balance,
-  other_assets,
-  liabilities,
-  notes,
-}) {
+export async function saveWealthSnapshot(
+  _userId,
+  {
+    snapshot_date,
+    net_worth,
+    investment_balance,
+    retirement_balance,
+    other_assets,
+    liabilities,
+    notes,
+    emergency_cash,
+    investment_contributions_ytd,
+  }
+) {
   const res = await apiFetch('/api/wealth-snapshots', {
     method: 'POST',
     credentials: 'include',
@@ -47,6 +52,8 @@ export async function saveWealthSnapshot(_userId, {
       other_assets: other_assets ?? null,
       liabilities: liabilities ?? null,
       notes: notes ?? null,
+      ...(emergency_cash !== undefined ? { emergency_cash } : {}),
+      ...(investment_contributions_ytd !== undefined ? { investment_contributions_ytd } : {}),
     }),
   })
   return parseJsonOrThrow(res)

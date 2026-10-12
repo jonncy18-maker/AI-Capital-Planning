@@ -370,8 +370,19 @@ retirement_balance numeric
 other_assets    numeric
 liabilities     numeric
 notes           text
+emergency_cash  numeric   -- nullable; subset of other_assets, never added to net worth again (migration 025)
+investment_contributions_ytd numeric -- nullable; manual calendar-year net deposits
 created_at      timestamptz
 ```
+
+**wealth_plans** (migration 025; immutable — a changed baseline is a new row, no update/delete API)
+```
+id, user_id, name, start_date, start_balance, monthly_contribution, annual_return,
+horizon, retirement_target, emergency_cash_target, starting_contributions_ytd,
+annual_contributions jsonb, annual_contributions_without_commitments jsonb,
+annual_commitment_drain, include_commitments, created_at
+```
+The selected plan ID is kept per user in localStorage (`src/lib/wealth/selection.js`); assumptions themselves are never stored client-side. Dates are returned as `::text` so Neon DATE values stay calendar strings.
 
 **ai_briefings**
 ```

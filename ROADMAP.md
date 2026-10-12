@@ -1180,6 +1180,8 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 **Exit criteria:** Can see current wealth trajectory and model the impact of changing contribution rates, market assumptions, and commitments. ✓ (bonus-allocation + AI-driven modeling deferred)
 
+**Session log 2026-10-11 — Saved wealth plans and actual checkpoints (Codex build, Claude review):** Annual outlook / Monthly check-in tabs; immutable saved baselines (`wealth_plans`, migration 025, **must be applied to each Neon branch before use**); dated integer-cents engine `src/lib/wealth/plans.js` (legacy `projection.js` untouched); snapshots gain optional `emergency_cash` and `investment_contributions_ytd`. Codex ran 3 build/audit iterations (selection reset on remount, cash variance before baseline, SQL DATE serialization, stale plan read) and stopped at the cap on one finding: a snapshot deleted during a plan save stayed in history. Fixed in review by removing the row from local state on successful delete (regression test red-before/green-after); `npm test` 73 pass, targeted ESLint clean. Browser checks (reload persistence, both themes, mobile) still need John.
+
 ---
 
 ## Phase 9 — Dashboard Widgets and AI Briefing

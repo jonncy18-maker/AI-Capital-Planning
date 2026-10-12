@@ -8,7 +8,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
-    "test": "vitest run && node --experimental-vm-modules --test tests/outlook.test.mjs tests/bill-amount-items.test.mjs",
+    "test": "vitest run && node --experimental-vm-modules --test tests/outlook.test.mjs tests/bill-amount-items.test.mjs tests/wealth-plans.test.mjs tests/wealth-api.test.mjs tests/wealth-ui.test.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
