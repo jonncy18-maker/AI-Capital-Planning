@@ -165,6 +165,8 @@ To see your changes running, link the worktree's `.env.local` to the main clone'
 
 One repo per project; `main` plus short-lived `<agent>/<topic>` branches (`claude/`, `codex/`). Claude Code integrates into `main` and deletes each branch once it is integrated. Full rules, folder layout and the integration steps: https://raw.githubusercontent.com/jonncy18-maker/Agentic-Loop/main/BRANCHING.md
 
+**Before any work:** run `git fetch origin`, confirm local `main` matches `origin/main` (fast-forward only), and branch from it. If `main` is behind or has diverged, stop and tell John instead of working on a stale copy.
+
 ## Reporting to John
 
 When you give John information (a plan, review, status, comparison, folder or branch layout, audit result), include a visual with it. Pick the simplest one that fits:
