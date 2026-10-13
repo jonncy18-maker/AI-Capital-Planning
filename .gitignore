@@ -38,3 +38,5 @@ dist-ssr
 /public/sw.js
 /public/sw.js.map
 /public/swe-worker-*.js
+.vercel
+.env*
