@@ -13,6 +13,8 @@
 //
 // Caller must pass pre-loaded data to keep this function pure and testable.
 
+import { toCents, fromCents } from '../money.js'
+
 export const CC_CATEGORIES = [
   { slug: 'dining',          label: 'Dining' },
   { slug: 'travel',          label: 'Travel' },
@@ -31,21 +33,24 @@ export const CC_CATEGORIES = [
 // The forecast is an independent dataset (seeded from the budget); when it exists
 // it fully defines spend, otherwise we fall back to the budget.
 export function buildSpendMaps(lineItems, forecastLines) {
-  const budgetByCategory = {}
-  for (const li of (lineItems ?? [])) {
-    if (!budgetByCategory[li.category_id]) budgetByCategory[li.category_id] = {}
-    budgetByCategory[li.category_id][li.month] =
-      (budgetByCategory[li.category_id][li.month] ?? 0) + Number(li.amount)
+  // Accumulate integer cents, convert to dollars once per cell at the end.
+  const sumByCategory = (rows) => {
+    const acc = {}
+    for (const r of (rows ?? [])) {
+      if (!acc[r.category_id]) acc[r.category_id] = {}
+      acc[r.category_id][r.month] = (acc[r.category_id][r.month] ?? 0) + toCents(r.amount)
+    }
+    for (const byMonth of Object.values(acc)) {
+      for (const m of Object.keys(byMonth)) byMonth[m] = fromCents(byMonth[m])
+    }
+    return acc
   }
 
-  const forecastByCategory = {}
-  for (const fi of (forecastLines ?? [])) {
-    if (!forecastByCategory[fi.category_id]) forecastByCategory[fi.category_id] = {}
-    forecastByCategory[fi.category_id][fi.month] =
-      (forecastByCategory[fi.category_id][fi.month] ?? 0) + Number(fi.amount)
+  return {
+    budgetByCategory: sumByCategory(lineItems),
+    forecastByCategory: sumByCategory(forecastLines),
+    forecastInitialized: (forecastLines ?? []).length > 0,
   }
-
-  return { budgetByCategory, forecastByCategory, forecastInitialized: (forecastLines ?? []).length > 0 }
 }
 
 // Resolve spend per category for a given month from the spend maps.

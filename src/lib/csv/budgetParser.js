@@ -15,6 +15,7 @@
 //   type     : type, expense type   (normalized to Fixed | Flexible | Non-Monthly)
 
 import { readXlsx } from '../xlsx/xlsxReader.js'
+import { parseLooseMoney } from '../money.js'
 
 const CATEGORY_ALIASES = ['category', 'subcategory', 'name']
 const GROUP_ALIASES = ['group', 'bucket', 'parent', 'category group', 'parent category']
@@ -77,8 +78,7 @@ function normType(raw) {
 
 function parseAmount(raw) {
   if (raw == null || raw === '') return null
-  const n = parseFloat(String(raw).replace(/[^-\d.]/g, ''))
-  return isNaN(n) ? null : n
+  return parseLooseMoney(raw)
 }
 
 // Scan the top rows of a grid for the first row that contains both a category
