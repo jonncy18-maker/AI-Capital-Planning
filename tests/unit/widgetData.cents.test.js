@@ -120,8 +120,8 @@ describe('incomeVsExpenses exactness', () => {
     expect(r.avgMonthlyIncome).toBeCloseTo(0.202, 12)
     expect(r.avgMonthlyIncome).not.toBe(0.2)
     expect(r.savingsRate).toBe(100)
-    // fallback projection: 1.01 + round(20.2c x 6 = 121.2c) = 1.01 + 1.21
-    expect(r.fullYearIncome).toBe(2.22)
+    // fallback projection: 1.01 + round(20.2c x 7 months incl. in-progress June = 141.4c) = 1.01 + 1.41
+    expect(r.fullYearIncome).toBe(2.42)
   })
 
   it('computes prior-year savings rate from cents', () => {

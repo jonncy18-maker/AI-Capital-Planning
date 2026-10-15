@@ -43,14 +43,14 @@ describe('incomeVsExpenses', () => {
       expect(r.currentMonth).toBe(5)
     })
 
-    it('splits expenses into actual and forecast: 6200 + Jul-Dec 6 x 1000', () => {
-      expect(r.fullYearActualExpenses).toBe(6200)
-      expect(r.fullYearForecastExpenses).toBe(6000)
+    it('splits expenses into actual and forecast: Jan-May 5200 + in-progress June and Jul-Dec 7 x 1000', () => {
+      expect(r.fullYearActualExpenses).toBe(5200)
+      expect(r.fullYearForecastExpenses).toBe(7000)
       expect(r.fullYearExpenses).toBe(12200)
       expect(r.monthlyExpenseForecast).toEqual(Array(12).fill(1000))
     })
 
-    it('projects income as ytd + average of completed months x 6 remaining: 18000 + 3000 x 6', () => {
+    it('projects income as completed months + average x 7 forecast months incl. June: 15000 + 3000 x 7', () => {
       // completed Jan-May = 15000 / 5 = 3000
       expect(r.avgMonthlyIncome).toBe(3000)
       expect(r.fullYearIncome).toBe(36000)
@@ -110,11 +110,27 @@ describe('incomeVsExpenses', () => {
       expect(r.monthlyIncomeForecast[11]).toBeCloseTo(6500)
     })
 
-    it('uses actual income for elapsed months and the forecast after: 18000 + 6 x 6500 = 57000', () => {
+    it('uses actual income for completed months and the forecast from the in-progress month: 15000 + 7 x 6500 = 60500', () => {
       const r = incomeVsExpenses(ctxB({ profile, incomeEstimate }), TXNS_B)
-      expect(r.fullYearIncome).toBeCloseTo(57000)
-      expect(r.fullYearNet).toBeCloseTo(44800) // 57000 - 12200
-      expect(r.fullYearSavingsRate).toBeCloseTo((44800 / 57000) * 100) // 78.60
+      expect(r.fullYearIncome).toBeCloseTo(60500)
+      expect(r.fullYearNet).toBeCloseTo(48300) // 60500 - 12200
+      expect(r.fullYearSavingsRate).toBeCloseTo((48300 / 60500) * 100) // 79.83
+    })
+
+    it('does not read as $0 income before the in-progress month paycheck lands', () => {
+      // Only Jan-May posted; June has no income yet. Old rule counted June as 0.
+      const early = TXNS_B.filter(t => !t.date.startsWith('2026-06'))
+      const r = incomeVsExpenses(ctxB({ profile, incomeEstimate }), early)
+      expect(r.fullYearIncome).toBeCloseTo(60500)
+      expect(r.fullYearExpenses).toBe(12200)
+    })
+
+    it('matches cashFlowForecast on the full-year net in a current-year fixture', () => {
+      const c = ctxB({ profile, incomeEstimate })
+      for (const txns of [TXNS_B, TXNS_B.filter(t => !t.date.startsWith('2026-06'))]) {
+        const cf = cashFlowForecast(c, txns)
+        expect(cf.actualNet + cf.forecastNet).toBeCloseTo(incomeVsExpenses(c, txns).fullYearNet)
+      }
     })
 
     it('skips 401k on the bonus when four01k_on_bonus is false: 22000 - 5500 - 500 - 500 = 15500', () => {
@@ -174,29 +190,31 @@ describe('incomeVsExpenses', () => {
   })
 
   describe('transactions dated after today', () => {
-    it('counts a later-this-month charge in ytd, the monthly series and the actuals alike', () => {
-      // A June 20 charge (today is June 15): 6200 + 999 = 7199 everywhere.
+    it('counts a later-this-month charge in ytd and the monthly series; June stays forecast in the full-year projection', () => {
+      // A June 20 charge (today is June 15): 6200 + 999 = 7199 to date.
       const r = incomeVsExpenses(ctxB(), [...TXNS_B, txn('2026-06-20', 'Dining', -999)])
       expect(r.ytdExpenses).toBe(7199)
       expect(r.monthlyExpenses[5]).toBe(1999)
-      expect(r.fullYearActualExpenses).toBe(7199)
+      expect(r.fullYearActualExpenses).toBe(5200)
+      expect(r.fullYearExpenses).toBe(12200)
     })
 
     it('treats income the same way: a June 20 deposit is in ytdIncome and the June series', () => {
-      // ytdIncome 18000 + 500 = 18500; fallback projection 18500 + 3000 avg x 6 remaining = 36500
+      // ytdIncome 18000 + 500 = 18500; fallback projection ignores June actuals:
+      // 15000 completed + 3000 avg x 7 forecast months = 36000
       const r = incomeVsExpenses(ctxB(), [...TXNS_B, txn('2026-06-20', 'Salary', 500)])
       expect(r.ytdIncome).toBe(18500)
       expect(r.monthlyIncome[5]).toBe(3500)
-      expect(r.fullYearIncome).toBe(36500)
+      expect(r.fullYearIncome).toBe(36000)
     })
 
     it('keeps a charge in a later month out of ytd, since that month is forecast-only', () => {
       // July 5 rent: in the monthly series (1000) but not ytd (still 6200) and not
-      // fullYearActualExpenses, where July stays on its 1000 forecast.
+      // fullYearActualExpenses, where June and July stay on their 1000 forecast.
       const r = incomeVsExpenses(ctxB(), [...TXNS_B, txn('2026-07-05', 'Rent', -1000)])
       expect(r.ytdExpenses).toBe(6200)
       expect(r.monthlyExpenses[6]).toBe(1000)
-      expect(r.fullYearActualExpenses).toBe(6200)
+      expect(r.fullYearActualExpenses).toBe(5200)
       expect(r.fullYearExpenses).toBe(12200)
     })
   })
