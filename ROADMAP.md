@@ -1,6 +1,7 @@
 # AI Capital Planning OS — V1 Roadmap
 
 **Repo:** AI Capital Planning  
+**Last updated:** 2026-10-15  
 **Architecture Reference:** `ARCHITECTURE.md`  
 **Build Philosophy:** Schema first, data layer second, UI third. No frontend work before the data model is solid. Each phase produces something usable before the next phase begins.
 
@@ -8,7 +9,7 @@
 
 ## Next Up
 
-Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration is complete and live on `main`, and the scenario-commit → Forecast → Bill Planner write-through shipped 2026-07-10. The standout open gap is test coverage — there is still no automated test suite for the app's ~53 routes. Work has shifted from feature/migration delivery into the hardening backlog.
+Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration is complete and live on `main`. Unit coverage now exists for the pure libraries (Vitest, run in CI before the build) but **none of the 68 `app/api` route handlers has an automated test**, so that is the standout open gap. Everything else still open is in "Open items" below, which is the single current to-do list; the session log underneath is history, newest first.
 
 ## Current Status — Session Log
 
@@ -51,8 +52,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
   - **Loop:** approved interactive preview; separate build agent and independent audit agent; two build/audit passes. Audit reproduced competing scalar/item saves, stale responses after leaving/reopening a month, and scalar deletion/recreation. Guards were corrected; final audit found no unresolved factual or spirit-compliance issues and independently checked the import-refresh guard.
   - **Executed:** `node --experimental-vm-modules tests/bill-amount-items.test.mjs` printed `tests 22`, `pass 22`, `fail 0`. The harness executes real exported routes/shared APIs/tools with mocked SQL/auth, plus extracted planner handlers with deferred promises. All changed JavaScript/JSX/test sources parsed; registry/schema exposure and `git diff --check` passed. The MCP action-registration probe failed before the change and passed afterward.
   - **Unverified:** real PostgreSQL/migration execution, a live authenticated MCP connector, and the actual React UI (visually unverified; only the mockup was approved). Full build printed `sh: 1: next: not found`; project lint dependencies are absent and global ESLint 6.4.0 cannot use the current config. No packages installed. Approved standalone mockup is scaffolding in its own commit and must not be merged.
-
-**Last updated:** 2026-10-01 (Luna opt-in, wave 1)
 
 - **Luna opt-in for the two Haiku-class classification tasks (2026-10-01):** John asked to align every AI task on a model and start moving Haiku-class work to GPT-6 Luna (`gpt-6-luna`). This repo's wave 1 is `suggest-buckets` (`suggestBuckets.js`) and `suggest-tab-matches` (`suggestTabMatches.js`) — plain text in, JSON out, no tools. The other uses are deliberately untouched: the command bar, budget interview and scenario/tool agents stay on Sonnet; the spreadsheet importers and category mapper (Sonnet today, money figures) wait for a side-by-side on real files (wave 4).
   - **Nothing changes on merge while the key is absent from Production.** `src/lib/ai/luna.js` + a branch in `app/api/ai-chat/route.js`: a request carrying a registered `task` goes to Luna whenever `OPENAI_API_KEY` is set (so the key's Vercel scope is the switch: Preview only to try it); `AI_FORCE_ANTHROPIC=1` overrides the key. Any Luna failure (HTTP error, truncation, empty reply), and any request with tools or non-text blocks, falls through to the existing Anthropic path. Plain `fetch`, `store: false`, `reasoning.effort: 'low'`, 600 tokens of `max_output_tokens` headroom because reasoning tokens count against the cap.
@@ -116,8 +115,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     project) and confirming the connector in ChatGPT's UI — both are next
     steps for John.
 
-**Last updated (previous):** 2026-08-23 (Tool registry — scenario editing + lookup_data pagination, both found via real MCP usage)
-
 - **OAuth confirmed fully working end to end (2026-08-23):** connector added
   successfully from both Claude Code Remote (cloud) and Claude Desktop after
   the double-path fix — discovery, DCR, login bounce, consent, and a real
@@ -150,8 +147,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     no gap or overlap. **Not yet verified:** a live re-run of the exact
     forecast-fetch that originally hit the cap, or a fresh `update_scenario`
     call through the connector — both are the natural next live tests.
-
-**Last updated (previous):** 2026-08-23 (MCP OAuth — fixed a double-path bug in the post-login resume redirect)
 
 - **First live OAuth attempt, found and fixed a real bug (2026-08-23):**
   same night phase 2 shipped — tried "Add custom connector" from Claude
@@ -193,8 +188,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     both an empty and populated `values` object. **Not yet verified:** a
     second live "Add custom connector" attempt end-to-end — that's the next
     step once this deploys.
-
-**Last updated (previous):** 2026-08-23 (MCP connector phase 2 — OAuth for claude.ai / Cowork / Claude Code Remote)
 
 - **MCP OAuth shipped, same night phase 1's bug got fixed (2026-08-23):**
   discovered live — trying to add the connector from Claude Code Remote (the
@@ -239,8 +232,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     the deployed endpoints — that's the next live test once this ships,
     exactly like phase 1's first real run surfaced the SSO bug.
 
-**Last updated (previous):** 2026-08-22 (MCP connector — fixed a Vercel SSO wall silently blanking read results)
-
 - **First live end-to-end test, found and fixed a real bug (2026-08-22):**
   token minted (`personal_access_tokens`), connector added in Claude Code
   (`claude mcp add`, confirmed `✔ Connected`), then a real question —
@@ -277,8 +268,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     `no-undef: process` gap on server files). **Still needs a second live
     round** — re-ask the same question through the connector once this
     redeploys, to confirm real bill data comes back this time.
-
-**Last updated (previous):** 2026-08-22 (MCP connector — Claude Code can now read/write this app directly)
 
 - **Remote MCP server for Claude Code (2026-08-22):** approved from an
   architecture writeup (Phase 1) before any code — three decisions locked in
@@ -326,8 +315,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     `DATABASE_URL`) and a Claude Code connector pointed at the deployed
     `/api/mcp` URL, which is the next step once this deploys.
 
-**Last updated (previous):** 2026-08-22 (Dashboard — current-month income no longer shows $0 before payday)
-
 - **Income vs. Expenses widget: current month fell back to $0 instead of the
   forecast (2026-08-22):** the chart treated the whole current month as
   "actual" for both series once any part of it had elapsed, so a month where
@@ -350,8 +337,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     posted + partial expenses) in a Node harness — current month correctly
     showed the income forecast (dashed) while expenses stayed on their real,
     lower actual. **Visually unverified in the browser.**
-
-**Last updated (previous):** 2026-08-22 (Command bar — correct a pending confirmation, full-screen toggle)
 
 - **Correct a pending write instead of only Confirm/Cancel (2026-08-22):** the
   input row was fully disabled while a confirmation card was up, so a mistake
@@ -382,8 +367,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
   `CommandBar.jsx` error at the loading-popup effect, unrelated to this
   change). **Visually unverified in the browser** — same outstanding item as
   the file-upload work above.
-
-**Last updated (previous):** 2026-08-22 (Command bar file upload — added Word/Excel/text/Markdown support)
 
 - **File upload extended to Word, Excel, text, and Markdown (2026-08-22, same
   day follow-up):** the initial ship only accepted images and PDFs — the two
@@ -419,8 +402,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     directly. **Visually unverified in the browser** — same outstanding item
     as the original upload feature.
 
-**Last updated (previous):** 2026-08-22 (Command bar file upload — drag-and-drop and click-to-browse)
-
 - **Assistant can read an attached file (2026-08-22):** the command bar gained a
   📎 button and a drag-and-drop zone (drop anywhere on the open popup) for
   attaching one image or PDF per turn — a photo of a bill, a screenshot of a
@@ -451,8 +432,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
     loading-popup effect predates this change, confirmed via `git stash`).
     **Visually unverified** — not yet exercised in a browser (drag-and-drop,
     the paperclip picker, and an actual Claude read of an attached file/PDF).
-
-- **Last updated (previous):** 2026-08-09 (AI assistant everywhere — full tool registry, confirm-before-write, activity log)
 
 - **AI assistant can now operate every module (2026-08-09):** the ✦ command bar
   already followed the user across all 16 modules but could only write two
@@ -487,8 +466,6 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
   which keeps its narrow `add_adjustment` tool. Cost note: 39 tool schemas are
   ~6.4k tokens per call, cached with the system prompt (~0.1x on repeat turns
   within a session), so a cold turn costs about 2¢ more than before.
-
-- **Last updated (previous):** 2026-08-06 (Planner schedule fixes — forecast fallback, savings hierarchy, transfer math)
 
 - **Transfer-needed math made legible (2026-08-06, PRs #165/#166):** the figure
   was correct all along — `bills due + min. balance − checking` — but nothing
@@ -833,7 +810,9 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 
 **Previously last updated:** 2026-06-23 (Phases 0–11 largely built; in daily use)
 
-### Done so far
+### Done so far (history — June 2026, pre-migration)
+*Written when the stack was Vite + GitHub Pages + Supabase. Superseded by the Neon/Vercel migration (see the 2026-07-04/05 entries above); kept as the record of how V1 was built.*
+
 - **Phase 0 complete** — Vite + React SPA, GitHub Pages deploy (auto on push to `main`), Supabase project live, client configured.
 - **Phase 1 schema live** — all tables created in Supabase via `db/migrations/001_initial_schema.sql`: `transactions`, `budget_categories`, `budget_line_items`, `commitments`, `scenarios`, `scenario_adjustments`, `wealth_snapshots`, `ai_briefings`, plus `user_profiles`. **RLS enabled** on every table (per-user `auth.uid()` policies).
 - **Auth working** (done early, ahead of Phase 10) — email/password sign-up + sign-in (`src/modules/auth/Login.jsx`), session tracking (`src/lib/auth/useAuth.js`), auth gate in `App.jsx` (Login → Onboarding → App shell), sign-out.
@@ -988,51 +967,40 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
   - Only the scenarios the user checks in the active tier's dropdown are folded into the forecast (previously *all* committed scenarios were applied unconditionally). Committed and Modeled each keep an independent selection.
   - Modeled scenarios (with adjustments) are now loaded alongside committed ones; selections reconcile across reloads/year changes (new scenarios default to selected, removed ones drop, prior picks preserved). The "with scenarios" summary stat, legend, and delta highlighting all follow the active tier.
 
-### Known follow-ups / gotchas
-- **Deploy the Edge Function:** `supabase functions deploy ai-chat` and `supabase secrets set ANTHROPIC_API_KEY=...` (see `db/functions/ai-chat/README.md`). Until deployed, the command bar returns a friendly "could not reach AI service" message. **Confirm the secret is named `ANTHROPIC_API_KEY`** (update `Deno.env.get` in the function if it differs).
-- **Retire the browser-side path:** `src/lib/anthropic.js` (direct browser call via `VITE_ANTHROPIC_API_KEY`) is now superseded by the Edge Function and should not be used. Keep the GitHub `VITE_ANTHROPIC_API_KEY` secret empty; rotate the key if it was ever exposed.
-- **Apply migration 003** in Supabase SQL Editor (`db/migrations/003_import_logs.sql`) before import logging will work. The import itself succeeds without it; logging fails silently (non-fatal).
-- **Apply schema additions for income/settings** — `variance_threshold`, `bonus_month`, `benefits_amount`, `benefits_pct`, `four01k_pct`, `four01k_on_bonus` columns must exist in `user_profiles` for Settings save and income forecast to work. Add via SQL Editor if the migration wasn't applied.
-- **Test with real Monarch CSV** — dedup logic and parser logic are written but not tested against an actual 12–24 month export.
-- **No error boundary** — unhandled React render errors still produce a blank page. Add one soon.
-- ~~**Supabase 1000-row truncation**~~ — resolved: all high-volume queries now use `.range()` pagination loops.
-- ~~**AI briefing income figures inconsistent with dashboard**~~ — resolved: AI context now uses the same current-year `incomeVsExpenses()` projection as the Income widget.
-- Email confirmation setting in Supabase Auth determines whether signup logs in immediately vs. requires an email link.
+### Open items (current — updated 2026-10-15)
 
-### Recommended next session
+**Priority**
+1. **Route-handler tests** — no automated tests cover the 68 `app/api/**/route.js` handlers (the libraries under `src/lib` are covered by Vitest and `node:test`).
+2. **Integer cents, stage 4 only** — stages 1–3 and the points engine shipped (see session log). Left: unify the ~25 UI formatters on one style via `formatMoney`. This is a visible change (signs, `$-5` vs `−$5`, `—` for null), so it needs a style decision and a browser check. Also `generateBudgetDraft` Non-Monthly months are whole-dollar `Math.round` and may not sum to the annual total.
 
-*(Superseded 2026-07-08 — the migration to Neon/Vercel is fully complete, so the Supabase/PR #142-era items below no longer apply. Current state: all three previously "visually unverified" UI features and the real Monarch CSV end-to-end test are now confirmed. Remaining work is the hardening backlog.)*
+**Needs a browser or your decision**
+3. **Browser verification** of the changes logged as "visually unverified": module header wrap (Budget Draft), cash-basis card timing on Cash Flow, cents rounding shifts, Income vs. Expenses headline after the in-progress-month fix, misc outflow items.
+4. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; dashboard has a slight horizontal scroll on mobile; Forecast mobile layout under review.
+5. **Make the repo public** — held from Phase 11; the AI proxy/key handling is confirmed solid post-migration.
+6. **Apply migrations to the live Neon branch (`dev`):** `024_outlook.sql` is applied only to the `outlook-test` branch; `023_bill_amount_items.sql` (on the unmerged `codex/misc-outflow-items` branch) needs review first. Writes live data, so only on John's say-so.
 
-~~**Browser verification**~~ — Grill Session, Scenario 4-tab layout, and AI Adjustment Composer all confirmed working live (2026-07-08). ✓
-~~**Real Monarch CSV end-to-end test**~~ — confirmed working live (2026-07-08). ✓
-~~**Add React error boundary**~~ — done, Phase 11. ✓
-~~**Deploy + verify `ai-chat`**~~ — superseded by the Neon/Vercel migration; `/api/ai-chat` confirmed live. ✓
+**Smaller leftovers**
+- Income vs. Expenses still differs from Cash Flow's net by commitments that have no budget line of their own (Cash Flow adds them to outflow, Income vs. Expenses does not).
+- Closed years: `incomeVsExpenses`/`yearProjection` fill a month with no transactions from the forecast while `spendByGroupYear` shows $0.
+- No AI/MCP tools for the 5-year outlook yet.
+- Migration files from 015 onward still say `references auth.users(id)`; the live FK target is `neon_auth."user"(id)`. The checked-in history misdescribes the live schema.
+- `CashFlow.jsx` has a pre-existing `react-hooks/set-state-in-effect` lint error; `pointsEngine.js` has an unused `year` parameter.
+- An explicit card-to-account mapping field for Cash Flow if the auto-match ever misses; statements are assumed paid in full.
+- Surface errors instead of swallowing them: the `parseJsonOrThrow` fallback in `src/lib/db/*.js` turns a failed response into `{}`.
 
-~~**Pin the AI model version**~~ — decided against (2026-07-08): `resolveModel()` (`app/api/ai-chat/route.js`) is kept as-is, resolving to the newest release within a named family (`sonnet`/`haiku`). The family is the intentional pin; the exact version is meant to float so the app always runs on Anthropic's latest release for that family.
-~~**Verify income forecast math**~~ — confirmed good (2026-07-08). ✓
-
-~~**Priority #1 (added 2026-10-08): Income vs. Expenses in-progress month**~~ — done 2026-10-15, see the session log. Still to do: confirm the new headline savings rate in the browser.
-
-**Reliability (current priority — see `ARCHITECTURE.md` §10 hardening backlog)**
-1. **Integer cents, stage 4 only** — stages 1–3 and the points engine shipped (see session log). Left: unify the ~25 UI formatters on one style via `formatMoney` (a visible change; needs a style decision and a browser check).
-
-**Polish**
-2. **Mobile QA pass** — all modules at 760 and 1100 breakpoints; Scenario 4-tab layout on mobile. **In progress (2026-07-08):** dashboard has a slight horizontal scroll on mobile (should fit edge-to-edge); Forecast module's mobile view (stacked month blocks) is under review for a better layout.
-3. **Make the repo public** — held from Phase 11, now that the AI proxy/key handling is confirmed solid post-migration.
-
-~~**Transactions backfill**~~ — resolved via the live browser-verification re-upload (2026-07-05); no gap worth closing. ✓
-~~**Security cleanup**~~ — `src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed from build workflow and `.env`; GitHub secret confirmed empty. ✓
-~~**Apply outstanding DB migrations**~~ — all applied ✓  
-~~**Preview-before-write for AI scenario mutations**~~ — implemented ✓  
-~~**AI command bar yearTxns threading**~~ — implemented ✓
+**Resolved (recorded so they are not re-opened):** React error boundary; AI proxy and key handling (`/api/ai-chat`, browser-side path deleted); all earlier DB migrations applied; real Monarch CSV end-to-end test (2026-07-08); browser verification of Grill Session, Scenario 4-tab layout and AI Adjustment Composer (2026-07-08); income forecast math; preview-before-write for AI scenario mutations; AI command bar `yearTxns` threading; transactions backfill (re-upload 2026-07-05); security cleanup (`src/lib/anthropic.js` deleted, `VITE_ANTHROPIC_API_KEY` removed); Priority #1 Income vs. Expenses in-progress month (2026-10-15). The model is deliberately pinned by family, not version (decided 2026-07-08). Not carried forward because they were Supabase-specific: deploying the `ai-chat` Edge Function, Supabase secrets, the Supabase email-confirmation setting.
 
 ---
+
+## V1 phase plan (history)
+
+*Phases 0–11 are the original V1 plan, written for Vite + GitHub Pages + Supabase. They are kept as the record of scope and decisions. Wherever they say Supabase, Edge Functions or GitHub Pages, read Neon, `app/api` route handlers and Vercel (see the 2026-07-04/05 migration entries). Open work lives in "Open items" above, not in these checklists.*
 
 ## Phase 0 — Repo and Project Setup
 *Goal: Clean foundation before a single line of product code is written.*
 
 - [x] Initialize Vite + React SPA (`npm create vite@latest`)
-- [x] Configure GitHub Pages deployment
+- [x] Configure GitHub Pages deployment — retired 2026-07-05, now Vercel
 - [x] Set up Supabase project (new project, not shared with other apps)
 - [x] Install and configure Supabase client in React app
 - [x] Set up `.env` file with Supabase URL, anon key, and Anthropic API key
@@ -1058,7 +1026,7 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 - [x] Create `ai_briefings` table
 - [x] Set up Row Level Security (RLS) policies for all tables
 - [ ] Seed `budget_categories` table from FY26 budget (46 categories, 11 groups, Fixed/Flexible/Non-Monthly types)
-- [~] Write and test deduplication logic (composite key: date + merchant + amount + account) — logic written (`buildDedupKey`), not yet tested against a real CSV
+- [x] Write and test deduplication logic (composite key: date + merchant + amount + account) — tested against a real Monarch CSV 2026-07-08
 - [x] Verify schema against architecture doc — no gaps, no John-specific hardcoding
 
 **Exit criteria:** All tables live in Supabase. RLS enabled. Budget categories seeded. Dedup logic tested.
@@ -1075,10 +1043,10 @@ Post-migration hardening. The Supabase → Neon + Neon Auth + Vercel migration i
 - [x] Run deduplication check on every import (existing `importTransactions` dedup via `user_id,dedup_key` unique constraint)
 - [x] Display import summary: X new transactions added, Y duplicates skipped
 - [x] Handle unmapped categories: surface for user confirmation before inserting (UnmappedScreen in ImportFlow)
-- [~] Test with real Monarch CSV exports (12-month and 24-month files) — logic written, not yet tested against a real export
+- [x] Test with real Monarch CSV exports — confirmed live end to end 2026-07-08
 - [x] Build import history log (`import_logs` table + `src/lib/db/importLog.js` + display in Settings)
 
-**Exit criteria:** Upload a Monarch CSV, see transactions in Supabase, duplicates correctly skipped, unmapped categories surfaced. ✓ (pending real-data test)
+**Exit criteria:** Upload a Monarch CSV, see transactions in the database, duplicates correctly skipped, unmapped categories surfaced. ✓
 
 ---
 
