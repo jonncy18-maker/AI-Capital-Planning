@@ -1,3 +1,4 @@
+import MobileMonthPlan, { MobileMonthSelector, MobileAnnualSummary } from '../common/MobileMonthPlan.jsx'
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import GrillSession from './GrillSession.jsx'
 import OutlookView from './OutlookView.jsx'
@@ -369,7 +370,7 @@ function TabMatchReview({ pending, mobile, onConfirm, onCancel }) {
 
 // ── Schedule grid (annual drill-down) ────────────────────────────────────────
 
-function ScheduleGrid({ lineItems, commitments, year, mobile }) {
+function ScheduleGrid({ lineItems, commitments, year, mobile, selectedMonth }) {
   // Aggregate by category; also keep individual labeled sub-lines for drill-down.
   const byCategory = {}
   for (const li of lineItems) {
@@ -425,26 +426,9 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
   for (const r of rows) for (let m = 0; m < 12; m++) monthTotals[m] += r.months[m]
   const grandTotal = monthTotals.reduce((a, b) => a + b, 0)
 
-  if (mobile) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {MONTHS.map((mLabel, m) => (
-          <div key={m} style={{ border: '1px solid var(--bd)', borderRadius: 10, padding: 14, background: 'var(--bg-card)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontWeight: 600, color: 'var(--tx-1)' }}>{mLabel} {year}</span>
-              <span style={{ fontWeight: 600, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtFull(monthTotals[m])}</span>
-            </div>
-            {rows.filter(r => r.months[m] > 0).sort((a, b) => b.months[m] - a.months[m]).map((r, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '3px 0', color: 'var(--tx-2)' }}>
-                <span>{r.name}</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtFull(r.months[m])}</span>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    )
-  }
+  if (mobile) return <MobileMonthPlan title="Monthly planned" key={`${year}-${selectedMonth}`} rows={rows} month={selectedMonth}
+    getValue={row => row.months[selectedMonth]}
+    getLines={row => row.lines.filter(line => line.month === selectedMonth)} />
 
   const curMonth = year === CUR_YEAR ? new Date().getMonth() : -1
   const cellStyle = { textAlign: 'right', fontSize: 12, padding: '8px 10px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
@@ -555,7 +539,19 @@ function ScheduleGrid({ lineItems, commitments, year, mobile }) {
 // by default) and each month cell is an input. Commitment-fed rows are managed
 // in the Commitments module, so only real budget line items are editable here.
 
-function EditableScheduleGrid({ lineItems, year, onSave, onCancel, saving }) {
+function EditableScheduleGrid({ lineItems, year, onSave, onCancel, saving, mobile, selectedMonth, onMonthChange }) {
+  // Keep the draft representation stable until Save or Cancel, including across a resize.
+  const [mobileEditor] = useState(mobile)
+  const [openAmountEdits, setOpenAmountEdits] = useState(() => new Set())
+  const handleAmountEditing = useCallback((key, isEditing) => {
+    setOpenAmountEdits(previous => {
+      if (previous.has(key) === isEditing) return previous
+      const next = new Set(previous)
+      if (isEditing) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
   const initial = useMemo(() => {
     const m = {}
     for (const li of lineItems) {
@@ -581,6 +577,7 @@ function EditableScheduleGrid({ lineItems, year, onSave, onCancel, saving }) {
   }, [lineItems])
 
   const [model, setModel] = useState(initial)
+  const [mobileItems, setMobileItems] = useState(() => lineItems.map((line, index) => ({ ...line, id: line.id ?? `draft-${index}`, amount: Number(line.amount) || 0 })))
   const [expanded, setExpanded] = useState(() => new Set())
   const toggleGroup = g => setExpanded(prev => {
     const next = new Set(prev)
@@ -634,6 +631,22 @@ function EditableScheduleGrid({ lineItems, year, onSave, onCancel, saving }) {
     borderRadius: 5, padding: '4px 5px', color: 'var(--tx-1)', fontSize: 11.5, outline: 'none',
     fontVariantNumeric: 'tabular-nums',
   }
+
+  if (mobileEditor) return <div>
+    <p style={{ color: 'var(--tx-2)', fontSize: 13 }}>Editing {year} budget · annual total {fmtFull(mobileItems.reduce((sum, line) => sum + line.amount, 0))}</p>
+    <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      <button onClick={onCancel} disabled={saving} style={ghostBtn}>Cancel</button>
+      <button onClick={() => onSave(mobileItems.map(({ category_id, month, amount, label, commitment_id }) => ({ category_id, month, amount, label: label ?? null, commitment_id: commitment_id ?? null })))} disabled={saving || openAmountEdits.size > 0} style={{ ...primaryBtn, opacity: saving || openAmountEdits.size > 0 ? 0.5 : 1 }}>{saving ? 'Saving…' : 'Save Changes'}</button>
+    </div>
+    {openAmountEdits.size > 0 && <p role="status" style={{ color: 'var(--tx-3)', fontSize: 12 }}>Apply or cancel the open amount before saving the budget.</p>}
+    <MobileMonthSelector year={year} month={selectedMonth} onChange={onMonthChange} />
+    <MobileMonthPlan title="Monthly planned" saveLabel="Apply" onEditingChange={handleAmountEditing} key={`${year}-${selectedMonth}`} rows={Object.entries(model).map(([key, row]) => ({ ...row, key }))} month={selectedMonth}
+      getValue={row => mobileItems.filter(line => line.category_id === row.category_id && line.month === selectedMonth + 1).reduce((sum, line) => sum + line.amount, 0)}
+      getLines={row => mobileItems.filter(line => line.category_id === row.category_id && line.month === selectedMonth + 1)} canEdit={!saving}
+      onSave={(row, month, amount, line) => setMobileItems(previous => line
+        ? previous.map(item => item.id === line.id ? { ...item, amount } : item)
+        : [...previous, { id: `draft-${row.key}-${month}`, category_id: row.category_id, month: month + 1, amount, label: null, commitment_id: row.commitment_id }])} />
+  </div>
 
   return (
     <div>
@@ -779,6 +792,7 @@ const ghostBtn = {
 
 export default function Budget({ userId, mobile, initialView = 'detailed', initialScenarioId = null }) {
   const [year, setYear] = useState(CUR_YEAR)
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
   const [years, setYears] = useState([])
   const [lineItems, setLineItems] = useState([])
   const [commitments, setCommitments] = useState([])
@@ -1048,7 +1062,7 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
           <>
             <ViewToggle mode={viewMode} year={year} onChange={setViewMode} />
             {viewMode === 'detailed' && <>
-            <select value={year} onChange={e => { setEditing(false); setYear(Number(e.target.value)) }} style={{
+            <select value={year} onChange={e => { const nextYear = Number(e.target.value); setEditing(false); setYear(nextYear); setSelectedMonth(nextYear === CUR_YEAR ? new Date().getMonth() : 0) }} style={{
               padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--bd)',
               borderRadius: 7, color: 'var(--tx-1)', fontSize: 13, outline: 'none', cursor: 'pointer',
             }}>
@@ -1125,6 +1139,9 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
         />
       ) : editing ? (
         <EditableScheduleGrid
+          mobile={mobile}
+          selectedMonth={selectedMonth}
+          onMonthChange={setSelectedMonth}
           lineItems={lineItems}
           year={year}
           saving={saving}
@@ -1219,13 +1236,16 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
               </button>
             </div>
           )}
+          <MobileAnnualSummary mobile={mobile}>
           <div style={{ display: 'flex', gap: 20, marginBottom: 18, flexWrap: 'wrap' }}>
             <SummaryStat label={`${year} planned`} value={fmtFull(annualTotal)} accent />
             <SummaryStat label="Avg / month" value={fmtFull(annualTotal / 12)} />
             <SummaryStat label="Line items" value={lineItems.length.toLocaleString()} />
             <SummaryStat label="Active commitments" value={commitments.length.toLocaleString()} />
           </div>
-          <ScheduleGrid lineItems={lineItems} commitments={commitments} year={year} mobile={mobile} />
+          </MobileAnnualSummary>
+          {mobile && <MobileMonthSelector year={year} month={selectedMonth} onChange={setSelectedMonth} />}
+          <ScheduleGrid lineItems={lineItems} commitments={commitments} year={year} mobile={mobile} selectedMonth={selectedMonth} />
         </>
       )}
 

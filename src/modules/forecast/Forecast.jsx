@@ -1,3 +1,5 @@
+import ForecastGroupEditor from './ForecastGroupEditor.jsx'
+import MobileMonthPlan, { MobileMonthSelector, MobileAnnualSummary } from '../common/MobileMonthPlan.jsx'
 import { parseLocalDate } from '../../lib/dates.js'
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { getBudgetLineItems, getBudgetYears } from '../../lib/db/budgetLineItems.js'
@@ -39,69 +41,6 @@ const ghostBtn = {
   padding: '8px 14px', background: 'transparent', color: 'var(--tx-2)',
   border: '1px solid var(--bd)', borderRadius: 7, fontSize: 12.5, cursor: 'pointer',
 }
-function lineInput(w) {
-  return {
-    width: w, background: 'var(--field)', border: '1px solid var(--bd)', borderRadius: 6,
-    padding: '5px 9px', color: 'var(--tx-1)', fontSize: 12, outline: 'none',
-  }
-}
-
-// ── Inline cell editor ───────────────────────────────────────────────────────
-// Edits the forecast value for a single category/month. The forecast is its own
-// dataset (independent of the budget); the budget figure is shown only as a
-// reference. Saving updates that month's single forecast line (or creates one).
-
-function CellEditor({ value, budgetValue, onSave, onCancel }) {
-  const [val, setVal] = useState(String(Math.round(value ?? 0)))
-  const inputRef = useRef(null)
-
-  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select() }, [])
-
-  function handleKeyDown(e) {
-    if (e.key === 'Enter') handleSave()
-    if (e.key === 'Escape') onCancel()
-  }
-  function handleSave() {
-    onSave(parseFloat(val.replace(/[^0-9.]/g, '')) || 0)
-  }
-
-  return (
-    <div style={{
-      position: 'absolute', zIndex: 50, background: 'var(--bg-card)',
-      border: '1px solid var(--accent)', borderRadius: 10, padding: 14,
-      boxShadow: '0 8px 28px rgba(0,0,0,0.18)', minWidth: 220,
-      top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-    }}>
-      <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 8, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-        Edit forecast
-      </div>
-      {budgetValue != null && (
-        <div style={{ fontSize: 11.5, color: 'var(--tx-3)', marginBottom: 8 }}>
-          Budget (reference): <strong style={{ color: 'var(--tx-2)' }}>{fmtFull(budgetValue)}</strong>
-        </div>
-      )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-        <span style={{ fontSize: 13, color: 'var(--tx-2)' }}>$</span>
-        <input
-          ref={inputRef}
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          onKeyDown={handleKeyDown}
-          style={{
-            flex: 1, background: 'var(--field)', border: '1px solid var(--accent)',
-            borderRadius: 6, padding: '6px 10px', color: 'var(--tx-1)', fontSize: 14,
-            fontWeight: 600, outline: 'none', width: 0,
-          }}
-        />
-      </div>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button onClick={handleSave} style={{ ...primaryBtn, flex: 1, padding: '7px 0' }}>Save</button>
-        <button onClick={onCancel} style={{ ...ghostBtn, padding: '7px 12px' }}>✕</button>
-      </div>
-    </div>
-  )
-}
-
 // Resolve the display value for a single cell based on the active layer.
 function getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady) {
   if (layer === 'budget') return r.budget[m] ?? 0
@@ -110,230 +49,9 @@ function getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady) {
   return base + (scenarioDeltaMap?.[`${r.catId}::${m + 1}`] ?? 0)
 }
 
-// ── Single month cell within a label row ────────────────────────────────────
-
-function MonthCell({ item, month, canEdit, cellStyle, bg, onUpdate, onAdd }) {
-  const [val, setVal] = useState(item ? String(Math.round(item.amount)) : '')
-
-  useEffect(() => {
-    setVal(item ? String(Math.round(item.amount)) : '')
-  }, [item?.id, item?.amount])
-
-  function commit() {
-    const n = parseFloat(String(val).replace(/[^0-9.]/g, '')) || 0
-    if (item) {
-      if (n !== item.amount) onUpdate(item.id, n)
-    } else if (n > 0) {
-      onAdd(month, n)
-    }
-  }
-
-  const hasValue = item && item.amount > 0
-  return (
-    <td style={{ ...cellStyle, background: bg, padding: '5px 8px' }}>
-      {canEdit ? (
-        <input
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          onBlur={commit}
-          onKeyDown={e => { if (e.key === 'Enter') { commit(); e.currentTarget.blur() } }}
-          style={{
-            width: 54, textAlign: 'right',
-            background: hasValue ? 'var(--field)' : 'transparent',
-            border: hasValue ? '1px solid var(--bd)' : '1px solid transparent',
-            borderRadius: 5, padding: '3px 5px',
-            color: hasValue ? 'var(--tx-1)' : 'var(--tx-4)',
-            fontSize: 11.5, outline: 'none', fontVariantNumeric: 'tabular-nums',
-          }}
-        />
-      ) : hasValue ? (
-        <span style={{ color: 'var(--tx-2)', fontSize: 11.5 }}>{fmt(item.amount)}</span>
-      ) : ''}
-    </td>
-  )
-}
-
-// ── One row per unique label under a category ────────────────────────────────
-// Left column: ↳ label  ✕  $ [rate input]
-// Month columns: per-cell editable for future months, read-only for past
-// Rate input: sets all future months to the same amount in one batch operation
-
-function LabelRow({ catId, label, byMonth, curMonth, editable, cellStyle, colBg, onUpdate, onAddCell, onDeleteLabel, onSetRate }) {
-  const futureAmounts = Object.entries(byMonth)
-    .filter(([m]) => curMonth < 0 || Number(m) - 1 >= curMonth)
-    .map(([, it]) => it.amount)
-  const commonRate = futureAmounts.length > 0 && futureAmounts.every(a => a === futureAmounts[0])
-    ? String(Math.round(futureAmounts[0]))
-    : ''
-  const [rateVal, setRateVal] = useState(commonRate)
-
-  useEffect(() => {
-    const future = Object.entries(byMonth)
-      .filter(([m]) => curMonth < 0 || Number(m) - 1 >= curMonth)
-      .map(([, it]) => it.amount)
-    setRateVal(
-      future.length > 0 && future.every(a => a === future[0]) ? String(Math.round(future[0])) : ''
-    )
-  }, [JSON.stringify(byMonth), curMonth])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  function commitRate() {
-    const n = parseFloat(String(rateVal).replace(/[^0-9.]/g, '')) || 0
-    onSetRate(catId, label, n)
-  }
-
-  const total = Object.values(byMonth).reduce((s, it) => s + (it.amount || 0), 0)
-
-  return (
-    <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
-      <td style={{ textAlign: 'left', fontSize: 12, color: 'var(--tx-2)', padding: '6px 14px 6px 54px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)', whiteSpace: 'nowrap' }}>
-        <span style={{ color: 'var(--tx-4)', marginRight: 6 }}>&#8618;</span>
-        {label || 'Untitled line'}
-        {editable && (
-          <>
-            <button
-              onClick={() => onDeleteLabel(catId, label)}
-              title="Remove all lines for this item"
-              style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--tx-4)', cursor: 'pointer', fontSize: 11, padding: 0 }}
-            >&#x2715;</button>
-            <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--tx-4)' }}>$</span>
-            <input
-              title="Set monthly rate for all future months"
-              value={rateVal}
-              onChange={e => setRateVal(e.target.value)}
-              onBlur={commitRate}
-              onKeyDown={e => { if (e.key === 'Enter') commitRate() }}
-              placeholder="rate"
-              style={{ marginLeft: 3, width: 52, textAlign: 'right', background: 'var(--field)', border: '1px solid var(--bd)', borderRadius: 5, padding: '2px 5px', color: 'var(--tx-1)', fontSize: 11, outline: 'none', fontVariantNumeric: 'tabular-nums' }}
-            />
-          </>
-        )}
-      </td>
-      {Array.from({ length: 12 }, (_, m) => {
-        const mNum = m + 1
-        const item = byMonth[mNum]
-        const isPast = curMonth >= 0 ? m < curMonth : false
-        return (
-          <MonthCell
-            key={`${mNum}-${item?.id ?? 'empty'}-${item?.amount ?? 0}`}
-            item={item}
-            month={mNum}
-            canEdit={editable && !isPast}
-            cellStyle={cellStyle}
-            bg={colBg(m)}
-            onUpdate={onUpdate}
-            onAdd={(month, amount) => onAddCell(catId, label, month, amount)}
-          />
-        )
-      })}
-      <td style={{ ...cellStyle, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)', fontSize: 11.5 }}>{total > 0 ? fmt(total) : '·'}</td>
-    </tr>
-  )
-}
-
-// ── Category drill-down (forecast line items) ────────────────────────────────
-// Groups items by label — one LabelRow per unique label. Adding a new line
-// creates it for all future months at once (label + rate). Individual month
-// cells are still inline-editable for per-month overrides.
-
-function CategoryLineItems({ row, cellStyle, colBg, curMonth, editable, onAddLine, onUpdateLine, onDeleteLabel, onSetRate }) {
-  const [adding, setAdding] = useState(false)
-  const [label, setLabel] = useState('')
-  const [rate, setRate] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  // Group items by label (null label keyed as empty string)
-  const labelGroups = useMemo(() => {
-    const groups = new Map()
-    for (const it of row.items) {
-      const key = it.label ?? ''
-      if (!groups.has(key)) groups.set(key, {})
-      groups.get(key)[it.month] = it
-    }
-    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-  }, [row.items])
-
-  async function submit() {
-    const n = parseFloat(String(rate).replace(/[^0-9.]/g, '')) || 0
-    if (n <= 0) return
-    setBusy(true)
-    try {
-      await onSetRate(row.catId, label.trim() || null, n)
-      setLabel(''); setRate(''); setAdding(false)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <>
-      {labelGroups.map(([lbl, byMonth]) => (
-        <LabelRow
-          key={`lbl-${lbl}`}
-          catId={row.catId}
-          label={lbl || null}
-          byMonth={byMonth}
-          curMonth={curMonth}
-          editable={editable}
-          cellStyle={cellStyle}
-          colBg={colBg}
-          onUpdate={onUpdateLine}
-          onAddCell={onAddLine}
-          onDeleteLabel={onDeleteLabel}
-          onSetRate={onSetRate}
-        />
-      ))}
-      {!labelGroups.length && (
-        <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
-          <td colSpan={14} style={{ textAlign: 'left', padding: '6px 14px 6px 54px', background: 'var(--bg-app)', fontSize: 11.5, color: 'var(--tx-4)' }}>
-            No forecast lines for {row.name} yet.
-          </td>
-        </tr>
-      )}
-      {editable && (
-        <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
-          <td colSpan={14} style={{ textAlign: 'left', padding: '7px 14px 9px 54px', background: 'var(--bg-app)' }}>
-            {adding ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <input
-                  autoFocus
-                  placeholder="Item name (e.g. OpenAI)"
-                  value={label}
-                  onChange={e => setLabel(e.target.value)}
-                  style={lineInput(190)}
-                />
-                <span style={{ fontSize: 12, color: 'var(--tx-3)' }}>$/mo</span>
-                <input
-                  placeholder="0"
-                  value={rate}
-                  onChange={e => setRate(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setAdding(false) }}
-                  style={lineInput(80)}
-                />
-                <button onClick={submit} disabled={busy} style={{ ...primaryBtn, padding: '6px 14px', opacity: busy ? 0.6 : 1 }}>
-                  {busy ? 'Adding…' : 'Add'}
-                </button>
-                <button onClick={() => { setAdding(false); setLabel(''); setRate('') }} style={{ ...ghostBtn, padding: '6px 11px' }}>
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setAdding(true)}
-                style={{ background: 'none', border: '1px dashed var(--bd)', borderRadius: 6, color: 'var(--tx-2)', cursor: 'pointer', fontSize: 12, padding: '5px 12px' }}
-              >
-                + Add line item to {row.name}
-              </button>
-            )}
-          </td>
-        </tr>
-      )}
-    </>
-  )
-}
-
 // ── Forecast grid ────────────────────────────────────────────────────────────
 
-function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, layer, forecastReady, onEdit, saving, editKey, expandedGroups, onToggleGroup, expandedCats, onToggleCat, onAddLine, onUpdateLine, onDeleteLabel, onSetRate, kind = 'expense' }) {
+function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, selectedMonth, layer, forecastReady, onEdit, onOpenGroup, expandedGroups, onAddLine, onUpdateLine, kind = 'expense' }) {
   const curMonth = year === CUR_YEAR ? CUR_MONTH : -1 // highlight current month
   const canEditForecast = layer === 'forecast' && forecastReady
   const scenarioLayer = layer === 'modeled'
@@ -360,39 +78,19 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
   const cellStyle = { textAlign: 'right', fontSize: 12, padding: '8px 10px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', position: 'relative' }
   const totalColor = kind === 'income' ? 'var(--good)' : 'var(--accent)'
   const colBg = m => (m === curMonth ? 'var(--accent-bg)' : 'transparent')
-  const STICKY = 168
+  const STICKY = 200
 
   if (mobile) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {MONTHS.map((mLabel, m) => {
-          const isPast = m < curMonth || curMonth < 0
-          return (
-            <div key={m} style={{ border: '1px solid var(--bd)', borderRadius: 10, padding: 14, background: 'var(--bg-card)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontWeight: 600, color: 'var(--tx-1)' }}>{mLabel} {year}</span>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: 600, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtFull(forecastTotals[m])}
-                  </div>
-                  {actualTotals[m] > 0 && isPast && (
-                    <div style={{ fontSize: 11, color: 'var(--tx-3)', fontVariantNumeric: 'tabular-nums' }}>
-                      actual {fmtFull(actualTotals[m])}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {catRows.filter(r => getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady) > 0).map((r, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '3px 0', color: 'var(--tx-2)' }}>
-                  <span>{r.name}</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtFull(getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady))}</span>
-                </div>
-              ))}
-            </div>
-          )
-        })}
-      </div>
-    )
+    const editableMonth = canEditForecast && (curMonth < 0 || selectedMonth >= curMonth)
+    return <MobileMonthPlan
+      key={`${year}-${selectedMonth}-${layer}`}
+      rows={catRows} month={selectedMonth} title={kind === 'income' ? 'Income' : 'Expenses'}
+      getValue={r => getCellDisplayValue(r, selectedMonth, layer, scenarioDeltaMap, forecastReady)}
+      getLines={r => layer === 'budget' ? [] : r.items.filter(item => item.month === selectedMonth + 1)}
+      canEdit={editableMonth}
+      onSave={(row, month, amount, line) => line ? onUpdateLine(line.id, amount, true) : onAddLine(row.catId, null, month + 1, amount)}
+      getNote={r => `${r.type} · Budget ${fmtFull(r.budget[selectedMonth])} · Actual ${fmtFull(actualMap[r.name]?.[selectedMonth] ?? 0)}${scenarioLayer ? ` · Scenario ${fmtFull(scenarioDeltaMap?.[`${r.catId}::${selectedMonth + 1}`] ?? 0)}` : ''}`}
+    />
   }
 
   // Header sits in its own sticky band so the month labels stay pinned to the top
@@ -400,10 +98,11 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
   const headTh = { position: 'sticky', top: 0, zIndex: 4, background: 'var(--bg-card)' }
   return (
     <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 290px)', border: '1px solid var(--bd)', borderRadius: 12, background: 'var(--bg-card)' }}>
-      <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 1040 }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 1240, tableLayout: 'fixed' }}>
+        <colgroup><col style={{ width: STICKY }} />{Array.from({ length: 13 }, (_, index) => <col key={index} />)}</colgroup>
         <thead>
           <tr>
-            <th style={{ ...headTh, textAlign: 'left', fontSize: 10, color: 'var(--tx-3)', padding: '10px 14px', letterSpacing: '0.06em', textTransform: 'uppercase', left: 0, zIndex: 5, borderBottom: '1px solid var(--bd)', minWidth: STICKY }}>Category</th>
+            <th style={{ ...headTh, textAlign: 'left', fontSize: 10, color: 'var(--tx-3)', padding: '10px 14px', letterSpacing: '0.06em', textTransform: 'uppercase', left: 0, zIndex: 5, borderBottom: '1px solid var(--bd)', width: STICKY }}>Category</th>
             {MONTHS.map((mLabel, mi) => (
               <th key={mLabel} style={{ ...cellStyle, ...headTh, color: mi === curMonth ? 'var(--accent)' : 'var(--tx-3)', fontWeight: 600, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', borderBottom: '1px solid var(--bd)', padding: '10px 10px' }}>{mLabel}</th>
             ))}
@@ -444,11 +143,10 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
             const groupOpen = expandedGroups.has(g)
             return (
               <Fragment key={`group-${g}`}>
-                <tr style={{ background: 'var(--hover)', cursor: 'pointer' }} onClick={() => onToggleGroup(g)}>
-                  <td style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--tx-2)', padding: '7px 14px', letterSpacing: '0.05em', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)' }}>
+                <tr style={{ background: 'var(--hover)', cursor: 'pointer' }} onClick={() => onOpenGroup(gRows)}>
+                  <td style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--tx-2)', padding: '7px 14px', letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'normal', overflowWrap: 'anywhere', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-app)' }}>
                     <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-3)', transition: 'transform .12s', transform: groupOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
-                    {g}
-                    <span style={{ marginLeft: 6, color: 'var(--tx-4)', fontWeight: 600 }}>({gRows.length})</span>
+                    <button type="button" disabled={layer !== 'forecast'} title={g} onClick={event => { event.stopPropagation(); onOpenGroup(gRows) }} style={{ background: 'none', border: 0, padding: 0, color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer', overflowWrap: 'anywhere' }}>{g} ({gRows.length})</button>
                   </td>
                   {gForecast.map((v, m) => <td key={m} style={{ ...cellStyle, color: 'var(--tx-3)', background: colBg(m) }}>{v > 0 ? fmt(v) : '·'}</td>)}
                   <td style={{ ...cellStyle, fontWeight: 700, color: 'var(--tx-2)', borderLeft: '1px solid var(--bd-light)' }}>{fmt(gTotal)}</td>
@@ -456,23 +154,21 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
                 {groupOpen && gRows.map((r, ri) => {
                   const rTotal = Array.from({ length: 12 }, (_, m) => getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady)).reduce((a, b) => a + b, 0)
                   const drillable = layer === 'forecast'
-                  const catOpen = drillable && expandedCats.has(r.catId)
                   return (
                     <Fragment key={`${g}-${ri}`}>
                     <tr style={{ borderTop: '1px solid var(--bd-light)' }}>
                       <td
-                        onClick={() => drillable && onToggleCat(r.catId)}
-                        title={drillable ? 'Show forecast lines' : undefined}
-                        style={{ textAlign: 'left', fontSize: 12.5, color: 'var(--tx-1)', padding: '8px 14px 8px 34px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'nowrap', cursor: drillable ? 'pointer' : 'default' }}
+                        onClick={() => onOpenGroup(gRows, r.catId)}
+                        title={r.name}
+                        style={{ textAlign: 'left', fontSize: 12.5, color: 'var(--tx-1)', padding: '8px 14px 8px 34px', position: 'sticky', left: 0, zIndex: 1, background: 'var(--bg-card)', whiteSpace: 'normal', overflowWrap: 'anywhere', cursor: 'pointer' }}
                       >
-                        <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-4)', transition: 'transform .12s', transform: catOpen ? 'rotate(90deg)' : 'none', opacity: drillable ? 1 : 0 }}>▸</span>
-                        {r.name}
+                        <span style={{ display: 'inline-block', width: 12, color: 'var(--tx-4)', transition: 'transform .12s', transform: 'none', opacity: drillable ? 1 : 0 }}>▸</span>
+                        <button type="button" disabled={layer !== 'forecast'} title={r.name} onClick={event => { event.stopPropagation(); onOpenGroup(gRows, r.catId) }} style={{ background: 'none', border: 0, padding: 0, color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer', overflowWrap: 'anywhere' }}>{r.name}</button>
                       </td>
                       {Array.from({ length: 12 }, (_, m) => {
                         const displayV = getCellDisplayValue(r, m, layer, scenarioDeltaMap, forecastReady)
                         const isPast = curMonth >= 0 ? m < curMonth : false
                         const key = `${r.catId}::${m + 1}`
-                        const isEditing = editKey === key && saving !== true
                         const canEdit = canEditForecast && !isPast
                         const hasDelta = scenarioLayer && (scenarioDeltaMap?.[key] ?? 0) !== 0
                         const bg = hasDelta ? 'rgba(168,100,255,0.08)' : colBg(m)
@@ -480,15 +176,19 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
                         return (
                           <td
                             key={m}
+                            tabIndex={canEdit ? 0 : undefined}
+                            role={canEdit ? 'button' : undefined}
+                            aria-label={canEdit ? `Edit ${r.name} ${MONTHS[m]}` : undefined}
+                            onKeyDown={event => { if (canEdit && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onEdit(r, m + 1) } }}
                             style={{
                               ...cellStyle,
                               background: bg,
                               color: col,
                               cursor: canEdit ? 'pointer' : 'default',
-                              outline: isEditing ? '2px solid var(--accent)' : 'none',
+                              outline: 'none',
                               outlineOffset: -2,
                             }}
-                            onClick={() => canEdit && !isEditing && onEdit(r, m + 1)}
+                            onClick={() => canEdit && onEdit(r, m + 1)}
                           >
                             {displayV > 0 ? fmt(displayV) : '·'}
                             {hasDelta && <span style={{ fontSize: 7, verticalAlign: 'super', color: 'rgba(168,100,255,0.9)', marginLeft: 1 }}>◆</span>}
@@ -497,19 +197,6 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
                       })}
                       <td style={{ ...cellStyle, fontWeight: 600, color: 'var(--tx-1)', borderLeft: '1px solid var(--bd-light)' }}>{rTotal > 0 ? fmt(rTotal) : '·'}</td>
                     </tr>
-                    {catOpen && (
-                      <CategoryLineItems
-                        row={r}
-                        cellStyle={cellStyle}
-                        colBg={colBg}
-                        curMonth={curMonth}
-                        editable={canEditForecast}
-                        onAddLine={onAddLine}
-                        onUpdateLine={onUpdateLine}
-                        onDeleteLabel={onDeleteLabel}
-                        onSetRate={onSetRate}
-                      />
-                    )}
                     </Fragment>
                   )
                 })}
@@ -831,11 +518,11 @@ function ChartLegend({ stroke, solid, dashed, thick, label, faint }) {
 
 function KPICard({ label, heroValue, heroPct, heroColor, detail }) {
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 12, padding: '14px 16px' }}>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--bd)', borderRadius: 12, padding: '14px 16px', minWidth: 0, overflowWrap: 'anywhere' }}>
       <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--tx-4)', marginBottom: 8, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: heroColor ?? 'var(--tx-1)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-        {heroValue}
-        {heroPct != null && <span style={{ marginLeft: 10 }}>{heroPct}</span>}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 10px', minWidth: 0, fontSize: 20, fontWeight: 700, color: heroColor ?? 'var(--tx-1)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{heroValue}</span>
+        {heroPct != null && <span>{heroPct}</span>}
       </div>
       {detail && <div style={{ fontSize: 10.5, color: 'var(--tx-4)', marginTop: 7 }}>{detail}</div>}
     </div>
@@ -866,7 +553,7 @@ function ForecastKPIStrip({ chartActualTotals, chartForecastTotals, chartBudgetT
   const periodLabel    = nextMonthLabel ? `${nextMonthLabel}–Dec` : 'Dec'
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 10, marginBottom: 16 }}>
       <KPICard
         label="YTD actual vs plan"
         heroValue={fmtD(ytdDelta)}
@@ -903,12 +590,16 @@ function ForecastKPIStrip({ chartActualTotals, chartForecastTotals, chartBudgetT
 
 export default function Forecast({ userId, mobile, onDataChange, reloadSignal }) {
   const [year, setYear] = useState(CUR_YEAR)
+  const [selectedMonth, setSelectedMonth] = useState(CUR_MONTH)
+  const yearRequestRef = useRef(0)
+  const loadRequestRef = useRef(0)
+  const mutationRevisionRef = useRef(0)
   const [years, setYears] = useState([])
   const [budgetItems, setBudgetItems] = useState([])
   const [forecastItems, setForecastItems] = useState([])
   const [forecastReady, setForecastReady] = useState(false) // forecast initialized for this year
   const [categories, setCategories] = useState([])
-  const [incomeOpen, setIncomeOpen] = useState(true)
+  const incomeOpen = true
   const [seedingIncome, setSeedingIncome] = useState(false)
   const [yearTxns, setYearTxns] = useState([])
   const [modeledScenarios, setModeledScenarios] = useState([])
@@ -916,7 +607,6 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   const [openDropdown, setOpenDropdown] = useState(null) // 'modeled' | null
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false) // initialize / reset in flight
   const [layer, setLayer] = useState('forecast') // 'budget' | 'forecast' | 'modeled'
 
@@ -924,13 +614,16 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   // while preserving the user's existing picks across reloads/year changes.
   const knownModeledRef = useRef(new Set())
 
-  // Editing state: { catId, month, budgetValue, currentValue, lineId, key }
-  const [editCell, setEditCell] = useState(null)
+  // Popup identity includes its view context so changing year or layer dismisses it.
+  const [groupEditor, setGroupEditor] = useState(null)
 
   const [expandedGroups, setExpandedGroups] = useState(() => new Set())
-  const [expandedCats, setExpandedCats] = useState(() => new Set())
 
   const loadData = useCallback(async (yr) => {
+    const request = ++loadRequestRef.current
+    const context = yearRequestRef.current
+    const revision = mutationRevisionRef.current
+    const isCurrent = () => request === loadRequestRef.current && context === yearRequestRef.current && revision === mutationRevisionRef.current
     setLoading(true)
     setError(null)
     try {
@@ -942,12 +635,6 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
         getScenarios(userId).catch(() => []),
         getBudgetCategories(userId).catch(() => []),
       ])
-      setCategories(cats)
-      setBudgetItems(items)
-      setForecastItems(fItems)
-      setForecastReady(fItems.length > 0)
-      setYearTxns(txns)
-      setYears(budgetYears)
       const withAdjs = async list => Promise.all(
         list.map(async s => {
           const adjs = await getAdjustments(userId, s.id).catch(() => [])
@@ -955,6 +642,14 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
         })
       )
       const modWithAdjs = await withAdjs(allScenarios.filter(s => s.state === 'modeled'))
+      // Publish one snapshot only if no newer load, year, or completed write superseded it.
+      if (!isCurrent()) return
+      setCategories(cats)
+      setBudgetItems(items)
+      setForecastItems(fItems)
+      setForecastReady(fItems.length > 0)
+      setYearTxns(txns)
+      setYears(budgetYears)
       setModeledScenarios(modWithAdjs)
 
       // Default brand-new scenarios to selected; keep prior picks, drop removed.
@@ -967,13 +662,16 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
       }
       setSelectedModeled(prev => reconcile(prev, modWithAdjs, knownModeledRef))
     } catch (e) {
-      setError(e.message)
+      if (isCurrent()) setError(e.message)
     } finally {
-      setLoading(false)
+      if (request === loadRequestRef.current && context === yearRequestRef.current) setLoading(false)
     }
   }, [userId])
 
-  useEffect(() => { loadData(year) }, [year, loadData, reloadSignal])
+  useEffect(() => {
+    loadData(year)
+    return () => { loadRequestRef.current += 1 }
+  }, [year, loadData, reloadSignal])
 
   // Build category rows merging budget (baseline/reference) and forecast (live).
   // catId → { catId, name, group, type, budget[12], forecast[12], items[] (forecast lines) }
@@ -1173,23 +871,11 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
   )
   const allCollapsed = groupNames.length > 0 && groupNames.every(g => !expandedGroups.has(g))
 
-  function toggleGroup(g) {
-    setExpandedGroups(prev => {
-      const next = new Set(prev)
-      next.has(g) ? next.delete(g) : next.add(g)
-      return next
-    })
-  }
+
   function toggleAllGroups() {
     setExpandedGroups(allCollapsed ? new Set(groupNames) : new Set())
   }
-  function toggleCat(catId) {
-    setExpandedCats(prev => {
-      const next = new Set(prev)
-      next.has(catId) ? next.delete(catId) : next.add(catId)
-      return next
-    })
-  }
+
 
   const setterFor = () => setSelectedModeled
   const listFor = () => modeledScenarios
@@ -1263,7 +949,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
       const rows = await resetForecastToBudget(userId, year)
       setForecastItems(rows)
       setForecastReady(true)
-      setEditCell(null)
+      setGroupEditor(null)
       onDataChange?.()
     } catch (e) {
       setError(e.message)
@@ -1272,93 +958,67 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
     }
   }
 
+  function openGroupEditor(rows, catId, month) {
+    if (layer !== 'forecast') return
+    setGroupEditor({ group: rows[0]?.group, catId: catId ?? rows[0]?.catId, month, year, layer })
+  }
+
   function handleEdit(row, month) {
-    const lines = row.items.filter(it => it.month === month)
-    // A cell with multiple discrete lines can't be edited as one value — open the
-    // drill-down so each line is edited individually.
-    if (lines.length > 1) {
-      setExpandedCats(prev => new Set(prev).add(row.catId))
-      return
-    }
-    setEditCell({
-      catId: row.catId,
-      month,
-      budgetValue: row.budget[month - 1] ?? 0,
-      currentValue: row.forecast[month - 1] ?? 0,
-      lineId: lines[0]?.id ?? null,
-      key: `${row.catId}::${month}`,
-    })
+    const rows = (row.group === 'Income' ? incomeRows : catRows).filter(candidate => candidate.group === row.group)
+    openGroupEditor(rows, row.catId, month)
   }
 
-  async function handleSaveCell(amount) {
-    if (!editCell) return
-    setSaving(true)
-    try {
-      let row
-      if (editCell.lineId) {
-        row = await updateForecastLineItem(editCell.lineId, { amount })
-      } else {
-        row = await insertForecastLineItem(userId, { year, categoryId: editCell.catId, month: editCell.month, amount })
-      }
-      upsertForecastLocal(row)
-      setEditCell(null)
-      onDataChange?.()
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleUpdateLine(id, amount) {
-    const prev = forecastItems
-    setForecastItems(prev.map(li => li.id === id ? { ...li, amount } : li))
+  async function handleUpdateLine(id, amount, waitForSave = false) {
+    const requestGeneration = yearRequestRef.current
     try {
       await updateForecastLineItem(id, { amount })
+      mutationRevisionRef.current += 1
+      if (requestGeneration === yearRequestRef.current) setForecastItems(items => items.map(li => li.id === id ? { ...li, amount } : li))
       onDataChange?.()
     } catch (e) {
-      setForecastItems(prev)
-      setError(e.message)
+      if (requestGeneration === yearRequestRef.current) setError(e.message)
+      if (waitForSave) throw e
     }
   }
 
-  async function handleDeleteLabel(catId, label) {
-    const prev = forecastItems
-    setForecastItems(prev.filter(li => !(li.category_id === catId && li.label === (label || null))))
+  async function handleDeleteLabel(catId, label, waitForSave = false) {
+    const requestGeneration = yearRequestRef.current
     try {
       await deleteForecastItemsByLabel(userId, { year, categoryId: catId, label: label || null })
+      mutationRevisionRef.current += 1
+      if (requestGeneration === yearRequestRef.current) setForecastItems(items => items.filter(li => !(li.category_id === catId && li.label === (label || null))))
       onDataChange?.()
     } catch (e) {
-      setForecastItems(prev)
-      setError(e.message)
+      if (requestGeneration === yearRequestRef.current) setError(e.message)
+      if (waitForSave) throw e
     }
   }
 
-  async function handleSetRate(catId, label, rate) {
-    const fromMonth = (year === CUR_YEAR && CUR_MONTH >= 0) ? CUR_MONTH + 1 : 1
+  async function handleSetRate(catId, label, rate, waitForSave = false) {
+    const requestGeneration = yearRequestRef.current
+    const fromMonth = year === CUR_YEAR ? CUR_MONTH + 1 : 1
     const normalizedLabel = label || null
-    const prev = forecastItems
-    // Optimistically remove old future items for this label then add placeholders
-    setForecastItems(prev => prev.filter(li =>
-      !(li.category_id === catId && li.label === normalizedLabel && li.month >= fromMonth)
-    ))
     try {
       const rows = await setForecastRate(userId, { year, categoryId: catId, label: normalizedLabel, rate, fromMonth })
-      setForecastItems(prev => [
-        ...prev.filter(li => !(li.category_id === catId && li.label === normalizedLabel && li.month >= fromMonth)),
+      mutationRevisionRef.current += 1
+      if (requestGeneration === yearRequestRef.current) setForecastItems(items => [
+        ...items.filter(li => !(li.category_id === catId && li.label === normalizedLabel && li.month >= fromMonth)),
         ...rows,
       ])
       onDataChange?.()
     } catch (e) {
-      setForecastItems(prev)
-      setError(e.message)
+      if (requestGeneration === yearRequestRef.current) setError(e.message)
+      if (waitForSave) throw e
     }
   }
 
-  // Kept for individual month-cell adds within a label row (doesn't go through form).
+  // Shared by mobile amounts and the desktop line editor.
   async function handleAddCell(catId, label, month, amount) {
+    const requestGeneration = yearRequestRef.current
     const row = await insertForecastLineItem(userId, { year, categoryId: catId, month, amount, label: label || null })
-    upsertForecastLocal(row)
+    mutationRevisionRef.current += 1
+    // The write belongs to its original year even if the user has moved on.
+    if (requestGeneration === yearRequestRef.current) upsertForecastLocal(row)
     onDataChange?.()
   }
 
@@ -1432,7 +1092,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
         subtitle="An independent month-by-month forecast, seeded from your budget. Edits here never change the budget. Click a cell to edit, or a category to manage its forecast lines."
         actions={
           <>
-            <select value={year} onChange={e => setYear(Number(e.target.value))} style={{
+            <select value={year} onChange={e => { const nextYear = Number(e.target.value); yearRequestRef.current += 1; setYear(nextYear); setSelectedMonth(nextYear === CUR_YEAR ? CUR_MONTH : 0) }} style={{
               padding: '7px 12px', background: 'var(--bg-card)', border: '1px solid var(--bd)',
               borderRadius: 7, color: 'var(--tx-1)', fontSize: 13, outline: 'none', cursor: 'pointer',
             }}>
@@ -1570,6 +1230,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
           )}
 
           {/* Summary strip */}
+          <MobileAnnualSummary mobile={mobile}>
           <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
             {incomeRows.length > 0 && (
               <SummaryStat
@@ -1615,6 +1276,8 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
             )}
           </div>
 
+          </MobileAnnualSummary>
+
           {/* Legend */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 11, color: 'var(--tx-3)', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -1632,6 +1295,13 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               Actual (past months)
             </span>
           </div>
+
+          {mobile && <MobileMonthSelector year={year} month={selectedMonth} onChange={setSelectedMonth} />}
+          {mobile && <div style={{ padding: '14px', border: '1px solid var(--bd)', borderRadius: 12, background: 'var(--bg-card)', marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><span>Month remaining</span><strong style={{ color: 'var(--accent)' }}>{fmtFull(incomeRows.reduce((sum, row) => sum + getCellDisplayValue(row, selectedMonth, layer, {}, forecastReady), 0) - catRows.reduce((sum, row) => sum + getCellDisplayValue(row, selectedMonth, layer, scenarioDeltaMap, forecastReady), 0))}</strong></div>
+            <small style={{ color: 'var(--tx-3)' }}>Income minus expenses · {layer}</small>
+          </div>}
+
 
           {/* Income section — separate grid so the spend plan stays untouched */}
           {incomeRows.length > 0 && (
@@ -1661,24 +1331,19 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
                 actualMap={incomeActualMap}
                 year={year}
                 mobile={mobile}
+                selectedMonth={selectedMonth}
                 layer={layer}
                 forecastReady={forecastReady}
                 onEdit={handleEdit}
-                saving={saving}
-                editKey={editCell?.key ?? null}
                 expandedGroups={incomeOpen ? new Set(['Income']) : new Set()}
-                onToggleGroup={() => setIncomeOpen(o => !o)}
-                expandedCats={expandedCats}
-                onToggleCat={toggleCat}
+                onOpenGroup={openGroupEditor}
                 onAddLine={handleAddCell}
                 onUpdateLine={handleUpdateLine}
-                onDeleteLabel={handleDeleteLabel}
-                onSetRate={handleSetRate}
               />
             </div>
           )}
 
-          {/* Grid with cell editor overlay */}
+          {/* Expense grid and shared desktop editor */}
           <div style={{ position: 'relative' }}>
             <ForecastGrid
               catRows={catRows}
@@ -1686,38 +1351,27 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
               actualMap={actualMap}
               year={year}
               mobile={mobile}
+              selectedMonth={selectedMonth}
               layer={layer}
               forecastReady={forecastReady}
               onEdit={handleEdit}
-              saving={saving}
-              editKey={editCell?.key ?? null}
+              onOpenGroup={openGroupEditor}
               expandedGroups={expandedGroups}
-              onToggleGroup={toggleGroup}
-              expandedCats={expandedCats}
-              onToggleCat={toggleCat}
               onAddLine={handleAddCell}
               onUpdateLine={handleUpdateLine}
-              onDeleteLabel={handleDeleteLabel}
-              onSetRate={handleSetRate}
             />
-            {editCell && layer === 'forecast' && forecastReady && (
-              <div
-                style={{ position: 'absolute', inset: 0, zIndex: 40 }}
-                onClick={() => setEditCell(null)}
-              >
-                <div onClick={e => e.stopPropagation()}>
-                  <CellEditor
-                    value={editCell.currentValue}
-                    budgetValue={editCell.budgetValue}
-                    onSave={handleSaveCell}
-                    onCancel={() => setEditCell(null)}
-                  />
-                </div>
-              </div>
-            )}
+
           </div>
         </>
       )}
+            {groupEditor && !mobile && groupEditor.year === year && groupEditor.layer === layer && <ForecastGroupEditor
+              key={`${year}-${layer}-${groupEditor.group}`}
+              rows={[...incomeRows, ...catRows].filter(row => row.group === groupEditor.group)}
+              initialCategory={groupEditor.catId} initialMonth={groupEditor.month} year={year}
+              editable={layer === 'forecast' && forecastReady}
+              onClose={() => setGroupEditor(null)} onUpdateLine={handleUpdateLine} onAddLine={handleAddCell}
+              onSetRate={handleSetRate} onDeleteLabel={handleDeleteLabel}
+            />}
     </div>
   )
 }
