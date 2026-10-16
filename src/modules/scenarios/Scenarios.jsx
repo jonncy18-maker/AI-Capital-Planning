@@ -44,7 +44,7 @@ function fmtShort(n) {
 
 // ── Impact summary strip ─────────────────────────────────────────────────────
 
-function ImpactSummaryStrip({ summary }) {
+function ImpactSummaryStrip({ summary, mobile }) {
   if (!summary || summary.monthCount === 0) return null
 
   const signedFmt = (n) => {
@@ -96,14 +96,15 @@ function ImpactSummaryStrip({ summary }) {
   ]
 
   return (
+    // 1px gaps over a border-coloured backdrop draw the dividers, so cells can
+    // wrap into 2 x 2 on a phone without losing them.
     <div style={{
-      display: 'flex', border: '1px solid var(--bd)', borderRadius: 8,
-      overflow: 'hidden', marginTop: 14, background: 'var(--bg-app)', flexShrink: 0,
+      display: 'flex', flexWrap: 'wrap', gap: 1, border: '1px solid var(--bd)', borderRadius: 8,
+      overflow: 'hidden', marginTop: 14, background: 'var(--bd)', flexShrink: 0,
     }}>
       {segments.map((seg, i) => (
         <div key={i} style={{
-          flex: 1, padding: '9px 14px',
-          borderRight: i < segments.length - 1 ? '1px solid var(--bd)' : 'none', minWidth: 0,
+          flex: `1 1 ${mobile ? 140 : 110}px`, padding: '9px 14px', background: 'var(--bg-app)', minWidth: 0,
         }}>
           <div style={labelStyle}>{seg.label}</div>
           <div style={seg.isText ? { fontSize: 12, color: seg.color, fontWeight: 500 } : valStyle(seg.color)}>
@@ -941,7 +942,7 @@ function ForecastImpactChart({ adjustments, ctx }) {
       </div>
 
       {/* Summary stats */}
-      <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+      <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
         {[
           { label: `${displayYear} Baseline`, value: '$' + Math.round(annualBase).toLocaleString(), color: 'var(--tx-1)' },
           { label: 'With Scenario', value: '$' + Math.round(annualWith).toLocaleString(), color: 'var(--accent)' },
@@ -1935,7 +1936,7 @@ function ScenarioDetail({
   }
 
   const chartToggleBtnStyle = (active) => ({
-    padding: '5px 12px', border: 'none', fontSize: 11, cursor: 'pointer', transition: 'background 0.15s',
+    padding: '5px 12px', border: 'none', fontSize: 11, cursor: 'pointer', transition: 'background 0.15s', minHeight: 'var(--tap-min, 0px)',
     background: active ? 'var(--accent)' : 'transparent',
     color: active ? 'var(--accent-tx-on)' : 'var(--tx-3)',
     fontWeight: active ? 600 : 400,
@@ -1944,15 +1945,15 @@ function ScenarioDetail({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Scenario header */}
-      <div style={{ padding: '18px 24px 14px', borderBottom: '1px solid var(--bd)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
-          <div style={{ flex: 1 }}>
+      <div style={{ padding: mobile ? '14px 16px 12px' : '18px 24px 14px', borderBottom: '1px solid var(--bd)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 160px', minWidth: 0 }}>
             <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--tx-1)', marginBottom: 6 }}>
               {scenario.name}
             </h2>
             <StateBadge state={scenario.state} />
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexShrink: mobile ? 1 : 0 }}>
             <button onClick={() => setShowAdjModal(true)} style={{
               padding: '7px 12px', background: 'transparent', color: 'var(--tx-2)',
               border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
@@ -2031,18 +2032,18 @@ function ScenarioDetail({
           </div>
         )}
 
-        {!loading && <ImpactSummaryStrip summary={impactSummary} />}
+        {!loading && <ImpactSummaryStrip summary={impactSummary} mobile={mobile} />}
       </div>
 
       {/* Chart — full width */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', minWidth: 0 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: mobile ? '14px 14px' : '16px 20px', minWidth: 0 }}>
         {/* Sensitivity slider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '8px 12px', background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14, padding: '8px 12px', background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 8 }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>Sensitivity</span>
           <span style={{ fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace" }}>0.5×</span>
           <input type="range" min={0.5} max={2} step={0.1} value={sensitivity}
             onChange={e => setSensitivity(Number(e.target.value))}
-            style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer', margin: 0 }} />
+            style={{ flex: '1 1 80px', minWidth: 0, accentColor: 'var(--accent)', cursor: 'pointer', margin: 0 }} />
           <span style={{ fontSize: 9.5, color: 'var(--tx-4)', fontFamily: "'DM Mono', monospace" }}>2×</span>
           <span style={{
             fontSize: 12, fontWeight: 700, fontFamily: "'DM Mono', monospace", minWidth: 32,
@@ -2222,8 +2223,8 @@ function ActualPlanView({ scenarios, adjustments, adjLoading, onViewScenario, on
                 borderRadius: 12, padding: '18px 20px',
                 display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap',
               }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
                     <span style={{
                       display: 'inline-flex', alignItems: 'center', gap: 4,
                       fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase',
@@ -2551,8 +2552,8 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     const active = activeTab === key
     const meta = TAB_META[key]
     return {
-      padding: '10px 20px',
-      fontSize: 13,
+      padding: mobile ? '12px 8px' : '10px 20px',
+      fontSize: mobile ? 12 : 13,
       fontWeight: 600,
       cursor: 'pointer',
       background: 'transparent',
@@ -2563,7 +2564,9 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
       transition: 'color 0.15s, border-color 0.15s',
       display: 'flex',
       alignItems: 'center',
-      gap: 6,
+      gap: mobile ? 4 : 6,
+      flex: '0 0 auto',
+      whiteSpace: 'nowrap',
     }
   }
 
@@ -2594,7 +2597,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
       </div>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--bd)', paddingLeft: mobile ? 8 : 16, flexShrink: 0 }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--bd)', paddingLeft: mobile ? 8 : 16, flexShrink: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
         {['baseline', 'committed', 'modeled', 'idea'].map(key => (
           <button key={key} onClick={() => setActiveTab(key)} style={tabStyle(key)}>
             {TAB_META[key].label}
@@ -2685,7 +2688,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                 {mobile && selectedId && (
                   <button onClick={() => setSelectedId(null)} style={{
                     background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer',
-                    fontSize: 12, padding: '8px 16px', textAlign: 'left', flexShrink: 0,
+                    fontSize: 12, padding: '8px 16px', textAlign: 'left', flexShrink: 0, minHeight: 'var(--tap-min, 0px)',
                   }}>
                     ← Scenarios
                   </button>

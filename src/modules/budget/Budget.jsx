@@ -1243,7 +1243,7 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
 
 function ViewToggle({ mode, year, onChange }) {
   const btn = active => ({
-    padding: '6px 12px', border: 'none', fontSize: 12, cursor: 'pointer',
+    padding: '6px 12px', border: 'none', fontSize: 12, cursor: 'pointer', minHeight: 'var(--tap-min, 0px)',
     background: active ? 'var(--accent)' : 'transparent',
     color: active ? 'var(--accent-tx-on)' : 'var(--tx-3)',
     fontWeight: active ? 600 : 400,

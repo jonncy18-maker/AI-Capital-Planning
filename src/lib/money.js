@@ -140,3 +140,31 @@ export function parseMoneyInput(str) {
   const v = fromCents(toCents(s))
   return neg ? (v === 0 ? 0 : -v) : v
 }
+
+// Lenient reader for bank/budget CSV cells. Accepts everything the old
+// `parseFloat(raw.replace(/[^-\d.]/g, ''))` accepted ("$1,234.50", "USD 12.50",
+// " 12.5 ") and additionally reads "(12.50)", "12.50-" and U+2212 as negative.
+// Rounds once to the cent. Returns dollars, or null when no number is found.
+// Beyond +/-1e11 dollars cents are no longer integer-safe, so the plain float
+// is returned unrounded (matching the old behavior) rather than a silent 0.
+export function parseLooseMoney(raw) {
+  if (raw == null) return null
+  const original = String(raw).replace(/−/g, '-')
+  let c = original.replace(/[^-\d.]/g, '')
+  let neg = /\([^)]*\)/.test(original)
+  if (neg) c = c.replace(/-/g, '')
+  else if (/^[^-]*-$/.test(c)) {
+    neg = true
+    c = c.slice(0, -1)
+  }
+  const m = c.match(/^(-?)(\d+\.?\d*|\.\d+)/)
+  if (!m) return null
+  if (m[1]) neg = !neg
+  const digits = m[2]
+  if (Math.abs(Number(digits)) > MAX_DOLLARS) {
+    const big = Number(digits)
+    return neg ? -big : big
+  }
+  const cents = toCents(digits)
+  return fromCents(neg ? -cents : cents)
+}

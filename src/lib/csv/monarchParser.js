@@ -1,6 +1,8 @@
 // Monarch Money CSV parser.
 // Expected columns: Date, Merchant, Category, Account, Original Statement, Notes, Amount, Tags, Owner
 
+import { parseLooseMoney } from '../money.js'
+
 const REQUIRED_COLS = ['Date', 'Merchant', 'Category', 'Account', 'Original Statement', 'Notes', 'Amount', 'Tags', 'Owner']
 
 function parseCSVLine(line) {
@@ -92,8 +94,8 @@ export function parseMonarchCSV(raw) {
       }
 
       // Parse amount — Monarch exports expenses as negative, income as positive.
-      const amount = parseFloat(amountRaw.replace(/[^-\d.]/g, ''))
-      if (isNaN(amount)) {
+      const amount = parseLooseMoney(amountRaw)
+      if (amount === null) {
         errors.push(`Row ${i + 1}: invalid amount "${amountRaw}" — skipped.`)
         continue
       }

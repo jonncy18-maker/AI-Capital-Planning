@@ -182,3 +182,10 @@
     font-size: 24px;
   }
 }
+
+/* Phones: the saved-version label stacks over its select, and the select shrinks
+   (long option text is ellipsised) instead of widening the page. */
+@media (max-width: 759px) {
+  .wealth-row label { display: grid; gap: 6px; min-width: 0; max-width: 100%; }
+  .wealth-row select { width: 100%; text-overflow: ellipsis; }
+}

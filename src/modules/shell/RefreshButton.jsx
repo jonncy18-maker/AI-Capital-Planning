@@ -53,7 +53,13 @@ export default function RefreshButton({ variant = 'icon', collapsed = false }) {
         fontSize: '18px',
         lineHeight: 1,
         padding: 0,
-        width: '20px',
+        // 44px hit area; the negative margin keeps the bar's height and the glyph's position unchanged
+        width: '44px',
+        height: '44px',
+        margin: '-12px -12px -12px 0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         opacity: busy ? 0.6 : 1,
         ...spin,
       }}

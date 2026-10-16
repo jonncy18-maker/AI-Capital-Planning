@@ -40,3 +40,5 @@ dist-ssr
 /public/swe-worker-*.js
 .vercel
 .env*
+scripts/mobileqa/shots/
+scripts/mobileqa/results/

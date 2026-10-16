@@ -801,10 +801,10 @@ The founding architecture held. These are the notable implementation details tha
 **Budget schedule grid matches forecast grid.** `ScheduleGrid` now mirrors `ForecastGrid` in layout: sticky column and row headers, scrollable max-height, groups expanded by default with a collapse toggle, per-category drill-down toggle (▸) that expands into individual named sub-rows (↳) at 54px indent. Sub-rows come from `budget_line_items` rows whose `label` field is populated (either from the Upload Budget xlsx parser or from commitment names).
 
 **Known hardening backlog** (in order of leverage):
-1. Add React error boundary
-2. Strengthen CI (lint + tests, not just build)
-3. Preview-before-write for AI scenario creation
-4. Move currency math to integer cents — stages 1–2 done (`src/lib/money.js`, engines converted); CSV parsers and formatters remain
+1. ~~Add React error boundary~~ — done
+2. Strengthen CI — `npm test` (Vitest + `node:test`) now runs before the build; lint is not yet a CI gate, and no `app/api` route has tests
+3. ~~Preview-before-write for AI scenario creation~~ — done
+4. Move currency math to integer cents — stages 1–3 and the points engine done (`src/lib/money.js`, engines, CSV parsers); only the UI formatters remain (a visible change, needs a style decision)
 5. Surface errors instead of swallowing them
 
 ---

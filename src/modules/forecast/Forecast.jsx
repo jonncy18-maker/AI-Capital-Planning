@@ -540,6 +540,7 @@ function ForecastGrid({ catRows, scenarioDeltaMap, actualMap, year, mobile, laye
 const miniBtn = {
   padding: '3px 10px', background: 'transparent', color: 'var(--tx-2)',
   border: '1px solid var(--bd)', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+  minHeight: 'var(--tap-min, 0px)',
 }
 
 function ScenarioDropdown({ scenarios, selected, tier, onToggle, onAll, onNone, onClose }) {
@@ -865,7 +866,7 @@ function ForecastKPIStrip({ chartActualTotals, chartForecastTotals, chartBudgetT
   const periodLabel    = nextMonthLabel ? `${nextMonthLabel}–Dec` : 'Dec'
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 16 }}>
       <KPICard
         label="YTD actual vs plan"
         heroValue={fmtD(ytdDelta)}
@@ -1489,7 +1490,7 @@ export default function Forecast({ userId, mobile, onDataChange, reloadSignal })
                         }
                       }}
                       style={{
-                        padding: mobile ? '7px 10px' : '7px 14px',
+                        padding: mobile ? '12px 10px' : '7px 14px',
                         background: active ? 'var(--accent)' : 'transparent',
                         color: active ? '#fff' : 'var(--tx-2)',
                         border: 'none',

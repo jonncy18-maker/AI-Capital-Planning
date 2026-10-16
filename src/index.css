@@ -114,3 +114,27 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* Touch targets: on phones and any coarse pointer, every button responds to a
+   44px square around its centre without changing the layout (the invisible
+   ::after only adds hit area). Buttons already wider than 44px keep their width.
+   Selects and inputs cannot have pseudo-elements, so selects get a real minimum
+   height instead; checkboxes are left to their wrapping <label>. */
+/* Default is 0 so desktop is untouched; the block below raises it on touch. */
+:root { --tap-min: 0px; }
+
+@media (max-width: 759px), (pointer: coarse) {
+  button, [role='button'], summary { position: relative; }
+  button::after, [role='button']::after, summary::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+  select { min-height: 40px; }
+  /* Inline styles use minHeight: var(--tap-min) where a button sits in a clipped (overflow: hidden) segmented control, which would cut the ::after short. */
+  :root { --tap-min: 40px; }
+}

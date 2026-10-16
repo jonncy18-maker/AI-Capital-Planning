@@ -484,6 +484,12 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
 
   // ── Expense forecast (budget/override per month) ─────────────────────────────
   const mbva = monthlyBudgetVsActual(ctx, yearTxns)
+  // First forecast month for the full-year projection: the in-progress month is
+  // itself forecast on both sides (same rule as cashFlowForecast), so a month
+  // whose paycheck has not landed yet no longer reads as $0 income. A past year
+  // has none (12); a future year starts in January (0). "To date" figures above
+  // stay on actuals through the in-progress month.
+  const firstForecastMonth = year === now.getFullYear() ? currentMonth : currentMonth + 1
   let fullYearActualExpenses = 0
   let fullYearForecastExpenses = 0
   // Planned income for the same months the expense side is forecasting — months
@@ -491,7 +497,7 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   // only forecast months contribute here and nothing is double counted.
   let forecastIncomeLines = 0
   mbva.months.forEach((mo, m) => {
-    if (mo.actual != null) {
+    if (mo.actual != null && m < firstForecastMonth) {
       fullYearActualExpenses += toCents(mo.actual)
     } else {
       fullYearForecastExpenses += toCents(mo.forecast ?? 0)
@@ -519,12 +525,14 @@ export function incomeVsExpenses(ctx, yearTxns = [], priorYearTxns = []) {
   let fullYearIncome = 0
   if (monthlyIncomeForecast) {
     for (let m = 0; m < 12; m++) {
-      fullYearIncome += m <= currentMonth ? incomeByMonth[m] : monthlyIncomeForecast[m]
+      fullYearIncome += m < firstForecastMonth ? incomeByMonth[m] : monthlyIncomeForecast[m]
     }
   } else {
     // Fallback: rolling average of completed months
     const avgIncomeCents = averageOfCompleted(incomeByMonth, currentMonth)
-    fullYearIncome = ytdIncomeC + mulCents(avgIncomeCents, Math.max(11 - currentMonth, 0))
+    let elapsedIncomeC = 0
+    for (let m = 0; m < firstForecastMonth; m++) elapsedIncomeC += incomeByMonth[m]
+    fullYearIncome = elapsedIncomeC + mulCents(avgIncomeCents, 12 - firstForecastMonth)
   }
 
   fullYearIncome += forecastIncomeLines

@@ -4,6 +4,8 @@
 // clamped before it reaches the DB layer — the model can and will emit a month
 // of 0, a year as a string, or a category name that only approximately matches.
 
+import { formatMoney } from '../../money.js'
+
 export const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export function thisYear() {
@@ -31,16 +33,8 @@ export function toNullableNumber(v) {
   return Number.isFinite(n) ? n : null
 }
 
-export function money(v) {
-  const n = Number(v) || 0
-  const sign = n < 0 ? '−' : ''
-  return `${sign}$${Math.abs(Math.round(n)).toLocaleString()}`
-}
-
-export function signedMoney(v) {
-  const n = Number(v) || 0
-  return `${n >= 0 ? '+' : '−'}$${Math.abs(Math.round(n)).toLocaleString()}`
-}
+export const money = (v) => formatMoney(v)
+export const signedMoney = (v) => formatMoney(v, { signed: true })
 
 export function monthLabel(year, month) {
   return `${MONTH_SHORT[(toMonth(month) - 1) % 12]} ${toYear(year)}`
