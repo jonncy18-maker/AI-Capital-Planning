@@ -1936,7 +1936,7 @@ function ScenarioDetail({
   }
 
   const chartToggleBtnStyle = (active) => ({
-    padding: '5px 12px', border: 'none', fontSize: 11, cursor: 'pointer', transition: 'background 0.15s',
+    padding: '5px 12px', border: 'none', fontSize: 11, cursor: 'pointer', transition: 'background 0.15s', minHeight: 'var(--tap-min, 0px)',
     background: active ? 'var(--accent)' : 'transparent',
     color: active ? 'var(--accent-tx-on)' : 'var(--tx-3)',
     fontWeight: active ? 600 : 400,
@@ -2688,7 +2688,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                 {mobile && selectedId && (
                   <button onClick={() => setSelectedId(null)} style={{
                     background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer',
-                    fontSize: 12, padding: '8px 16px', textAlign: 'left', flexShrink: 0,
+                    fontSize: 12, padding: '8px 16px', textAlign: 'left', flexShrink: 0, minHeight: 'var(--tap-min, 0px)',
                   }}>
                     ← Scenarios
                   </button>

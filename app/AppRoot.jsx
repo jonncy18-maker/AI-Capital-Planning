@@ -442,9 +442,13 @@ function AppShell({ children }) {
           }}>
             <button
               onClick={() => setDrawerOpen(true)}
+              aria-label="Open menu"
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
                 color: 'var(--tx-1)', fontSize: '20px', lineHeight: 1,
+                // 44px hit area; the negative margin keeps the bar's height and the glyph's position unchanged
+                width: 44, height: 44, margin: '-12px 0 -12px -12px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
               ☰

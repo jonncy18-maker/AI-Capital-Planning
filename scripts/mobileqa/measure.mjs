@@ -103,10 +103,25 @@ export function measureInPage() {
     interactiveCount++
     const r = el.getBoundingClientRect()
     if (vw <= 760 && (r.width < 40 || r.height < 40)) {
+      // The app widens button hit areas with an ::after the rect cannot see, so
+      // probe with elementFromPoint to find the size that actually responds.
+      if (el.matches('button, [role=button], summary, a[href]')) {
+        const main = document.querySelector('main')
+        const top0 = main ? main.scrollTop : 0
+        el.scrollIntoView({ block: 'center', inline: 'center' })
+        const b = el.getBoundingClientRect()
+        const cx = b.left + b.width / 2, cy = b.top + b.height / 2
+        const hits = (x, y) => { const h = document.elementFromPoint(x, y); return h && (h === el || el.contains(h)) }
+        const reach = (dx, dy) => { let n = 0; while (n < 40 && hits(cx + dx * (n + 1), cy + dy * (n + 1))) n++; return n }
+        const effW = reach(-1, 0) + reach(1, 0) + 1, effH = reach(0, -1) + reach(0, 1) + 1
+        if (main) main.scrollTop = top0
+        if (effW >= 40 && effH >= 40) continue
+        r.effW = effW; r.effH = effH
+      }
       const sig = el.tagName.toLowerCase() + '|' + (compName(el) || '') + '|' + snippet(el).slice(0, 24) + '|' + Math.round(r.width) + 'x' + Math.round(r.height)
       const prev = tiny.get(sig)
       if (prev) prev.count++
-      else tiny.set(sig, { ...describe(el), count: 1 })
+      else tiny.set(sig, { ...describe(el), count: 1, effW: r.effW, effH: r.effH })
     }
   }
   out.interactiveCount = interactiveCount

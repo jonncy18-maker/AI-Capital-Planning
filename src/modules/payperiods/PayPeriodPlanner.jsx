@@ -119,7 +119,7 @@ function TabBar({ tabs, active, onChange, mobile }) {
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
             flex: '0 0 auto', whiteSpace: 'nowrap',
-            padding: mobile ? '12px 14px' : '8px 14px', marginBottom: -1,
+            padding: mobile ? '14px 14px' : '8px 14px', marginBottom: -1,
             fontFamily: "'DM Mono', monospace", fontSize: 11, letterSpacing: '0.05em',
             color: active === t.id ? 'var(--tx-1)' : 'var(--tx-3)',
             borderBottom: active === t.id ? '2px solid var(--accent)' : '2px solid transparent',
