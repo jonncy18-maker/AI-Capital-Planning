@@ -1106,7 +1106,7 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
                     onMouseEnter={() => setHover(i)}
                     onMouseLeave={() => setHover(null)}
                     style={{
-                      flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
+                      flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
                       cursor: 'default', position: 'relative', zIndex: 2,
                       background: isHov ? 'var(--hover)' : 'transparent', borderRadius: 5,
                     }}
@@ -1148,7 +1148,7 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
         <div style={{ display: 'flex', gap: mobile ? 6 : 14, marginTop: 6 }}>
           {cf.data.map((d, i) => (
             <div key={i} style={{
-              flex: 1, textAlign: 'center',
+              flex: 1, minWidth: 0, textAlign: 'center',
               fontFamily: "'DM Mono', monospace", fontSize: mobile ? 9 : 10,
               color: i === cf.todayIdx ? 'var(--accent)' : 'var(--tx-3)', letterSpacing: '0.02em',
             }}>
@@ -1162,11 +1162,12 @@ function CashFlowWidget({ cf, mobile, onCollapse, isCollapsed }) {
         <div style={{ display: 'flex', gap: mobile ? 6 : 14, marginTop: 3 }}>
           {cf.data.map((d, i) => (
             <div key={i} style={{
-              flex: 1, textAlign: 'center',
-              fontFamily: "'DM Mono', monospace", fontSize: mobile ? 8 : 9,
+              flex: 1, minWidth: 0, textAlign: 'center',
+              fontFamily: "'DM Mono', monospace", fontSize: mobile ? 9 : 9,
               color: d.total > 0 ? 'var(--tx-2)' : d.total < 0 ? 'var(--warn)' : 'var(--tx-4)',
             }}>
-              {d.total !== 0 ? (d.total > 0 ? '+' : '−') + fmtK(Math.abs(d.total)) : '—'}
+              {/* Twelve columns are ~20px wide on a phone: drop the sign and $ there (colour and bar direction carry the sign) so labels stay under their bars. */}
+              {d.total === 0 ? '—' : mobile ? fmtK(Math.abs(d.total)).replace('$', '') : (d.total > 0 ? '+' : '−') + fmtK(Math.abs(d.total))}
             </div>
           ))}
         </div>
@@ -1419,7 +1420,7 @@ function AttentionStrip({ sgy, spike, bva, varianceThreshold = 10, mobile }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: mobile ? '1fr' : `repeat(${Math.min(alerts.length, 3)}, 1fr)`,
+      gridTemplateColumns: mobile ? 'minmax(0, 1fr)' : `repeat(${Math.min(alerts.length, 3)}, minmax(0, 1fr))`,
       gap: 10,
       marginBottom: 16,
     }}>
@@ -1448,10 +1449,10 @@ function AttentionStrip({ sgy, spike, bva, varianceThreshold = 10, mobile }) {
               {a.icon}
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', overflowWrap: 'anywhere' }}>
                 {a.title}
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--tx-3)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--tx-3)', marginTop: 1, overflowWrap: 'anywhere' }}>
                 {a.sub}
               </div>
             </div>
@@ -1864,7 +1865,7 @@ export default function Dashboard({ context, summary, mobile, userId, yearTxns: 
         </>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'minmax(0, 1fr)' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
         {(configure ? ordered : visible).map(b => {
           const isHidden = hidden.has(b.id)
           const isCollapsed = collapsedSet.has(b.id)
