@@ -83,16 +83,43 @@ function buildBalancesMap(accountBalances) {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function TabBar({ tabs, active, onChange }) {
+function TabBar({ tabs, active, onChange, mobile }) {
+  const rowRef = useRef(null)
+  const [moreRight, setMoreRight] = useState(false)
+
+  const syncEdge = useCallback(() => {
+    const el = rowRef.current
+    if (el) setMoreRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
+  }, [])
+
+  // Six tabs do not fit a phone: the row scrolls, keeps the active tab in view,
+  // and fades its right edge while more tabs sit off-screen.
+  useEffect(() => {
+    const el = rowRef.current
+    el?.querySelector('[data-active="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+    syncEdge()
+  }, [active, mobile, syncEdge])
+
   return (
-    <div style={{ display: 'flex', gap: 2, marginBottom: 28, borderBottom: '1px solid var(--bd)' }}>
+    <div
+      ref={rowRef}
+      onScroll={syncEdge}
+      style={{
+        display: 'flex', gap: 2, marginBottom: 28, borderBottom: '1px solid var(--bd)',
+        overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+        maskImage: moreRight ? 'linear-gradient(to right, #000 calc(100% - 28px), transparent)' : 'none',
+        WebkitMaskImage: moreRight ? 'linear-gradient(to right, #000 calc(100% - 28px), transparent)' : 'none',
+      }}
+    >
       {tabs.map(t => (
         <button
           key={t.id}
+          data-active={active === t.id}
           onClick={() => onChange(t.id)}
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            padding: '8px 14px', marginBottom: -1,
+            flex: '0 0 auto', whiteSpace: 'nowrap',
+            padding: mobile ? '12px 14px' : '8px 14px', marginBottom: -1,
             fontFamily: "'DM Mono', monospace", fontSize: 11, letterSpacing: '0.05em',
             color: active === t.id ? 'var(--tx-1)' : 'var(--tx-3)',
             borderBottom: active === t.id ? '2px solid var(--accent)' : '2px solid transparent',
@@ -1659,7 +1686,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
         mobile={mobile}
       />
 
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
+      <TabBar tabs={TABS} active={tab} onChange={setTab} mobile={mobile} />
 
       {/* ── Schedule Tab ── */}
       {tab === 'schedule' && (
