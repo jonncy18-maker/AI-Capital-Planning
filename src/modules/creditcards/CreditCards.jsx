@@ -1096,9 +1096,9 @@ function CardsTab({ userId, cards, earnRateMap, budgetCategories, onCardsChanged
 
       {/* Card list */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <SectionTitle>Your Cards</SectionTitle>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <Btn small onClick={handleDetectFromTransactions} disabled={txnDetecting || parseLoading}>
               {txnDetecting ? '⟳ Detecting…' : '⟳ Detect from Transactions'}
             </Btn>

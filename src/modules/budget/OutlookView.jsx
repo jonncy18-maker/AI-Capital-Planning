@@ -1177,15 +1177,17 @@ export default function OutlookView({ userId, mobile, initialScenarioId = null }
             padding: '12px 18px',
             background: 'var(--bg-card-2)',
             display: 'flex',
+            flexWrap: 'wrap',
+            gap: 10,
             justifyContent: 'space-between',
             alignItems: 'center',
             cursor: 'pointer',
             borderBottom: tableExpanded ? '1px solid var(--bd)' : 'none',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 240px', minWidth: 0 }}>
             <span style={{ fontSize: 11, color: 'var(--tx-3)' }}>{tableExpanded ? '▲' : '▼'}</span>
-            <div>
+            <div style={{ minWidth: 0, textAlign: 'left' }}>
               <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--tx-1)' }}>
                 📊 Multi-Year Driver Table (Detailed Breakdown)
               </div>

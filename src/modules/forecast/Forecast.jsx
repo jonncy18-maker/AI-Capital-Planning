@@ -866,7 +866,7 @@ function ForecastKPIStrip({ chartActualTotals, chartForecastTotals, chartBudgetT
   const periodLabel    = nextMonthLabel ? `${nextMonthLabel}–Dec` : 'Dec'
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 16 }}>
       <KPICard
         label="YTD actual vs plan"
         heroValue={fmtD(ytdDelta)}

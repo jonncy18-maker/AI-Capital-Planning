@@ -25,7 +25,7 @@ export default function ModuleHeader({ icon, title, subtitle, actions, mobile, m
         }}
       >
         <div
-          style={mobile ? { minWidth: 0 } : { flex: '1 1 320px', minWidth: 0, textAlign: 'left' }}
+          style={mobile ? { minWidth: 0, textAlign: 'left' } : { flex: '1 1 320px', minWidth: 0, textAlign: 'left' }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {icon && <span style={headerStyles.icon(hue)}>{icon}</span>}
