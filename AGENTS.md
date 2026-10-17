@@ -182,7 +182,7 @@ Lead with the visual, then add a short text explanation. A one- or two-sentence 
 All audit and refactor conclusions for this repo go in `~/code/_inbox/AI-Capital-Planning/`. Write only there; never write reports into this repo.
 
 - `STATE.md`: read first. It holds `last_audited_sha`, the protected paths and the test command. Update its front matter after each successful audit.
-- `LEDGER.md`: every finding ever reported. Check a finding's fingerprint here before reporting it; skip anything `declined` or `fixed` unless the code at that fingerprint changed. Append new findings as `open` rows; only Claude changes Status.
+- `LEDGER.md`: every finding ever reported. Check a finding's fingerprint here before reporting it; skip anything `declined` or `fixed` unless the code at that fingerprint changed. Append new findings as `open` rows. Codex may set `in-progress` when it starts a branch; only Claude sets every other status.
 - `audits/<YYYY-MM-DD-HHMM>__<auditor>.md`: one file per audit, using `~/code/_inbox/_templates/audit.md`. Audits are read-only and incremental from `last_audited_sha`; skip the audit if HEAD has not moved.
 - `handoffs/<branch-slug>__<auditor>.md`: one note per refactor branch when you finish, using `~/code/_inbox/_templates/handoff.md`. List the ledger IDs it resolves.
 
