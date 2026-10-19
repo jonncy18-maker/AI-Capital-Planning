@@ -25,7 +25,7 @@ const ts = (d) => new Date(`${d}T00:00:00Z`).getTime()
 
 // Base and scenario lines for a plan that carries assumptions, a by-age table
 // and the retirement target. Read-only: edits happen in the plan form.
-export default function TrajectoryPanel({ plan }) {
+export default function TrajectoryPanel({ plan, header = null, children = null }) {
   const lines = useMemo(() => scenarioLines(plan), [plan])
   const [hover, setHover] = useState(null)
   if (!plan.assumptions || !lines.length) return null
@@ -48,6 +48,7 @@ export default function TrajectoryPanel({ plan }) {
   const ageLabel = (g) => (g == null ? 'not by end of plan' : `age ${g}`)
   return (
     <div className="wealth-panel wealth-trajectory">
+      {header}
       <div className="wealth-kpis">
         <div>
           <span>Retire at {a.retirement_age} · target</span>
@@ -192,6 +193,7 @@ export default function TrajectoryPanel({ plan }) {
         December balance at each age. Contributions are payroll 401(k) plus match and HSA, Roth IRA
         and taxable from surplus; the first year is prorated from the snapshot date.
       </p>
+      {children && <div className="wealth-trajectory-plan">{children}</div>}
     </div>
   )
 }

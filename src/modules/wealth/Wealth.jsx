@@ -62,7 +62,7 @@ const field = {
   borderRadius: 6,
   color: 'var(--tx-1)',
 }
-const labelStyle = { fontSize: 11, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }
+const labelStyle = { fontSize: 12, color: 'var(--tx-2)', display: 'block', marginBottom: 4 }
 const months = Array.from({ length: 12 }, (_, i) =>
   new Date(2020, i, 1).toLocaleString('en-US', { month: 'long' })
 )
@@ -126,7 +126,7 @@ function SnapshotForm({ onSave, onCancel, saving, initialDate }) {
         maxWidth: 520,
       }}
     >
-      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-1)', marginBottom: 16 }}>
+      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--tx-1)', marginBottom: 16 }}>
         New Net Worth Snapshot
       </div>
       <div style={{ marginBottom: 12 }}>
@@ -210,7 +210,7 @@ function SnapshotForm({ onSave, onCancel, saving, initialDate }) {
           marginBottom: 14,
         }}
       >
-        <span style={{ fontSize: 12.5, color: 'var(--tx-2)' }}>Net worth</span>
+        <span style={{ fontSize: 13, color: 'var(--tx-2)' }}>Net worth</span>
         <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent)' }}>
           {fmtFull(netWorth)}
         </span>
@@ -915,72 +915,90 @@ export default function Wealth({ userId, mobile }) {
               saving={saving}
             />
           )}
-          <div className="wealth-baseline">
-            <div className="wealth-baseline-head">
-              <div>
-                <h2>{plan?.name || 'Create your saved baseline'}</h2>
-                <p className="wealth-muted">
-                  {plan
-                    ? `Starts ${plan.start_date} · saved ${String(plan.created_at).slice(0, 10)}`
-                    : 'Add a complete investment snapshot, then save fixed assumptions to benchmark progress.'}
-                </p>
-              </div>
-              <div className="wealth-baseline-actions">
+          {(() => {
+            const head = (
+              <>
+                <div className="wealth-baseline-head">
+                  <div>
+                    <h2>{plan?.name || 'Create your saved baseline'}</h2>
+                    <p className="wealth-muted">
+                      {plan
+                        ? `Starts ${plan.start_date} · saved ${String(plan.created_at).slice(0, 10)}`
+                        : 'Add a complete investment snapshot, then save fixed assumptions to benchmark progress.'}
+                    </p>
+                  </div>
+                  <div className="wealth-baseline-actions">
+                    {plan && (
+                      <label>
+                        Saved version
+                        <select value={plan.id} onChange={(e) => choosePlan(e.target.value)}>
+                          {plans.map((p) => (
+                            <option value={p.id} key={p.id}>
+                              {p.name} · {p.start_date} · saved {String(p.created_at).slice(0, 10)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <button onClick={() => setNewPlan(true)}>Save new baseline</button>
+                  </div>
+                </div>
+              </>
+            )
+            const details = (
+              <>
                 {plan && (
-                  <label>
-                    Saved version
-                    <select value={plan.id} onChange={(e) => choosePlan(e.target.value)}>
-                      {plans.map((p) => (
-                        <option value={p.id} key={p.id}>
-                          {p.name} · {p.start_date} · saved {String(p.created_at).slice(0, 10)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <dl className="wealth-stats">
+                    <div>
+                      <dt>Starting investments</dt>
+                      <dd>{fmtFull(plan.start_balance)}</dd>
+                    </div>
+                    <div>
+                      <dt>Base return</dt>
+                      <dd>{fmtPct(plan.annual_return)}</dd>
+                    </div>
+                    <div>
+                      <dt>First-year contributions</dt>
+                      <dd>{fmtFull(Number(plan.monthly_contribution) * 12)}</dd>
+                    </div>
+                    <div>
+                      <dt>Retirement target</dt>
+                      <dd>{fmtFull(plan.retirement_target)}</dd>
+                      <small>
+                        {targetPoint ? `Reached ${targetPoint.date}` : 'Beyond saved horizon'}
+                      </small>
+                    </div>
+                    <div>
+                      <dt>Emergency target</dt>
+                      <dd>{fmtFull(optionalActual(plan.emergency_cash_target))}</dd>
+                    </div>
+                    <div>
+                      <dt>Latest net worth</dt>
+                      <dd>{fmtFull(optionalActual(latest?.net_worth))}</dd>
+                      <small>{latest?.snapshot_date || 'No snapshot'}</small>
+                    </div>
+                  </dl>
                 )}
-                <button onClick={() => setNewPlan(true)}>Save new baseline</button>
+                {plan && (
+                  <p className="wealth-muted">
+                    {plan.assumptions
+                      ? `Frozen assumptions · retire at ${plan.assumptions.retirement_age} · ${plan.assumptions.return_mode === 'index' ? 'index preset' : 'manual return'} · ${plan.assumptions.scenarios.length} scenario${plan.assumptions.scenarios.length === 1 ? '' : 's'} · ${plan.horizon}-year horizon · actuals from dated snapshots.`
+                      : `Frozen assumptions · ${plan.include_commitments ? 'includes' : 'excludes'} commitment drain · captured outlook years ${Object.keys(plan.annual_contributions).join(', ') || 'none'} · actuals from dated snapshots.`}
+                  </p>
+                )}
+              </>
+            )
+            return plan?.assumptions && !newPlan ? (
+              <TrajectoryPanel plan={plan} header={head}>
+                {details}
+              </TrajectoryPanel>
+            ) : (
+              <div className="wealth-baseline">
+                {head}
+                {details}
               </div>
-            </div>
-            {plan && (
-              <dl className="wealth-stats">
-                <div>
-                  <dt>Starting investments</dt>
-                  <dd>{fmtFull(plan.start_balance)}</dd>
-                </div>
-                <div>
-                  <dt>Base return</dt>
-                  <dd>{fmtPct(plan.annual_return)}</dd>
-                </div>
-                <div>
-                  <dt>First-year contributions</dt>
-                  <dd>{fmtFull(Number(plan.monthly_contribution) * 12)}</dd>
-                </div>
-                <div>
-                  <dt>Retirement target</dt>
-                  <dd>{fmtFull(plan.retirement_target)}</dd>
-                  <small>
-                    {targetPoint ? `Reached ${targetPoint.date}` : 'Beyond saved horizon'}
-                  </small>
-                </div>
-                <div>
-                  <dt>Emergency target</dt>
-                  <dd>{fmtFull(optionalActual(plan.emergency_cash_target))}</dd>
-                </div>
-                <div>
-                  <dt>Latest net worth</dt>
-                  <dd>{fmtFull(optionalActual(latest?.net_worth))}</dd>
-                  <small>{latest?.snapshot_date || 'No snapshot'}</small>
-                </div>
-              </dl>
-            )}
-            {plan && (
-              <p className="wealth-muted">
-                {plan.assumptions
-                  ? `Frozen assumptions · retire at ${plan.assumptions.retirement_age} · ${plan.assumptions.return_mode === 'index' ? 'index preset' : 'manual return'} · ${plan.assumptions.scenarios.length} scenario${plan.assumptions.scenarios.length === 1 ? '' : 's'} · ${plan.horizon}-year horizon · actuals from dated snapshots.`
-                  : `Frozen assumptions · ${plan.include_commitments ? 'includes' : 'excludes'} commitment drain · captured outlook years ${Object.keys(plan.annual_contributions).join(', ') || 'none'} · actuals from dated snapshots.`}
-              </p>
-            )}
-          </div>
+            )
+          })()}
           {newPlan && (
             <NewPlan
               snapshots={actuals}
@@ -990,7 +1008,6 @@ export default function Wealth({ userId, mobile }) {
               saving={saving}
             />
           )}
-          {plan?.assumptions && !newPlan && <TrajectoryPanel plan={plan} />}
           <div className="wealth-tabs" role="tablist" aria-label="Wealth views">
             {[
               ['annual', 'Annual outlook'],

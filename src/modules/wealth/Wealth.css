@@ -1,10 +1,19 @@
 .wealth-module {
   color: var(--tx-1);
+  /* One type scale for the whole page: 13px body, 12px labels and notes,
+     larger only for headings and amounts. The app root is 18px and centered,
+     which leaked into controls and cards. */
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
 }
 .wealth-module button,
 .wealth-module select,
 .wealth-module input {
-  font: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.3;
 }
 .wealth-module button {
   padding: 8px 12px;
@@ -39,7 +48,7 @@
   margin: 0 0 8px;
 }
 .wealth-module p {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
 }
 .wealth-module label {
@@ -304,8 +313,6 @@
   text-align: left;
 }
 .wealth-cards {
-  font-size: 12px;
-  text-align: left;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
@@ -328,7 +335,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
   padding: 3px 0;
 }
 .wealth-cards input:not([type='checkbox']),
@@ -344,7 +351,6 @@
 .wealth-cards .wealth-seg button {
   border-radius: 0;
   padding: 3px 10px;
-  font-size: 12px;
 }
 .wealth-cards .wealth-seg button[aria-pressed='true'] {
   background: var(--accent-bg);
@@ -362,15 +368,29 @@
 
 .wealth-cards input,
 .wealth-cards select,
-.wealth-cards button,
-.wealth-kpis,
-.wealth-trajectory {
-  font-size: 12px;
-  text-align: left;
+.wealth-cards button {
+  font-size: 13px;
 }
 .wealth-cards label {
   text-align: left;
 }
 .wealth-cards input[type='number'] {
   text-align: right;
+}
+
+.wealth-trajectory-plan {
+  border-top: 1px solid var(--bd);
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.wealth-trajectory > .wealth-baseline-head {
+  margin-bottom: 14px;
+}
+.wealth-trajectory .wealth-baseline-head h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.wealth-trajectory .wealth-baseline-head p {
+  margin: 4px 0 0;
 }
