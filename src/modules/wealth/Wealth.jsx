@@ -37,6 +37,7 @@ const fmtFull = (n) =>
         currency: 'USD',
         maximumFractionDigits: 0,
       }).format(n)
+const fmtPct = (n) => (n == null ? '—' : `${(Number(n) * 100).toFixed(2)}%`)
 const primaryBtn = {
   padding: '8px 16px',
   background: 'var(--accent)',
@@ -69,7 +70,7 @@ const readWealthData = (userId) =>
   Promise.allSettled([getWealthSnapshots(userId, 10000), getWealthPlans()])
 const monthEnd = (year, month) => new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
 function gap(actual, expected) {
-  if (actual == null) return 'No actual recorded'
+  if (actual == null) return 'Not recorded on a snapshot yet'
   if (expected == null) return 'No comparable expectation'
   const delta = actual - expected
   return `${fmtFull(Math.abs(delta))} ${delta < 0 ? 'below' : delta > 0 ? 'above' : 'at'} plan${expected > 0 ? ` · ${((Math.abs(delta) / expected) * 100).toFixed(1)}%` : ''}`
@@ -915,31 +916,17 @@ export default function Wealth({ userId, mobile }) {
             />
           )}
           <div className="wealth-baseline">
-            <div className="wealth-row">
+            <div className="wealth-baseline-head">
               <div>
-                <strong>{plan?.name || 'Create your saved baseline'}</strong>
-                <p>
+                <h2>{plan?.name || 'Create your saved baseline'}</h2>
+                <p className="wealth-muted">
                   {plan
-                    ? `Starts ${plan.start_date} · Investments + retirement ${fmtFull(plan.start_balance)}`
+                    ? `Starts ${plan.start_date} · saved ${String(plan.created_at).slice(0, 10)}`
                     : 'Add a complete investment snapshot, then save fixed assumptions to benchmark progress.'}
                 </p>
               </div>
-              <div>
+              <div className="wealth-baseline-actions">
                 {plan && (
-                  <>
-                    {Number(plan.annual_return) * 100}% return ·{' '}
-                    {fmtFull(plan.monthly_contribution)}/month
-                    <br />
-                    Emergency cash target {fmtFull(optionalActual(plan.emergency_cash_target))}
-                  </>
-                )}
-                <br />
-                <button onClick={() => setNewPlan(true)}>Save new baseline</button>
-              </div>
-            </div>
-            {plan && (
-              <>
-                <div className="wealth-row">
                   <label>
                     Saved version
                     <select value={plan.id} onChange={(e) => choosePlan(e.target.value)}>
@@ -950,26 +937,49 @@ export default function Wealth({ userId, mobile }) {
                       ))}
                     </select>
                   </label>
-                  <span>
-                    {plan.horizon}-year horizon · investment target{' '}
-                    {fmtFull(plan.retirement_target)}
-                    <br />
-                    Target reached {targetPoint?.date || 'beyond saved horizon'}
-                  </span>
+                )}
+                <button onClick={() => setNewPlan(true)}>Save new baseline</button>
+              </div>
+            </div>
+            {plan && (
+              <dl className="wealth-stats">
+                <div>
+                  <dt>Starting investments</dt>
+                  <dd>{fmtFull(plan.start_balance)}</dd>
                 </div>
-                <p className="wealth-muted">
-                  Frozen assumptions · {plan.include_commitments ? 'includes' : 'excludes'}{' '}
-                  commitment drain · captured outlook years{' '}
-                  {Object.keys(plan.annual_contributions).join(', ') || 'none'} · actuals from
-                  manually recorded dated snapshots.
-                </p>
-              </>
+                <div>
+                  <dt>Base return</dt>
+                  <dd>{fmtPct(plan.annual_return)}</dd>
+                </div>
+                <div>
+                  <dt>First-year contributions</dt>
+                  <dd>{fmtFull(Number(plan.monthly_contribution) * 12)}</dd>
+                </div>
+                <div>
+                  <dt>Retirement target</dt>
+                  <dd>{fmtFull(plan.retirement_target)}</dd>
+                  <small>
+                    {targetPoint ? `Reached ${targetPoint.date}` : 'Beyond saved horizon'}
+                  </small>
+                </div>
+                <div>
+                  <dt>Emergency target</dt>
+                  <dd>{fmtFull(optionalActual(plan.emergency_cash_target))}</dd>
+                </div>
+                <div>
+                  <dt>Latest net worth</dt>
+                  <dd>{fmtFull(optionalActual(latest?.net_worth))}</dd>
+                  <small>{latest?.snapshot_date || 'No snapshot'}</small>
+                </div>
+              </dl>
             )}
-            <p>
-              Latest recorded net worth:{' '}
-              <strong>{fmtFull(optionalActual(latest?.net_worth))}</strong>
-              {latest ? ` · ${latest.snapshot_date}` : ''}
-            </p>
+            {plan && (
+              <p className="wealth-muted">
+                {plan.assumptions
+                  ? `Frozen assumptions · retire at ${plan.assumptions.retirement_age} · ${plan.assumptions.return_mode === 'index' ? 'index preset' : 'manual return'} · ${plan.assumptions.scenarios.length} scenario${plan.assumptions.scenarios.length === 1 ? '' : 's'} · ${plan.horizon}-year horizon · actuals from dated snapshots.`
+                  : `Frozen assumptions · ${plan.include_commitments ? 'includes' : 'excludes'} commitment drain · captured outlook years ${Object.keys(plan.annual_contributions).join(', ') || 'none'} · actuals from dated snapshots.`}
+              </p>
+            )}
           </div>
           {newPlan && (
             <NewPlan
@@ -1031,7 +1041,9 @@ export default function Wealth({ userId, mobile }) {
                     {yearEnd?.contributions_ytd == null
                       ? 'Full-year expectation unavailable; planned since baseline ' +
                         fmtFull(yearEnd?.contribution)
-                      : 'Through December 31'}
+                      : plan?.assumptions?.ytd_estimated
+                        ? 'Through December 31 · YTD before the snapshot is estimated'
+                        : 'Through December 31'}
                   </p>
                 </div>
                 <div className="wealth-benchmark">

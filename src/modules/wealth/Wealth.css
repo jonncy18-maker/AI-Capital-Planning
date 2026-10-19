@@ -53,19 +53,65 @@
   margin: 18px 0;
 }
 .wealth-baseline {
-  background: var(--accent-bg);
-  border: 1px solid var(--accent);
-  border-left: 5px solid var(--accent);
+  background: var(--bg-card);
+  border: 1px solid var(--bd);
   border-radius: 12px;
-  padding: 22px;
-  box-shadow: 0 4px 16px #00000014;
+  padding: 18px 20px;
   margin: 20px 0;
+  text-align: left;
 }
-.wealth-baseline strong {
-  font-size: 20px;
+.wealth-baseline h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 2px;
 }
 .wealth-baseline p {
-  margin: 8px 0;
+  margin: 6px 0 0;
+}
+.wealth-baseline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.wealth-baseline-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.wealth-baseline-actions label {
+  display: grid;
+  gap: 4px;
+  color: var(--tx-2);
+  min-width: 0;
+  max-width: 100%;
+}
+.wealth-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 16px 0 4px;
+}
+.wealth-stats > div {
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.wealth-stats dt {
+  font-size: 12px;
+  color: var(--tx-2);
+}
+.wealth-stats dd {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.wealth-stats small {
+  font-size: 11px;
+  color: var(--tx-2);
 }
 .wealth-row {
   display: flex;
@@ -192,7 +238,8 @@
     min-width: 0;
     max-width: 100%;
   }
-  .wealth-row select {
+  .wealth-row select,
+  .wealth-baseline-actions select {
     width: 100%;
     text-overflow: ellipsis;
   }
@@ -257,6 +304,8 @@
   text-align: left;
 }
 .wealth-cards {
+  font-size: 12px;
+  text-align: left;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
@@ -309,4 +358,19 @@
 .wealth-scenario-row input[type='text'] {
   width: 90px;
   text-align: left;
+}
+
+.wealth-cards input,
+.wealth-cards select,
+.wealth-cards button,
+.wealth-kpis,
+.wealth-trajectory {
+  font-size: 12px;
+  text-align: left;
+}
+.wealth-cards label {
+  text-align: left;
+}
+.wealth-cards input[type='number'] {
+  text-align: right;
 }

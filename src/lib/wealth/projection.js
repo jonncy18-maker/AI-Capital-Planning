@@ -147,6 +147,14 @@ export function annualFlows(a, startDate, horizon) {
   return rows
 }
 
+// Share of the calendar year's flow through the close of `date`, counted the
+// way expectedAt() spreads an annual amount: 1/12 per month, prorated by day.
+export function yearFractionThrough(date) {
+  const d = new Date(`${date}T00:00:00Z`)
+  const dim = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()
+  return (d.getUTCMonth() + d.getUTCDate() / dim) / 12
+}
+
 export function planHorizon(a) {
   return Math.min(40, Math.max(5, Math.max(a.retirement_age, PROJECTION_END_AGE) - a.current_age))
 }
@@ -164,6 +172,12 @@ export function planFromAssumptions({
   const horizon = planHorizon(a)
   const flows = annualFlows(a, startDate, horizon)
   const annual = Object.fromEntries(flows.map((f) => [f.year, f.total]))
+  // Without a recorded YTD figure, assume the first year's planned flow ran
+  // evenly through the snapshot date (the baseline is the close of that day).
+  const estimated = startingContributionsYtd == null
+  const ytd = estimated
+    ? cents(flows[0].total * yearFractionThrough(startDate))
+    : startingContributionsYtd
   return {
     name,
     start_date: startDate,
@@ -174,11 +188,11 @@ export function planFromAssumptions({
     monthly_contribution: cents(flows[0].total / 12),
     retirement_target: retirementTarget(a),
     emergency_cash_target: a.emergency.target,
-    starting_contributions_ytd: startingContributionsYtd,
+    starting_contributions_ytd: ytd,
     annual_commitment_drain: 0,
     annual_contributions: annual,
     annual_contributions_without_commitments: annual,
-    assumptions: a,
+    assumptions: { ...a, ytd_estimated: estimated },
   }
 }
 

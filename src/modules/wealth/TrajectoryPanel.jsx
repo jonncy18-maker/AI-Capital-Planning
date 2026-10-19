@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import ChartTooltip, { nearestIndex } from './ChartTooltip.jsx'
 import { scenarioLines, balanceAtAge } from '../../lib/wealth/projection.js'
 
 const money = (n) =>
@@ -26,6 +27,7 @@ const ts = (d) => new Date(`${d}T00:00:00Z`).getTime()
 // and the retirement target. Read-only: edits happen in the plan form.
 export default function TrajectoryPanel({ plan }) {
   const lines = useMemo(() => scenarioLines(plan), [plan])
+  const [hover, setHover] = useState(null)
   if (!plan.assumptions || !lines.length) return null
   const a = plan.assumptions
   const target = Number(plan.retirement_target)
@@ -39,6 +41,10 @@ export default function TrajectoryPanel({ plan }) {
   const ages = [33, 40, 45, 50, 55, 60, 65].filter(
     (g) => g > a.current_age && g <= a.current_age + plan.horizon
   )
+  const points = [lines[0].series.monthly[0], ...lines[0].series.annual]
+  const pointAt = (l, date) => l.series.monthly.find((p) => p.date === date)
+  const hovered = hover != null ? points[hover] : null
+  const ageAt = (date) => Math.floor(a.current_age + (ts(date) - t0) / (365.25 * 864e5))
   const ageLabel = (g) => (g == null ? 'not by end of plan' : `age ${g}`)
   return (
     <div className="wealth-panel wealth-trajectory">
@@ -65,7 +71,19 @@ export default function TrajectoryPanel({ plan }) {
         width="100%"
         role="img"
         aria-label="Projected investments for the base case and each scenario against the retirement target"
+        onPointerMove={(e) =>
+          setHover(
+            nearestIndex(
+              e,
+              W,
+              points.map((p) => x(p.date))
+            )
+          )
+        }
+        onPointerLeave={() => setHover(null)}
+        style={{ touchAction: 'pan-y' }}
       >
+        <rect x={L} y={0} width={W - L - 12} height={H - B} fill="transparent" />
         <line x1={L} y1={H - B} x2={W - 12} y2={H - B} stroke="var(--bd)" />
         <line
           x1={L}
@@ -116,6 +134,27 @@ export default function TrajectoryPanel({ plan }) {
             fill="none"
           />
         ))}
+        {hovered && (
+          <ChartTooltip
+            x={x(hovered.date)}
+            top={12}
+            bottom={H - B}
+            width={W}
+            title={`${hovered.date.slice(0, 4)} · age ${ageAt(hovered.date)}`}
+            rows={[
+              ...lines.map((l, i) => {
+                const p = pointAt(l, hovered.date)
+                return {
+                  label: l.name,
+                  text: full(p?.balance),
+                  color: COLORS[i % COLORS.length],
+                  y: p ? y(p.balance) : null,
+                }
+              }),
+              { label: 'Target', text: full(target), color: '#ba7517', y: null },
+            ]}
+          />
+        )}
       </svg>
       <div className="wealth-legend">
         {lines.map((l, i) => (

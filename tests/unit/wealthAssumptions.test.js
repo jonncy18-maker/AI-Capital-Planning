@@ -8,6 +8,7 @@ import {
   planFromAssumptions,
   scenarioLines,
   planHorizon,
+  yearFractionThrough,
   balanceAtAge,
 } from '../../src/lib/wealth/projection.js'
 import { validatePlan, expectedAt } from '../../src/lib/wealth/plans.js'
@@ -113,6 +114,25 @@ describe('plan from assumptions', { timeout: 30000 }, () => {
     expect(v.retirement_target).toBe(retirementTarget(p.assumptions))
     expect(Object.keys(v.annual_contributions)).toHaveLength(34)
     expect(v.assumptions.retirement_age).toBe(60)
+  })
+  it('estimates YTD contributions through the snapshot date when none is recorded', () => {
+    const p = plan()
+    expect(yearFractionThrough('2026-12-31')).toBe(1)
+    expect(p.starting_contributions_ytd).toBeCloseTo(p.annual_contributions[2026] * ((9 + 18 / 31) / 12), 1)
+    expect(p.assumptions.ytd_estimated).toBe(true)
+    expect(expectedAt(p, '2026-12-31').contributions_ytd).toBeCloseTo(
+      p.annual_contributions[2026],
+      -1
+    )
+    const recorded = planFromAssumptions({
+      name: 'R',
+      startDate: START,
+      startBalance: 1,
+      startingContributionsYtd: 5000,
+      assumptions: A(),
+    })
+    expect(recorded.starting_contributions_ytd).toBe(5000)
+    expect(recorded.assumptions.ytd_estimated).toBe(false)
   })
   it('horizon covers age 65 even when retiring earlier', () => {
     expect(planHorizon(A({ retirement_age: 55 }))).toBe(33)

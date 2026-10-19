@@ -173,5 +173,6 @@ export function validateAssumptions(input) {
     },
     surplus: { base: dollars(surplus.base, 'Surplus', -1e9), source: surplus.source },
     surplus_by_year,
+    ytd_estimated: a.ytd_estimated === true,
   }
 }
