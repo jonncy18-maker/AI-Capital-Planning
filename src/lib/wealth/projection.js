@@ -1,3 +1,6 @@
+import { buildPlanSeries, validatePlan } from './plans.js'
+import { PROJECTION_END_AGE } from './assumptions.js'
+
 // Deterministic wealth trajectory projection.
 //
 // Given a starting balance, monthly contribution, annual return rate, and a
@@ -65,4 +68,193 @@ export function buildComparison(base, scenario, years) {
 export function investableFromSnapshot(snapshot) {
   if (!snapshot) return 0
   return (Number(snapshot.investment_balance) || 0) + (Number(snapshot.retirement_balance) || 0)
+}
+
+// ── Assumption-driven projection ────────────────────────────────────────────
+const cents = (n) => Math.round(n * 100) / 100
+
+// Retirement target: multiple x annual retirement spend, inflated from today to
+// the retirement age.
+export function retirementTarget(a) {
+  const years = a.retirement_age - a.current_age
+  return cents(a.withdrawal_multiple * a.retirement_spend * Math.pow(1 + a.inflation, years))
+}
+
+export function baseReturn(a) {
+  if (a.return_mode === 'manual') return a.manual_return
+  return a.presets.find((p) => p.key === a.index_preset)?.rate ?? a.manual_return
+}
+
+// Base line first, then one line per scenario (base rate + offset, floored at 0).
+export function scenarioRates(a) {
+  const base = baseReturn(a)
+  return [
+    { name: 'Base', rate: base, base: true },
+    ...a.scenarios.map((s) => ({
+      name: s.name,
+      rate: Math.max(0, cents((base + s.delta) * 1e4) / 1e4),
+      base: false,
+    })),
+  ]
+}
+
+// Full-year contribution flows for each calendar year of the plan.
+// Payroll: 401(k) (own + match) and HSA come off the paycheck, so they are
+// funded before the outlook surplus. The Roth IRA is paid from surplus, then
+// surplus fills the emergency fund, and what remains goes to taxable. A
+// negative surplus withdraws from taxable. The first (partial) year is returned
+// as a full-year amount because expectedAt() prorates it to the remaining
+// months; the emergency fund, though, only receives the remaining share, so its
+// fill is tracked on that share before the full-year equivalent is taken.
+export function annualFlows(a, startDate, horizon) {
+  const startYear = +startDate.slice(0, 4)
+  const firstShare = 1 - yearFractionThrough(startDate)
+  let emergency = a.emergency.current
+  const rows = []
+  for (let n = 0; n <= horizon; n++) {
+    const year = startYear + n
+    const age = a.current_age + n
+    const grow = Math.pow(1 + a.caps.growth, year - a.caps.year)
+    const pay = Math.pow(1 + a.pay_growth, year - a.caps.year)
+    const cu = a.catch_up.enabled
+    const k401Cap = a.caps.k401 * grow + (cu && age >= a.catch_up.age_50 ? a.catch_up.k401 : 0)
+    const iraCap = a.caps.ira * grow + (cu && age >= a.catch_up.age_50 ? a.catch_up.ira : 0)
+    const hsaCap = a.caps.hsa * grow + (cu && age >= a.catch_up.age_hsa ? a.catch_up.hsa : 0)
+    const employee = Math.min(
+      k401Cap,
+      a.employee_401k * pay + (cu && age >= a.catch_up.age_50 ? a.catch_up.k401 : 0)
+    )
+    const match = employee * a.match_rate
+    const surplus =
+      a.surplus_by_year[year] != null
+        ? a.surplus_by_year[year]
+        : a.surplus.base * Math.pow(1 + a.pay_growth, year - a.caps.year)
+    const ira = Math.min(iraCap, Math.max(0, surplus))
+    const rest = surplus - ira
+    const share = n === 0 ? firstShare : 1
+    const restInPeriod = rest * share
+    const filled =
+      restInPeriod > 0 ? Math.min(restInPeriod, Math.max(0, a.emergency.target - emergency)) : 0
+    emergency += filled
+    const toEmergency = share > 0 ? filled / share : 0
+    const taxable = share > 0 ? (restInPeriod - filled) / share : 0
+    rows.push({
+      year,
+      age,
+      employee_401k: cents(employee),
+      match_401k: cents(match),
+      roth_ira: cents(ira),
+      hsa: cents(hsaCap),
+      surplus: cents(surplus),
+      to_emergency: cents(toEmergency),
+      taxable: cents(taxable),
+      total: cents(employee + match + ira + hsaCap + taxable),
+    })
+  }
+  return rows
+}
+
+// Share of the calendar year's flow through the close of `date`, counted the
+// way expectedAt() spreads an annual amount: 1/12 per month, prorated by day.
+export function yearFractionThrough(date) {
+  const d = new Date(`${date}T00:00:00Z`)
+  const dim = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()
+  return (d.getUTCMonth() + d.getUTCDate() / dim) / 12
+}
+
+export function planHorizon(a) {
+  return Math.min(40, Math.max(5, Math.max(a.retirement_age, PROJECTION_END_AGE) - a.current_age))
+}
+
+// The plan row body (the existing wealth_plans columns) for a set of
+// assumptions: base return, derived target and per-calendar-year contributions,
+// so the saved-benchmark engine (expectedAt) works unchanged.
+export function planFromAssumptions({
+  name,
+  startDate,
+  startBalance,
+  startingContributionsYtd = null,
+  assumptions: a,
+}) {
+  const horizon = planHorizon(a)
+  const flows = annualFlows(a, startDate, horizon)
+  const annual = Object.fromEntries(flows.map((f) => [f.year, f.total]))
+  // Without a recorded YTD figure, assume the first year's planned flow ran
+  // evenly through the snapshot date (the baseline is the close of that day).
+  const estimated = startingContributionsYtd == null
+  const ytd = estimated
+    ? cents(flows[0].total * yearFractionThrough(startDate))
+    : startingContributionsYtd
+  return {
+    name,
+    start_date: startDate,
+    horizon,
+    annual_return: baseReturn(a),
+    include_commitments: false,
+    start_balance: startBalance,
+    monthly_contribution: cents(flows[0].total / 12),
+    retirement_target: retirementTarget(a),
+    emergency_cash_target: a.emergency.target,
+    starting_contributions_ytd: ytd,
+    annual_commitment_drain: 0,
+    annual_contributions: annual,
+    annual_contributions_without_commitments: annual,
+    assumptions: { ...a, ytd_estimated: estimated },
+  }
+}
+
+// Age (one decimal) at which a monthly series first reaches the target, or null.
+export function targetAge(series, target, startDate, currentAge) {
+  const hit = series.monthly.find((p) => p.balance >= target)
+  if (!hit) return null
+  const years =
+    (new Date(`${hit.date}T00:00:00Z`) - new Date(`${startDate}T00:00:00Z`)) / (365.25 * 864e5)
+  return Math.floor((currentAge + years) * 10) / 10
+}
+
+// Base and scenario lines for a saved plan that carries assumptions.
+export function scenarioLines(plan) {
+  const a = plan.assumptions
+  if (!a) return []
+  return scenarioRates(a).map((s) => {
+    const series = buildPlanSeries({ ...plan, annual_return: s.rate })
+    return {
+      ...s,
+      series,
+      reachedAge: targetAge(series, Number(plan.retirement_target), plan.start_date, a.current_age),
+    }
+  })
+}
+
+// Checkpoint for an age row: December 31 of that year, or the plan's end date
+// when the horizon ends before that December (the final age's anniversary).
+export function ageCheckpoint(plan, line, age) {
+  const a = plan.assumptions
+  const year = +plan.start_date.slice(0, 4) + (age - a.current_age)
+  const december = line.series.annual.find((p) => +p.date.slice(0, 4) === year)
+  if (december) return december
+  const last = line.series.monthly.at(-1)
+  return last && +last.date.slice(0, 4) === year ? last : null
+}
+
+export function balanceAtAge(plan, line, age) {
+  return ageCheckpoint(plan, line, age)?.balance ?? null
+}
+
+// For plans with assumptions, the frozen benchmark columns are always
+// re-derived from the assumptions, so a client cannot store a return, target or
+// contribution map that disagrees with them. Legacy plans pass through.
+export function derivePlan(plan) {
+  if (!plan.assumptions) return plan
+  return validatePlan(
+    planFromAssumptions({
+      name: plan.name,
+      startDate: plan.start_date,
+      startBalance: plan.start_balance,
+      startingContributionsYtd: plan.assumptions.ytd_estimated
+        ? null
+        : plan.starting_contributions_ytd,
+      assumptions: plan.assumptions,
+    })
+  )
 }

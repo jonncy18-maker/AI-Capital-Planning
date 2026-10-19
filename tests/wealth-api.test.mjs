@@ -5,6 +5,8 @@ import vm from 'node:vm'
 import { readFile } from 'node:fs/promises'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { defaultAssumptions } from '../src/lib/wealth/assumptions.js'
+import { planFromAssumptions } from '../src/lib/wealth/projection.js'
 import { validDate, latestSnapshots, expectedAt, buildPlanSeries } from '../src/lib/wealth/plans.js'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const baseline = {
@@ -49,6 +51,7 @@ async function harness({ dateOffset = '+00:00' } = {}) {
         start_balance: values[3],
         annual_contributions: JSON.parse(values[10]),
         annual_contributions_without_commitments: JSON.parse(values[11]),
+        assumptions: values[14] == null ? null : JSON.parse(values[14]),
       }
       state.plans.push(row)
       return [driverRow(row, 'start_date', query)]
@@ -227,3 +230,29 @@ for (const operation of [
     assert.equal(new Date('2027-07-15T00:00:00+14:00').toISOString().slice(0, 10), '2027-07-14')
   })
 }
+test('plan with assumptions is validated and stored on the new row; bad assumptions are rejected before SQL', async () => {
+  const h = await harness()
+  const body = planFromAssumptions({
+    name: 'With assumptions',
+    startDate: '2026-10-18',
+    startBalance: 350903.6,
+    assumptions: defaultAssumptions(),
+  })
+  const res = await h.plans.POST(h.request(body))
+  assert.equal(res.status, 201)
+  assert.equal(h.state.plans[0].assumptions.retirement_age, 60)
+  assert.equal(h.state.plans[0].assumptions.caps.k401, 24500)
+  const forged = await h.plans.POST(
+    h.request({ ...body, annual_return: 0, annual_contributions: { 2026: 0 } })
+  )
+  assert.equal(forged.status, 201)
+  const forgedValues = h.state.calls.at(-1).values
+  assert.equal(forgedValues[5], 0.07, 'server re-derives the base return from assumptions')
+  assert.notDeepEqual(JSON.parse(forgedValues[10]), { 2026: 0 })
+  const before = h.state.calls.length
+  const bad = await h.plans.POST(
+    h.request({ ...body, assumptions: { ...body.assumptions, retirement_age: 20 } })
+  )
+  assert.equal(bad.status, 400)
+  assert.equal(h.state.calls.length, before)
+})

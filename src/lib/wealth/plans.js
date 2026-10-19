@@ -1,3 +1,4 @@
+import { validateAssumptions } from './assumptions.js'
 import { toCents, fromCents, mulCents, allocateCents, parseCentsStrict } from '../money.js'
 
 export function validDate(value) {
@@ -59,9 +60,9 @@ export function validatePlan(body) {
     typeof body.annual_return !== 'number' ||
     !Number.isFinite(body.annual_return) ||
     body.annual_return < 0 ||
-    body.annual_return > 0.12
+    body.annual_return > 0.25
   )
-    throw new Error('Annual return must be between 0 and 12%.')
+    throw new Error('Annual return must be between 0 and 25%.')
   if (typeof body.include_commitments !== 'boolean')
     throw new Error('Choose whether commitments are included.')
   return {
@@ -89,6 +90,7 @@ export function validatePlan(body) {
       body.annual_contributions_without_commitments,
       'Contributions without commitments'
     ),
+    assumptions: body.assumptions == null ? null : validateAssumptions(body.assumptions),
   }
 }
 export function investmentActual(snapshot) {

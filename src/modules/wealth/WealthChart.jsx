@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import ChartTooltip, { nearestIndex } from './ChartTooltip.jsx'
 
 export default function WealthChart({
   planned,
@@ -11,6 +12,7 @@ export default function WealthChart({
 }) {
   const container = useRef(null)
   const [width, setWidth] = useState(700)
+  const [hover, setHover] = useState(null)
   useEffect(() => {
     const observer = new ResizeObserver((entries) =>
       setWidth(Math.max(240, entries[0].contentRect.width))
@@ -46,6 +48,16 @@ export default function WealthChart({
           .toISOString()
           .slice(0, 10)
       )
+  // Hover stops: every planned point plus any recorded date, in date order.
+  const stops = [...new Set([...expected, ...recorded, ...overlay].map((p) => p.date))].sort()
+  const at = (rows, d) => rows.find((p) => p.date === d)
+  const money = (n) =>
+    new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(n)
+  const hoverDate = hover != null ? stops[hover] : null
   const ticks = Array.from({ length: 5 }, (_, i) => min + (span * i) / 4)
   const displayedTicks =
     width < 500
@@ -62,7 +74,23 @@ export default function WealthChart({
         {!values.length ? (
           <p>No saved plan or actuals in this period.</p>
         ) : (
-          <svg viewBox={`0 0 ${width} 260`} role="img" aria-label={title} className="wealth-chart">
+          <svg
+            viewBox={`0 0 ${width} 260`}
+            role="img"
+            aria-label={title}
+            className="wealth-chart"
+            onPointerMove={(e) =>
+              setHover(
+                nearestIndex(
+                  e,
+                  width,
+                  stops.map((d) => x(d))
+                )
+              )
+            }
+            onPointerLeave={() => setHover(null)}
+            style={{ touchAction: 'pan-y' }}
+          >
             <title>{title}</title>
             {ticks.map((value, i) => (
               <g key={i}>
@@ -120,6 +148,33 @@ export default function WealthChart({
                   : d.slice(0, 7)}
               </text>
             ))}
+            {hoverDate && (
+              <ChartTooltip
+                x={x(hoverDate)}
+                top={20}
+                bottom={220}
+                width={width}
+                title={new Date(`${hoverDate}T00:00:00Z`).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  timeZone: 'UTC',
+                })}
+                rows={[
+                  ['Plan', expected, 'var(--tx-3)'],
+                  ['Without commitments', overlay, 'var(--accent)'],
+                  ['Recorded', recorded, 'var(--accent)'],
+                ]
+                  .map(([label, rows, color]) => [label, at(rows, hoverDate), color])
+                  .filter(([, p]) => p)
+                  .map(([label, p, color]) => ({
+                    label,
+                    text: money(Number(p.value)),
+                    color,
+                    y: y(p.value),
+                  }))}
+              />
+            )}
           </svg>
         )}
       </div>

@@ -49,6 +49,16 @@ export const wealthTools = [
           retirement_balance: { type: 'number', description: '401k / IRA balance.' },
           other_assets: { type: 'number', description: 'Cash, property, other assets.' },
           liabilities: { type: 'number', description: 'Total debt, entered as a positive number.' },
+          emergency_cash: {
+            type: 'number',
+            description:
+              'Emergency fund balance. A subset of other_assets (must be included in it and not exceed it); never added to net worth twice.',
+          },
+          investment_contributions_ytd: {
+            type: 'number',
+            description:
+              'Calendar-year-to-date net deposits into investments as of snapshot_date. Negative = net withdrawals.',
+          },
           notes: { type: 'string' },
         },
         required: ['net_worth'],
@@ -64,6 +74,11 @@ export const wealthTools = [
           row('Retirement', input.retirement_balance != null ? money(input.retirement_balance) : null),
           row('Other assets', input.other_assets != null ? money(input.other_assets) : null),
           row('Liabilities', input.liabilities != null ? money(input.liabilities) : null, 'bad'),
+          row('Emergency cash', input.emergency_cash != null ? money(input.emergency_cash) : null),
+          row(
+            'Contributions YTD',
+            input.investment_contributions_ytd != null ? money(input.investment_contributions_ytd) : null
+          ),
         ],
       }
     },
@@ -77,6 +92,8 @@ export const wealthTools = [
         retirement_balance: toNullableNumber(input.retirement_balance),
         other_assets: toNullableNumber(input.other_assets),
         liabilities: toNullableNumber(input.liabilities),
+        emergency_cash: toNullableNumber(input.emergency_cash),
+        investment_contributions_ytd: toNullableNumber(input.investment_contributions_ytd),
         notes: input.notes ?? null,
       })
       return {

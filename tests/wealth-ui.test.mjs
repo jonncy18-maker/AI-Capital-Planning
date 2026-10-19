@@ -8,6 +8,8 @@ import vm from 'node:vm'
 import * as engine from '../src/lib/wealth/plans.js'
 import * as money from '../src/lib/money.js'
 import * as selection from '../src/lib/wealth/selection.js'
+import * as assumptions from '../src/lib/wealth/assumptions.js'
+import * as projection from '../src/lib/wealth/projection.js'
 const require = createRequire(import.meta.url)
 const babel = require('next/dist/compiled/babel/core')
 const source = await readFile(new URL('../src/modules/wealth/Wealth.jsx', import.meta.url), 'utf8')
@@ -152,6 +154,9 @@ function harness({ storage = new Map(), blocked = false } = {}) {
       latestSnapshots: (rows) => engine.latestSnapshots(rows, '2035-12-31'),
     },
     '../../lib/money.js': money,
+    '../../lib/wealth/assumptions.js': assumptions,
+    '../../lib/wealth/projection.js': projection,
+    './TrajectoryPanel.jsx': { default: () => {} },
     '../../lib/wealth/selection.js': {
       ...selection,
       readSelectedPlanId: (userId) => selection.readSelectedPlanId(userId, storageApi),
