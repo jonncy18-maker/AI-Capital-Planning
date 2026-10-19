@@ -68,7 +68,7 @@ test('real dates and strict API validation', () => {
     { start_date: '2027-13-01' },
     { horizon: 4 },
     { start_date: '2199-01-01' },
-    { annual_return: 0.13 },
+    { annual_return: 0.26 },
     { monthly_contribution: '20' },
     { annual_contributions: { x: 20 } },
     { annual_contributions: { 2027: Infinity } },

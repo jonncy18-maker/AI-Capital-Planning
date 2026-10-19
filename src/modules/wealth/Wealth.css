@@ -186,6 +186,127 @@
 /* Phones: the saved-version label stacks over its select, and the select shrinks
    (long option text is ellipsised) instead of widening the page. */
 @media (max-width: 759px) {
-  .wealth-row label { display: grid; gap: 6px; min-width: 0; max-width: 100%; }
-  .wealth-row select { width: 100%; text-overflow: ellipsis; }
+  .wealth-row label {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .wealth-row select {
+    width: 100%;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Wealth Trajectory assumptions (layout A: chart on top, cards below) */
+.wealth-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.wealth-kpis > div {
+  flex: 1 1 130px;
+  background: var(--bg-card);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--tx-2);
+}
+.wealth-kpis b {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--tx-1);
+}
+.wealth-kpis small {
+  display: block;
+}
+.wealth-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--tx-2);
+  margin: 4px 0 8px;
+}
+.wealth-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.wealth-table-wrap {
+  overflow-x: auto;
+}
+.wealth-table {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+}
+.wealth-table th,
+.wealth-table td {
+  text-align: right;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--bd);
+  white-space: nowrap;
+}
+.wealth-table th:first-child,
+.wealth-table td:first-child {
+  text-align: left;
+}
+.wealth-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.wealth-cards > fieldset {
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0;
+  min-width: 0;
+}
+.wealth-cards legend {
+  font-size: 12px;
+  color: var(--tx-2);
+  padding: 0 4px;
+}
+.wealth-cards label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.wealth-cards input:not([type='checkbox']),
+.wealth-cards select {
+  width: 110px;
+  text-align: right;
+  padding: 4px 6px;
+}
+.wealth-cards .wealth-seg {
+  display: inline-flex;
+  gap: 0;
+}
+.wealth-cards .wealth-seg button {
+  border-radius: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.wealth-cards .wealth-seg button[aria-pressed='true'] {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.wealth-scenario-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.wealth-scenario-row input[type='text'] {
+  width: 90px;
+  text-align: left;
 }

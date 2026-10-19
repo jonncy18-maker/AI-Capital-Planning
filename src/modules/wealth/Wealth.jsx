@@ -5,8 +5,6 @@ import {
   deleteWealthSnapshot,
 } from '../../lib/db/wealthSnapshots.js'
 import { getWealthPlans, saveWealthPlan } from '../../lib/db/wealthPlans.js'
-import { getCommitments } from '../../lib/db/commitments.js'
-import { commitmentYearSchedule } from '../../lib/commitments/schedule.js'
 import { loadOutlookInputs } from '../../lib/outlook/loadOutlook.js'
 import { buildOutlook } from '../../lib/outlook/outlookEngine.js'
 import {
@@ -18,10 +16,13 @@ import {
   captureOutlook,
   validatePlan,
 } from '../../lib/wealth/plans.js'
+import { defaultAssumptions } from '../../lib/wealth/assumptions.js'
+import { planFromAssumptions } from '../../lib/wealth/projection.js'
 import { sumDollars } from '../../lib/money.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
 import WealthChart from './WealthChart.jsx'
+import TrajectoryPanel from './TrajectoryPanel.jsx'
 import {
   readSelectedPlanId,
   storeSelectedPlanId,
@@ -65,11 +66,7 @@ const months = Array.from({ length: 12 }, (_, i) =>
   new Date(2020, i, 1).toLocaleString('en-US', { month: 'long' })
 )
 const readWealthData = (userId) =>
-  Promise.allSettled([
-    getWealthSnapshots(userId, 10000),
-    getWealthPlans(),
-    getCommitments(userId, { status: 'active' }),
-  ])
+  Promise.allSettled([getWealthSnapshots(userId, 10000), getWealthPlans()])
 const monthEnd = (year, month) => new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10)
 function gap(actual, expected) {
   if (actual == null) return 'No actual recorded'
@@ -273,50 +270,55 @@ function SnapshotForm({ onSave, onCancel, saving, initialDate }) {
   )
 }
 
-function NewPlan({ snapshots, outlook, commitments, onSave, onCancel, saving }) {
+const pct = (v) => Math.round(v * 1e6) / 1e4
+function Num({ label, value, onChange, step = 1, percent = false, min = 0 }) {
+  return (
+    <label>
+      {label}
+      <input
+        type="number"
+        step={step}
+        min={min}
+        value={percent ? pct(value) : value}
+        onChange={(e) => {
+          const n = e.target.value === '' ? 0 : Number(e.target.value)
+          onChange(percent ? n / 100 : n)
+        }}
+      />
+    </label>
+  )
+}
+
+function NewPlan({ snapshots, outlook, onSave, onCancel, saving }) {
   const eligible = snapshots.filter((s) => investmentActual(s) != null)
   const [snapshotId, setSnapshotId] = useState(eligible[0]?.id || '')
   const [name, setName] = useState('My baseline plan')
-  const [monthly, setMonthly] = useState(2000)
-  const [rate, setRate] = useState(6)
-  const [horizon, setHorizon] = useState(25)
-  const [target, setTarget] = useState(1500000)
-  const [cash, setCash] = useState('')
-  const [include, setInclude] = useState(true)
+  const [a, setA] = useState(defaultAssumptions)
   const [useOutlook, setUseOutlook] = useState(false)
-  const [allocation, setAllocation] = useState(100)
   const [error, setError] = useState('')
   const snapshot = eligible.find((s) => s.id === snapshotId)
-  const captured = captureOutlook(outlook, allocation / 100)
-  const drain = sumDollars(commitments, (c) =>
-    sumDollars(commitmentYearSchedule(c, new Date().getFullYear()))
-  )
+  const set = (patch) => setA((old) => ({ ...old, ...patch }))
+  const setIn = (key, patch) => setA((old) => ({ ...old, [key]: { ...old[key], ...patch } }))
+  const captured = captureOutlook(outlook)
+  const emergencyNow = optionalActual(snapshot?.emergency_cash) ?? a.emergency.current
+  const effective = {
+    ...a,
+    emergency: { ...a.emergency, current: emergencyNow },
+    surplus: { ...a.surplus, source: useOutlook && captured ? 'outlook' : 'manual' },
+    surplus_by_year: useOutlook && captured ? captured.withCommitments : {},
+  }
   const draft = snapshot
-    ? {
+    ? planFromAssumptions({
         name,
-        start_date: snapshot.snapshot_date,
-        start_balance: investmentActual(snapshot),
-        monthly_contribution: monthly,
-        annual_return: rate / 100,
-        horizon,
-        retirement_target: target,
-        emergency_cash_target: cash === '' ? null : Number(cash),
-        starting_contributions_ytd: optionalActual(snapshot.investment_contributions_ytd),
-        annual_commitment_drain: drain,
-        include_commitments: include,
-        annual_contributions:
-          useOutlook && captured
-            ? include
-              ? captured.withCommitments
-              : captured.withoutCommitments
-            : {},
-        annual_contributions_without_commitments:
-          useOutlook && captured ? captured.withoutCommitments : {},
-      }
+        startDate: snapshot.snapshot_date,
+        startBalance: investmentActual(snapshot),
+        startingContributionsYtd: optionalActual(snapshot.investment_contributions_ytd),
+        assumptions: effective,
+      })
     : null
-  let preview = null
+  let valid = null
   try {
-    if (draft) preview = buildPlanSeries(validatePlan(draft))
+    if (draft) valid = validatePlan(draft)
   } catch {
     /* Invalid draft fields are explained on submit. */
   }
@@ -329,6 +331,7 @@ function NewPlan({ snapshots, outlook, commitments, onSave, onCancel, saving }) 
       setError(err.message)
     }
   }
+  const preset = a.presets.find((p) => p.key === a.index_preset)
   return (
     <form className="wealth-panel" onSubmit={submit}>
       <div className="wealth-row">
@@ -338,9 +341,9 @@ function NewPlan({ snapshots, outlook, commitments, onSave, onCancel, saving }) 
         </button>
       </div>
       <p className="wealth-muted">
-        The starting snapshot is the close of its recorded date; contributions and growth start
-        afterward. Saved versions keep their assumptions fixed. Editing these inputs creates a new
-        plan; it never changes an existing benchmark.
+        Every assumption is editable. The starting snapshot is the close of its recorded date.
+        Saving creates a new frozen plan version; it never changes an existing benchmark. Not
+        investment advice.
       </p>
       {!eligible.length ? (
         <p>
@@ -369,117 +372,272 @@ function NewPlan({ snapshots, outlook, commitments, onSave, onCancel, saving }) 
                 ))}
               </select>
             </label>
-            <label>
-              Monthly investment net deposits
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={monthly}
-                onChange={(e) => setMonthly(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Annual return (%)
-              <input
-                required
-                type="number"
-                min="0"
-                max="12"
-                step="0.1"
-                value={rate}
-                onChange={(e) => setRate(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Horizon (years)
-              <input
-                required
-                type="number"
-                min="5"
-                max="40"
-                value={horizon}
-                onChange={(e) => setHorizon(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Retirement investment target
-              <input
-                required
-                type="number"
-                min="0"
-                step="0.01"
-                value={target}
-                onChange={(e) => setTarget(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Emergency cash target (optional)
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={cash}
-                onChange={(e) => setCash(e.target.value)}
-              />
-            </label>
           </div>
-          <label className="wealth-check">
-            <input
-              type="checkbox"
-              checked={include}
-              onChange={(e) => setInclude(e.target.checked)}
-            />{' '}
-            Include commitment drain · {fmtFull(drain)}/year outside outlook years
-          </label>
-          <label className="wealth-check">
-            <input
-              type="checkbox"
-              checked={useOutlook && !!captured}
-              disabled={!captured}
-              onChange={(e) => setUseOutlook(e.target.checked)}
-            />{' '}
-            Capture 5-year outlook
-          </label>
-          {!captured && (
-            <p className="wealth-muted">
-              Outlook unavailable: needs a loaded budget and income. Manual contributions remain
-              available.
-            </p>
-          )}
-          {useOutlook && captured && (
-            <>
+          {valid && <TrajectoryPanel plan={valid} />}
+          <div className="wealth-cards">
+            <fieldset>
+              <legend>Retirement</legend>
               <label>
-                Positive outlook savings invested (%)
+                Retire at
+                <span className="wealth-seg">
+                  {[55, 60, 65].map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      aria-pressed={a.retirement_age === n}
+                      onClick={() => set({ retirement_age: n })}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </span>
+              </label>
+              <Num
+                label="Current age"
+                value={a.current_age}
+                onChange={(v) => set({ current_age: v })}
+              />
+              <Num
+                label="Spend / yr (today's $)"
+                value={a.retirement_spend}
+                step={1000}
+                onChange={(v) => set({ retirement_spend: v })}
+              />
+              <Num
+                label="Multiple of spend"
+                value={a.withdrawal_multiple}
+                onChange={(v) => set({ withdrawal_multiple: v })}
+              />
+              <Num
+                label="Inflation %"
+                value={a.inflation}
+                step={0.1}
+                percent
+                onChange={(v) => set({ inflation: v })}
+              />
+            </fieldset>
+            <fieldset>
+              <legend>Returns</legend>
+              <label>
+                Base return
+                <span className="wealth-seg">
+                  {[
+                    ['index', 'Index'],
+                    ['manual', 'Manual'],
+                  ].map(([k, t]) => (
+                    <button
+                      type="button"
+                      key={k}
+                      aria-pressed={a.return_mode === k}
+                      onClick={() => set({ return_mode: k })}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </span>
+              </label>
+              {a.return_mode === 'index' ? (
+                <>
+                  <label>
+                    S&P 500 preset
+                    <select
+                      value={a.index_preset}
+                      onChange={(e) => set({ index_preset: e.target.value })}
+                    >
+                      {a.presets.map((p) => (
+                        <option key={p.key} value={p.key}>
+                          {p.label} {pct(p.rate)}%
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {preset && (
+                    <>
+                      <Num
+                        label="Preset rate %"
+                        value={preset.rate}
+                        step={0.01}
+                        percent
+                        onChange={(v) =>
+                          set({
+                            presets: a.presets.map((p) =>
+                              p.key === preset.key ? { ...p, rate: v } : p
+                            ),
+                          })
+                        }
+                      />
+                      <p className="wealth-muted">
+                        As of {preset.as_of}, nominal total return (Damodaran data via clark.com).
+                        Edited by hand, never refreshed live.
+                      </p>
+                    </>
+                  )}
+                </>
+              ) : (
+                <Num
+                  label="Base return %"
+                  value={a.manual_return}
+                  step={0.1}
+                  percent
+                  onChange={(v) => set({ manual_return: v })}
+                />
+              )}
+              {a.scenarios.map((s, i) => (
+                <div className="wealth-scenario-row" key={i}>
+                  <input
+                    type="text"
+                    aria-label="Scenario name"
+                    value={s.name}
+                    maxLength={40}
+                    onChange={(e) =>
+                      set({
+                        scenarios: a.scenarios.map((x, j) =>
+                          j === i ? { ...x, name: e.target.value } : x
+                        ),
+                      })
+                    }
+                  />
+                  <input
+                    type="number"
+                    aria-label="Offset from base, percent"
+                    step="0.5"
+                    style={{ width: 60 }}
+                    value={pct(s.delta)}
+                    onChange={(e) =>
+                      set({
+                        scenarios: a.scenarios.map((x, j) =>
+                          j === i ? { ...x, delta: Number(e.target.value) / 100 } : x
+                        ),
+                      })
+                    }
+                  />
+                  %
+                  <button
+                    type="button"
+                    aria-label="Remove scenario"
+                    onClick={() => set({ scenarios: a.scenarios.filter((_, j) => j !== i) })}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {a.scenarios.length < 6 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    set({ scenarios: [...a.scenarios, { name: 'New scenario', delta: 0.04 }] })
+                  }
+                >
+                  + Add scenario
+                </button>
+              )}
+            </fieldset>
+            <fieldset>
+              <legend>Contributions ({a.caps.year} caps)</legend>
+              <Num
+                label="401(k) cap"
+                value={a.caps.k401}
+                step={100}
+                onChange={(v) => setIn('caps', { k401: v })}
+              />
+              <Num
+                label="Your 401(k)"
+                value={a.employee_401k}
+                onChange={(v) => set({ employee_401k: v })}
+              />
+              <Num
+                label="Employer match %"
+                value={a.match_rate}
+                percent
+                onChange={(v) => set({ match_rate: v })}
+              />
+              <Num
+                label="Roth IRA"
+                value={a.caps.ira}
+                step={100}
+                onChange={(v) => setIn('caps', { ira: v })}
+              />
+              <Num
+                label="HSA (self-only)"
+                value={a.caps.hsa}
+                step={100}
+                onChange={(v) => setIn('caps', { hsa: v })}
+              />
+              <Num
+                label="Caps grow % / yr"
+                value={a.caps.growth}
+                step={0.1}
+                percent
+                onChange={(v) => setIn('caps', { growth: v })}
+              />
+              <label>
+                <span>
+                  Catch-up at {a.catch_up.age_50}/{a.catch_up.age_hsa}: 401(k) +
+                  {fmtFull(a.catch_up.k401)}, IRA +{fmtFull(a.catch_up.ira)}, HSA +
+                  {fmtFull(a.catch_up.hsa)}
+                </span>
                 <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={allocation}
-                  onChange={(e) => setAllocation(Number(e.target.value))}
+                  type="checkbox"
+                  checked={a.catch_up.enabled}
+                  onChange={(e) => setIn('catch_up', { enabled: e.target.checked })}
+                />
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend>Cash and growth</legend>
+              <Num
+                label="Emergency target"
+                value={a.emergency.target}
+                step={1000}
+                onChange={(v) => setIn('emergency', { target: v })}
+              />
+              <Num
+                label={
+                  snapshot?.emergency_cash != null ? 'Emergency now (snapshot)' : 'Emergency now'
+                }
+                value={emergencyNow}
+                step={1000}
+                onChange={(v) => setIn('emergency', { current: v })}
+              />
+              <Num
+                label={`Surplus ${a.caps.year} / yr`}
+                value={a.surplus.base}
+                step={500}
+                min={-1000000}
+                onChange={(v) => setIn('surplus', { base: v })}
+              />
+              <Num
+                label="Pay growth %"
+                value={a.pay_growth}
+                step={0.1}
+                percent
+                onChange={(v) => set({ pay_growth: v })}
+              />
+              <Num
+                label="Spending growth %"
+                value={a.spend_growth}
+                step={0.1}
+                percent
+                onChange={(v) => set({ spend_growth: v })}
+              />
+              <label>
+                <span>Use 5-year outlook net savings for its years</span>
+                <input
+                  type="checkbox"
+                  checked={useOutlook && !!captured}
+                  disabled={!captured}
+                  onChange={(e) => setUseOutlook(e.target.checked)}
                 />
               </label>
               <p className="wealth-muted">
-                {allocation}% of positive net savings becomes investments; the remainder stays cash
-                and is not an emergency-cash actual. Negative net savings becomes a full investment
-                withdrawal. Captured calendar years:{' '}
-                {Object.keys(captured.withCommitments).join(', ')}. Monthly input applies to other
-                years.
+                Surplus (take-home less spending, after 401(k) and HSA payroll deductions) pays the
+                Roth IRA, then fills the emergency fund, then goes to the taxable brokerage.{' '}
+                {captured
+                  ? `Outlook years: ${Object.keys(captured.withCommitments).join(', ')}.`
+                  : 'Outlook unavailable: needs a loaded budget and income.'}
               </p>
-            </>
-          )}
-          {preview && (
-            <p>
-              Preview at {preview.end_date}:{' '}
-              <strong>{fmtFull(preview.monthly.at(-1).balance)}</strong> · without commitments:{' '}
-              {fmtFull(
-                buildPlanSeries(
-                  { ...draft, include_commitments: false },
-                  { withoutCommitments: true }
-                ).monthly.at(-1).balance
-              )}
-            </p>
-          )}
+            </fieldset>
+          </div>
           <button disabled={saving} type="submit" style={primaryBtn}>
             {saving ? 'Saving…' : 'Save baseline version'}
           </button>
@@ -492,8 +650,7 @@ function NewPlan({ snapshots, outlook, commitments, onSave, onCancel, saving }) 
 
 export default function Wealth({ userId, mobile }) {
   const [snapshots, setSnapshots] = useState([]),
-    [plans, setPlans] = useState([]),
-    [commitments, setCommitments] = useState([])
+    [plans, setPlans] = useState([])
   const [selection, setSelection] = useState({ userId: null, id: '' }),
     [dataUserId, setDataUserId] = useState(null),
     [outlook, setOutlook] = useState(null),
@@ -545,11 +702,6 @@ export default function Wealth({ userId, mobile }) {
       } else {
         setPlans([])
         setPlanError(results[1].reason.message)
-      }
-      if (results[2].status === 'fulfilled') setCommitments(results[2].value)
-      else {
-        setCommitments([])
-        setError(results[2].reason.message)
       }
       setLoading(false)
     },
@@ -823,12 +975,12 @@ export default function Wealth({ userId, mobile }) {
             <NewPlan
               snapshots={actuals}
               outlook={outlook}
-              commitments={commitments}
               onSave={savePlan}
               onCancel={() => setNewPlan(false)}
               saving={saving}
             />
           )}
+          {plan?.assumptions && !newPlan && <TrajectoryPanel plan={plan} />}
           <div className="wealth-tabs" role="tablist" aria-label="Wealth views">
             {[
               ['annual', 'Annual outlook'],

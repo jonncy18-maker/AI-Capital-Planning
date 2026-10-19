@@ -380,8 +380,9 @@ created_at      timestamptz
 id, user_id, name, start_date, start_balance, monthly_contribution, annual_return,
 horizon, retirement_target, emergency_cash_target, starting_contributions_ytd,
 annual_contributions jsonb, annual_contributions_without_commitments jsonb,
-annual_commitment_drain, include_commitments, created_at
+annual_commitment_drain, include_commitments, assumptions jsonb (migration 026), created_at
 ```
+`assumptions` (nullable; NULL = pre-026 plan) holds the editable trajectory set validated by `src/lib/wealth/assumptions.js`: retirement age (55/60/65) and spend (target = 25x spend inflated to that age), return mode (index preset with as-of date and source, or manual), base ± scenarios, inflation, pay/spend growth, 401(k)/Roth/HSA caps (grow yearly; match; 50+ catch-up default off), emergency target/balance, and the surplus (base plus optional frozen outlook years). `projection.js` derives the plan's `annual_return` (base), `retirement_target` and per-calendar-year `annual_contributions` from it, so `expectedAt` benchmarks work unchanged; scenario lines re-run `buildPlanSeries` at other rates. Surplus is take-home less spending (after payroll 401(k)/HSA): it pays the Roth IRA, then fills the emergency fund, then goes to taxable. `annual_return` ceiling is 25% (was 12%) so index presets fit.
 The selected plan ID is kept per user in localStorage (`src/lib/wealth/selection.js`); assumptions themselves are never stored client-side. Dates are returned as `::text` so Neon DATE values stay calendar strings.
 
 **ai_briefings**
