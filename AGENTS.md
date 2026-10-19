@@ -31,6 +31,7 @@ When building a wealth snapshot from a Monarch balances CSV:
 - Monarch is the source of truth for balances; it overrides what the app stores.
 - Exception: the HSA accounts don't sync in Monarch. Ask John for the real HSA balance.
 - Treat all retirement and brokerage accounts as one investments bucket: put the total in `investment_balance` and set `retirement_balance` to 0.
+- Set `emergency_cash` to the SoFi Emergency fund sub-account balance. It stays inside `other_assets` (a subset, never added to net worth twice). Wealth plans use it to decide when surplus starts flowing to taxable.
 
 ## Native app (PWA → Play Store) — PLANNED
 

@@ -62,3 +62,21 @@ describe('save_wealth_snapshot undo', () => {
     expect(res.undo).toEqual({ tool: 'delete_wealth_snapshot', input: { id: 'saved-id' } })
   })
 })
+
+describe('save_wealth_snapshot emergency cash', () => {
+  it('passes emergency_cash and contributions YTD through to the snapshot', async () => {
+    db.saveWealthSnapshot.mockResolvedValue({ id: 'n1' })
+    const save = wealthTools.find(t => t.name === 'save_wealth_snapshot')
+    await save.execute('u1', {
+      net_worth: 100,
+      snapshot_date: '2026-11-01',
+      other_assets: 40,
+      emergency_cash: 30,
+      investment_contributions_ytd: -5,
+    })
+    expect(db.saveWealthSnapshot).toHaveBeenLastCalledWith(
+      'u1',
+      expect.objectContaining({ emergency_cash: 30, investment_contributions_ytd: -5 })
+    )
+  })
+})
