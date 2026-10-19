@@ -10,6 +10,7 @@ import {
   planHorizon,
   yearFractionThrough,
   balanceAtAge,
+  derivePlan,
 } from '../../src/lib/wealth/projection.js'
 import { validatePlan, expectedAt } from '../../src/lib/wealth/plans.js'
 
@@ -67,7 +68,8 @@ describe('annual contribution flows', () => {
   })
   it('emergency fund fills across years before taxable receives anything', () => {
     const f = annualFlows(A({ emergency: { target: 30000, current: 27000 } }), START, 6)
-    const toEc = f.reduce((s, r) => s + r.to_emergency, 0)
+    const share0 = 1 - yearFractionThrough(START)
+    const toEc = f.reduce((s, r, i) => s + r.to_emergency * (i ? 1 : share0), 0)
     expect(toEc).toBeCloseTo(3000, 2)
     expect(f[0].taxable).toBe(0)
     expect(f.at(-1).taxable).toBeGreaterThan(0)
@@ -118,7 +120,10 @@ describe('plan from assumptions', { timeout: 30000 }, () => {
   it('estimates YTD contributions through the snapshot date when none is recorded', () => {
     const p = plan()
     expect(yearFractionThrough('2026-12-31')).toBe(1)
-    expect(p.starting_contributions_ytd).toBeCloseTo(p.annual_contributions[2026] * ((9 + 18 / 31) / 12), 1)
+    expect(p.starting_contributions_ytd).toBeCloseTo(
+      p.annual_contributions[2026] * ((9 + 18 / 31) / 12),
+      1
+    )
     expect(p.assumptions.ytd_estimated).toBe(true)
     expect(expectedAt(p, '2026-12-31').contributions_ytd).toBeCloseTo(
       p.annual_contributions[2026],
@@ -172,6 +177,62 @@ describe('plan from assumptions', { timeout: 30000 }, () => {
     const y27 = expectedAt(p, '2027-12-31').balance
     expect(y27).toBeCloseTo(13000 - 1000 / 31, 1)
     expect(expectedAt(p, '2028-12-31').balance - y27).toBeCloseTo(12000, 6)
+  })
+})
+
+describe('audit fixes', { timeout: 30000 }, () => {
+  it('F-002: a Dec 31 start fills no emergency cash in the finished year', () => {
+    const a = A({ emergency: { target: 30000, current: 27000 } })
+    const f = annualFlows(a, '2026-12-31', 5)
+    expect(f[0].to_emergency).toBe(0)
+    // 2027: surplus 10,300 - Roth 7,725 = 2,575, all needed for the 3,000 gap
+    expect(f[1].to_emergency).toBeCloseTo(2575, 2)
+    expect(f[1].taxable).toBe(0)
+    expect(f[2].to_emergency).toBeCloseTo(425, 2)
+  })
+  it('F-002: a mid-year start fills only the remaining share of the year', () => {
+    const a = A({ emergency: { target: 30000, current: 29000 } })
+    const f = annualFlows(a, '2026-07-01', 3)
+    const share = 1 - yearFractionThrough('2026-07-01')
+    // about half a year left: ~1,243 of post-Roth surplus, 1,000 fills the gap
+    expect(f[0].to_emergency * share).toBeCloseTo(1000, 2)
+    expect(f[0].taxable * share).toBeCloseTo(2500 * share - 1000, 2)
+    expect(f[1].to_emergency).toBe(0)
+  })
+  it('F-004: the age-65 row uses the plan end date for a mid-year start', () => {
+    const p = planFromAssumptions({
+      name: 'E',
+      startDate: START,
+      startBalance: 1000,
+      assumptions: A(),
+    })
+    const base = scenarioLines(p)[0]
+    expect(balanceAtAge(p, base, 65)).toBe(base.series.monthly.at(-1).balance)
+    expect(balanceAtAge(p, base, 64)).not.toBeNull()
+  })
+  it('F-005: derivePlan overwrites contradictory benchmark fields from assumptions', () => {
+    const good = validatePlan(
+      planFromAssumptions({ name: 'D', startDate: START, startBalance: 350000, assumptions: A() })
+    )
+    const forged = {
+      ...good,
+      annual_return: 0,
+      retirement_target: 1,
+      monthly_contribution: 0,
+      annual_contributions: { 2026: 0 },
+    }
+    const d = derivePlan(forged)
+    expect(d.annual_return).toBe(0.07)
+    expect(d.retirement_target).toBe(good.retirement_target)
+    expect(d.annual_contributions).toEqual(good.annual_contributions)
+    expect(d.starting_contributions_ytd).toBe(good.starting_contributions_ytd)
+    const legacy = { ...forged, assumptions: null }
+    expect(derivePlan(legacy)).toBe(legacy)
+  })
+  it('rejects a preset above the 25% plan ceiling', () => {
+    const a = defaultAssumptions()
+    a.presets[0].rate = 0.26
+    expect(() => validateAssumptions(a)).toThrow()
   })
 })
 

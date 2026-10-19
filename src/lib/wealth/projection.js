@@ -1,4 +1,4 @@
-import { buildPlanSeries } from './plans.js'
+import { buildPlanSeries, validatePlan } from './plans.js'
 import { PROJECTION_END_AGE } from './assumptions.js'
 
 // Deterministic wealth trajectory projection.
@@ -103,9 +103,12 @@ export function scenarioRates(a) {
 // funded before the outlook surplus. The Roth IRA is paid from surplus, then
 // surplus fills the emergency fund, and what remains goes to taxable. A
 // negative surplus withdraws from taxable. The first (partial) year is returned
-// as a full-year amount; expectedAt() prorates it to the remaining months.
+// as a full-year amount because expectedAt() prorates it to the remaining
+// months; the emergency fund, though, only receives the remaining share, so its
+// fill is tracked on that share before the full-year equivalent is taken.
 export function annualFlows(a, startDate, horizon) {
   const startYear = +startDate.slice(0, 4)
+  const firstShare = 1 - yearFractionThrough(startDate)
   let emergency = a.emergency.current
   const rows = []
   for (let n = 0; n <= horizon; n++) {
@@ -128,9 +131,13 @@ export function annualFlows(a, startDate, horizon) {
         : a.surplus.base * Math.pow(1 + a.pay_growth, year - a.caps.year)
     const ira = Math.min(iraCap, Math.max(0, surplus))
     const rest = surplus - ira
-    const toEmergency = rest > 0 ? Math.min(rest, Math.max(0, a.emergency.target - emergency)) : 0
-    emergency += toEmergency
-    const taxable = rest - toEmergency
+    const share = n === 0 ? firstShare : 1
+    const restInPeriod = rest * share
+    const filled =
+      restInPeriod > 0 ? Math.min(restInPeriod, Math.max(0, a.emergency.target - emergency)) : 0
+    emergency += filled
+    const toEmergency = share > 0 ? filled / share : 0
+    const taxable = share > 0 ? (restInPeriod - filled) / share : 0
     rows.push({
       year,
       age,
@@ -219,10 +226,35 @@ export function scenarioLines(plan) {
   })
 }
 
-// Balance at each age row for the by-age table.
-export function balanceAtAge(plan, line, age) {
+// Checkpoint for an age row: December 31 of that year, or the plan's end date
+// when the horizon ends before that December (the final age's anniversary).
+export function ageCheckpoint(plan, line, age) {
   const a = plan.assumptions
   const year = +plan.start_date.slice(0, 4) + (age - a.current_age)
-  const point = line.series.annual.find((p) => +p.date.slice(0, 4) === year)
-  return point ? point.balance : null
+  const december = line.series.annual.find((p) => +p.date.slice(0, 4) === year)
+  if (december) return december
+  const last = line.series.monthly.at(-1)
+  return last && +last.date.slice(0, 4) === year ? last : null
+}
+
+export function balanceAtAge(plan, line, age) {
+  return ageCheckpoint(plan, line, age)?.balance ?? null
+}
+
+// For plans with assumptions, the frozen benchmark columns are always
+// re-derived from the assumptions, so a client cannot store a return, target or
+// contribution map that disagrees with them. Legacy plans pass through.
+export function derivePlan(plan) {
+  if (!plan.assumptions) return plan
+  return validatePlan(
+    planFromAssumptions({
+      name: plan.name,
+      startDate: plan.start_date,
+      startBalance: plan.start_balance,
+      startingContributionsYtd: plan.assumptions.ytd_estimated
+        ? null
+        : plan.starting_contributions_ytd,
+      assumptions: plan.assumptions,
+    })
+  )
 }

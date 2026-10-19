@@ -1,6 +1,7 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
 import { validatePlan } from '../../../src/lib/wealth/plans.js'
+import { derivePlan } from '../../../src/lib/wealth/projection.js'
 
 function failure(err) {
   return Response.json(
@@ -30,7 +31,7 @@ export async function POST(request) {
   if (!session?.user?.id) return Response.json({ error: 'Not authenticated' }, { status: 401 })
   let p
   try {
-    p = validatePlan(await request.json())
+    p = derivePlan(validatePlan(await request.json()))
   } catch (err) {
     return Response.json({ error: err.message }, { status: 400 })
   }

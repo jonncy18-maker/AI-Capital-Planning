@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import ChartTooltip, { nearestIndex } from './ChartTooltip.jsx'
-import { scenarioLines, balanceAtAge } from '../../lib/wealth/projection.js'
+import { scenarioLines, balanceAtAge, ageCheckpoint } from '../../lib/wealth/projection.js'
 
 const money = (n) =>
   n == null
@@ -32,7 +32,9 @@ export default function TrajectoryPanel({ plan, header = null, children = null }
   const a = plan.assumptions
   const target = Number(plan.retirement_target)
   const startYear = +plan.start_date.slice(0, 4)
-  const retireDate = `${startYear + (a.retirement_age - a.current_age)}-12-31`
+  const retireDecember = `${startYear + (a.retirement_age - a.current_age)}-12-31`
+  const retireDate =
+    retireDecember > lines[0].series.end_date ? lines[0].series.end_date : retireDecember
   const t0 = ts(plan.start_date),
     t1 = ts(lines[0].series.end_date)
   const max = Math.max(target * 1.1, ...lines.map((l) => l.series.monthly.at(-1).balance))
@@ -97,7 +99,7 @@ export default function TrajectoryPanel({ plan, header = null, children = null }
         <text x={L + 4} y={y(target) - 4} fontSize="11" fill="var(--tx-2)">
           Target {money(target)}
         </text>
-        {retireDate <= lines[0].series.end_date && (
+        {
           <line
             x1={x(retireDate)}
             y1={12}
@@ -106,7 +108,7 @@ export default function TrajectoryPanel({ plan, header = null, children = null }
             stroke="var(--bd)"
             strokeDasharray="2 3"
           />
-        )}
+        }
         {[0, 0.5, 1].map((f) => (
           <text key={f} x={4} y={y(max * f) + 4} fontSize="11" fill="var(--tx-2)">
             {money(max * f)}
@@ -179,7 +181,15 @@ export default function TrajectoryPanel({ plan, header = null, children = null }
           <tbody>
             {ages.map((g) => (
               <tr key={g}>
-                <td>{g}</td>
+                <td>
+                  {g}
+                  {(() => {
+                    const c = ageCheckpoint(plan, lines[0], g)
+                    return c && !c.date.endsWith('-12-31')
+                      ? ` · ${new Date(`${c.date}T00:00:00Z`).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}`
+                      : ''
+                  })()}
+                </td>
                 <td>{money(plan.annual_contributions?.[startYear + (g - a.current_age)])}</td>
                 {lines.map((l) => (
                   <td key={l.name}>{money(balanceAtAge(plan, l, g))}</td>
@@ -190,8 +200,9 @@ export default function TrajectoryPanel({ plan, header = null, children = null }
         </table>
       </div>
       <p className="wealth-muted">
-        December balance at each age. Contributions are payroll 401(k) plus match and HSA, Roth IRA
-        and taxable from surplus; the first year is prorated from the snapshot date.
+        December balance at each age (the last row uses the plan's end date when it ends earlier).
+        Contributions are payroll 401(k) plus match and HSA, Roth IRA and taxable from surplus; the
+        first year is prorated from the snapshot date.
       </p>
       {children && <div className="wealth-trajectory-plan">{children}</div>}
     </div>

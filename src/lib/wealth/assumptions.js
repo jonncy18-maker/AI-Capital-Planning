@@ -108,7 +108,7 @@ export function validateAssumptions(input) {
     return {
       key: p.key,
       label: p.label,
-      rate: num(p.rate, `Preset ${p.label} rate`, 0, 0.3),
+      rate: num(p.rate, `Preset ${p.label} rate`, 0, 0.25),
       as_of: p.as_of,
       source: p.source,
     }

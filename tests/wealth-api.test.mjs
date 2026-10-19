@@ -242,6 +242,13 @@ test('plan with assumptions is validated and stored on the new row; bad assumpti
   assert.equal(res.status, 201)
   assert.equal(h.state.plans[0].assumptions.retirement_age, 60)
   assert.equal(h.state.plans[0].assumptions.caps.k401, 24500)
+  const forged = await h.plans.POST(
+    h.request({ ...body, annual_return: 0, annual_contributions: { 2026: 0 } })
+  )
+  assert.equal(forged.status, 201)
+  const forgedValues = h.state.calls.at(-1).values
+  assert.equal(forgedValues[5], 0.07, 'server re-derives the base return from assumptions')
+  assert.notDeepEqual(JSON.parse(forgedValues[10]), { 2026: 0 })
   const before = h.state.calls.length
   const bad = await h.plans.POST(
     h.request({ ...body, assumptions: { ...body.assumptions, retirement_age: 20 } })

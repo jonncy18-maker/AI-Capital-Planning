@@ -1105,7 +1105,7 @@ export default function Wealth({ userId, mobile }) {
                     gap(investmentActual(yearlyActual), yearEnd?.balance)
                   : 'No December 31 actual recorded; year-end forecast stays visible.'}
               </p>
-              {plan && comparisonToggle}
+              {plan && !plan.assumptions && comparisonToggle}
               <WealthChart
                 comparison={
                   compareCommitments
@@ -1183,7 +1183,7 @@ export default function Wealth({ userId, mobile }) {
                   Record dated snapshot
                 </button>
               </div>
-              {plan && metric === 'balance' && comparisonToggle}
+              {plan && !plan.assumptions && metric === 'balance' && comparisonToggle}
               <WealthChart
                 comparison={compareCommitments && metric === 'balance' ? monthlyWithout : []}
                 monthly
