@@ -24,6 +24,14 @@ At the start of each session, read `ARCHITECTURE.md` and `ROADMAP.md` to orient 
 > history docs (`ROADMAP.md`, `MIGRATION_PLAN.md`, `ARCHITECTURE.md` history
 > sections), where they are accurate record.
 
+## Balance import rules (Monarch → wealth snapshot)
+
+When building a wealth snapshot from a Monarch balances CSV:
+- Exclude both `Savings - 4633 (...4633)` rows (~$22k): a Monarch rollup of the whole SoFi account. The sub-accounts (Emergency fund, Open savings, Philippine Transfers, Sinking fund) are counted individually, so including it double counts.
+- Monarch is the source of truth for balances; it overrides what the app stores.
+- Exception: the HSA accounts don't sync in Monarch. Ask John for the real HSA balance.
+- Treat all retirement and brokerage accounts as one investments bucket: put the total in `investment_balance` and set `retirement_balance` to 0.
+
 ## Native app (PWA → Play Store) — PLANNED
 
 Candidate to ship as an installable Android app (PWA → TWA). **Unlike the other
