@@ -116,6 +116,8 @@ export default function Login() {
           {mode === 'signup' && (
             <input
               type="text"
+              name="name"
+              autoComplete="name"
               placeholder="Name"
               value={name}
               onChange={e => setName(e.target.value)}
@@ -124,6 +126,9 @@ export default function Login() {
           )}
           <input
             type="email"
+            name="email"
+            id="login-email"
+            autoComplete="username"
             placeholder="Email"
             value={email}
             onChange={e => setEmail(e.target.value)}
@@ -132,6 +137,9 @@ export default function Login() {
           />
           <input
             type="password"
+            name="password"
+            id="login-password"
+            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
             placeholder="Password"
             value={password}
             onChange={e => setPassword(e.target.value)}
