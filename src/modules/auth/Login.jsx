@@ -19,14 +19,18 @@ export default function Login() {
 
     const parts = []
     if (err.message) parts.push(err.message)
-    if (err.error_description && err.error_description !== err.message) parts.push(err.error_description)
+    if (err.error_description && err.error_description !== err.message)
+      parts.push(err.error_description)
     if (err.status) parts.push(`status ${err.status}`)
     if (err.code && err.code !== err.status) parts.push(`code ${err.code}`)
     if (!parts.length && err.name) parts.push(err.name)
     if (parts.length) return parts.join(' · ')
 
     try {
-      const own = Object.getOwnPropertyNames(err).reduce((o, k) => { o[k] = err[k]; return o }, {})
+      const own = Object.getOwnPropertyNames(err).reduce((o, k) => {
+        o[k] = err[k]
+        return o
+      }, {})
       const s = JSON.stringify(own)
       return s && s !== '{}' ? s : String(err)
     } catch {
@@ -41,14 +45,18 @@ export default function Login() {
 
     let result
     try {
-      result = mode === 'signup'
-        ? await authClient.signUp.email({ email, password, name: name || email.split('@')[0] })
-        : await authClient.signIn.email({ email, password })
+      result =
+        mode === 'signup'
+          ? await authClient.signUp.email({ email, password, name: name || email.split('@')[0] })
+          : await authClient.signIn.email({ email, password })
     } catch (err) {
       // Network/CORS/thrown errors never reach the { error } shape below.
       console.error('[auth] threw:', err)
       setLoading(false)
-      setMessage({ type: 'error', text: readableError(err) || 'Request failed — check the console.' })
+      setMessage({
+        type: 'error',
+        text: readableError(err) || 'Request failed — check the console.',
+      })
       return
     }
 
@@ -81,38 +89,49 @@ export default function Login() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'var(--bg, #141624)',
-    }}>
-      <div style={{
-        width: '100%',
-        maxWidth: '380px',
-        padding: '0 24px',
-      }}>
-        <div style={{
-          fontFamily: "'DM Serif Display', serif",
-          fontSize: '26px',
-          color: 'var(--tx-1, #e2e8f0)',
-          marginBottom: '6px',
-          letterSpacing: '-0.01em',
-        }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg, #141624)',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '380px',
+          padding: '0 24px',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: "'DM Serif Display', serif",
+            fontSize: '26px',
+            color: 'var(--tx-1, #e2e8f0)',
+            marginBottom: '6px',
+            letterSpacing: '-0.01em',
+          }}
+        >
           AI Capital Planning
         </div>
-        <div style={{
-          fontFamily: "'DM Mono', monospace",
-          fontSize: '11px',
-          color: 'var(--tx-3, #475569)',
-          letterSpacing: '0.06em',
-          marginBottom: '32px',
-        }}>
+        <div
+          style={{
+            fontFamily: "'DM Mono', monospace",
+            fontSize: '11px',
+            color: 'var(--tx-3, #475569)',
+            letterSpacing: '0.06em',
+            marginBottom: '32px',
+          }}
+        >
           {mode === 'signin' ? '// SIGN IN' : '// CREATE ACCOUNT'}
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+        >
           {mode === 'signup' && (
             <input
               type="text"
@@ -120,7 +139,7 @@ export default function Login() {
               autoComplete="name"
               placeholder="Name"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={(e) => setName(e.target.value)}
               style={field}
             />
           )}
@@ -131,7 +150,7 @@ export default function Login() {
             autoComplete="username"
             placeholder="Email"
             value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={(e) => setEmail(e.target.value)}
             required
             style={field}
           />
@@ -142,22 +161,25 @@ export default function Login() {
             autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
             placeholder="Password"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
             style={field}
           />
 
           {message && (
-            <div style={{
-              padding: '10px 14px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontFamily: 'Inter, sans-serif',
-              background: message.type === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(0,194,168,0.08)',
-              color: message.type === 'error' ? '#f87171' : 'var(--accent, #00C2A8)',
-              border: `1px solid ${message.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(0,194,168,0.2)'}`,
-            }}>
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontFamily: 'Inter, sans-serif',
+                background:
+                  message.type === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(0,194,168,0.08)',
+                color: message.type === 'error' ? '#f87171' : 'var(--accent, #00C2A8)',
+                border: `1px solid ${message.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(0,194,168,0.2)'}`,
+              }}
+            >
               {message.text}
             </div>
           )}
@@ -183,16 +205,21 @@ export default function Login() {
           </button>
         </form>
 
-        <div style={{
-          marginTop: '20px',
-          fontSize: '13px',
-          color: 'var(--tx-3, #475569)',
-          fontFamily: 'Inter, sans-serif',
-          textAlign: 'center',
-        }}>
+        <div
+          style={{
+            marginTop: '20px',
+            fontSize: '13px',
+            color: 'var(--tx-3, #475569)',
+            fontFamily: 'Inter, sans-serif',
+            textAlign: 'center',
+          }}
+        >
           {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
           <span
-            onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setMessage(null) }}
+            onClick={() => {
+              setMode((m) => (m === 'signin' ? 'signup' : 'signin'))
+              setMessage(null)
+            }}
             style={{ color: 'var(--accent, #00C2A8)', cursor: 'pointer' }}
           >
             {mode === 'signin' ? 'Create one' : 'Sign in'}
