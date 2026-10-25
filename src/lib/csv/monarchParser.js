@@ -41,11 +41,41 @@ export function detectMonarchFormat(headers) {
   return REQUIRED_COLS.every(col => norm.includes(col))
 }
 
+// Split raw CSV text into logical records. A newline only ends a record when it
+// is outside quotes, so quoted fields (Notes, Merchant) may span several lines.
+// Blank records are dropped. `unterminated` is true when a quote is still open at
+// the end of the text; the last entry in `records` is then that unfinished record.
+function splitRecords(raw) {
+  const records = []
+  let current = ''
+  let inQuotes = false
+
+  const flush = () => {
+    if (current.trim()) records.push(current)
+    current = ''
+  }
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]
+    if (ch === '"') {
+      inQuotes = !inQuotes // a doubled quote ("") toggles twice, so it stays inside the field
+      current += ch
+    } else if (!inQuotes && (ch === '\n' || ch === '\r')) {
+      if (ch === '\r' && raw[i + 1] === '\n') i++
+      flush()
+    } else {
+      current += ch
+    }
+  }
+  const unterminated = inQuotes
+  flush()
+  return { records, unterminated }
+}
+
 // Parse a Monarch Money CSV string into an array of row objects.
 // Returns { rows, errors, headers }.
 export function parseMonarchCSV(raw) {
-  const lines = raw.split(/\r?\n/)
-  const nonEmpty = lines.filter(l => l.trim())
+  const { records: nonEmpty, unterminated } = splitRecords(raw)
 
   if (nonEmpty.length < 2) {
     return { rows: [], errors: ['CSV file has no data rows.'], headers: [] }
@@ -67,7 +97,10 @@ export function parseMonarchCSV(raw) {
   const rows = []
   const errors = []
 
-  for (let i = 1; i < nonEmpty.length; i++) {
+  // An unterminated quote leaves the last record unfinished; report it instead of importing it.
+  const parseEnd = unterminated ? nonEmpty.length - 1 : nonEmpty.length
+
+  for (let i = 1; i < parseEnd; i++) {
     const line = nonEmpty[i].trim()
     if (!line) continue
 
@@ -93,6 +126,13 @@ export function parseMonarchCSV(raw) {
         continue
       }
 
+      // A record that ends before the Amount column is truncated, not a zero-dollar row.
+      // (A present-but-blank Amount still means 0, and trailing Tags/Owner may be absent.)
+      if (cols.length <= colIdx['Amount']) {
+        errors.push(`Row ${i + 1}: no amount column — skipped.`)
+        continue
+      }
+
       // Parse amount — Monarch exports expenses as negative, income as positive.
       const amount = parseLooseMoney(amountRaw)
       if (amount === null) {
@@ -115,6 +155,10 @@ export function parseMonarchCSV(raw) {
     } catch (err) {
       errors.push(`Row ${i + 1}: parse error — ${err.message}`)
     }
+  }
+
+  if (unterminated) {
+    errors.push(`Row ${nonEmpty.length}: unterminated quote — this row and anything after it were not imported.`)
   }
 
   return { rows, errors, headers }

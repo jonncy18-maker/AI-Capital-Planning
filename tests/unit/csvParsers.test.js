@@ -81,6 +81,69 @@ describe('junk and blanks', () => {
   })
 })
 
+describe('monarch quoted multiline fields (F-007)', () => {
+  const NEXT = '2026-01-02,Cafe,Food,Chk,,,-3.00,,J'
+
+  it.each([['\n', 'LF'], ['\r\n', 'CRLF']])('keeps the amount of a record whose Notes wrap onto a second line (%s)', (eol) => {
+    const csv = [MON_HEAD, '2026-01-01,Shop,Food,Chk,,"line one', 'line two",-42.50,,J', NEXT].join(eol)
+    const r = parseMonarchCSV(csv)
+    expect(r.errors).toEqual([])
+    expect(r.rows).toHaveLength(2)
+    expect(r.rows[0]).toMatchObject({ merchant: 'Shop', amount: -42.5, owner: 'J' })
+    expect(r.rows[0].notes).toBe(`line one${eol}line two`)
+    expect(r.rows[1]).toMatchObject({ merchant: 'Cafe', amount: -3 })
+  })
+
+  it('handles a Merchant that wraps onto a second line', () => {
+    const r = parseMonarchCSV([MON_HEAD, '2026-01-01,"Big', 'Shop",Food,Chk,,,-9.99,,J'].join('\n'))
+    expect(r.errors).toEqual([])
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0]).toMatchObject({ merchant: 'Big\nShop', amount: -9.99 })
+  })
+
+  it('keeps escaped quotes, commas and blank lines inside quoted fields', () => {
+    const r = parseMonarchCSV([MON_HEAD, '2026-01-01,Shop,Food,Chk,,"say ""hi"",', '', 'ok",-5.00,,J'].join('\n'))
+    expect(r.errors).toEqual([])
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0].notes).toBe('say "hi",\n\nok')
+    expect(r.rows[0].amount).toBe(-5)
+  })
+
+  it('still skips blank lines between records', () => {
+    const r = parseMonarchCSV([MON_HEAD, '', '2026-01-01,Shop,Food,Chk,,,-1.00,,J', '', NEXT, ''].join('\n'))
+    expect(r.rows.map((x) => x.amount)).toEqual([-1, -3])
+    expect(r.errors).toEqual([])
+  })
+
+  it('rejects a record that ends before the Amount column instead of importing it as 0', () => {
+    const r = parseMonarchCSV([MON_HEAD, '2026-01-01,Shop,Food', NEXT].join('\n'))
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0].merchant).toBe('Cafe')
+    expect(r.errors).toHaveLength(1)
+    expect(r.errors[0]).toMatch(/Row 2.*amount/i)
+  })
+
+  it('still accepts a record with trailing columns trimmed off', () => {
+    const r = parseMonarchCSV([MON_HEAD, '2026-01-01,Shop,Food,Chk,,,-7.00'].join('\n'))
+    expect(r.errors).toEqual([])
+    expect(r.rows[0]).toMatchObject({ amount: -7, tags: '', owner: '' })
+  })
+
+  it('reports an unterminated quote once and keeps the rows before it', () => {
+    const r = parseMonarchCSV([MON_HEAD, '2026-01-01,Shop,Food,Chk,,,-1.00,,J', '2026-01-02,Cafe,Food,Chk,,"oops,-3.00,,J', '2026-01-03,Bar,Food,Chk,,,-4.00,,J'].join('\n'))
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0].merchant).toBe('Shop')
+    expect(r.errors).toHaveLength(1)
+    expect(r.errors[0]).toMatch(/Row 3.*unterminated quote/i)
+  })
+
+  it('numbers errors by record, not by physical line', () => {
+    const r = parseMonarchCSV([MON_HEAD, '2026-01-01,Shop,Food,Chk,,"a', 'b",-1.00,,J', ',,,,,,-2.00,,J'].join('\n'))
+    expect(r.rows).toHaveLength(1)
+    expect(r.errors).toEqual(['Row 3: missing date — skipped.'])
+  })
+})
+
 describe('huge values', () => {
   it('keeps the old float value instead of silently zeroing', () => {
     expect(parseLooseMoney('1000000000000')).toBe(1e12)
