@@ -23,12 +23,15 @@ describe('validateRedirectUris', () => {
     expect(validateRedirectUris(['https://CLAUDE.AI/api/mcp/./auth_callback'])).toEqual({ ok: true, uris: [CLAUDE_AI] })
   })
 
-  it('accepts a ChatGPT connector callback with one alphanumeric id', () => {
+  it('accepts only the pinned ChatGPT connector callback', () => {
     const uri = 'https://chatgpt.com/connector/oauth/JtL22DYxfAQu'
     expect(validateRedirectUris([uri])).toEqual({ ok: true, uris: [uri] })
   })
 
   it.each([
+    ['a different valid-looking id', 'https://chatgpt.com/connector/oauth/AbCdEf123456'],
+    ['the pinned id in another case', 'https://chatgpt.com/connector/oauth/jtl22dyxfaqu'],
+    ['the pinned id with a trailing slash', 'https://chatgpt.com/connector/oauth/JtL22DYxfAQu/'],
     ['no id', 'https://chatgpt.com/connector/oauth/'],
     ['no id, no slash', 'https://chatgpt.com/connector/oauth'],
     ['extra segment', 'https://chatgpt.com/connector/oauth/abc/def'],

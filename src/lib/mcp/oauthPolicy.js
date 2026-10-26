@@ -6,12 +6,12 @@
 const ALLOWED_HTTPS_REDIRECTS = [
   'https://claude.ai/api/mcp/auth_callback',
   'https://claude.com/api/mcp/auth_callback',
+  // ChatGPT's callback carries a per-connector ID. Pinned to the one connector in
+  // the live oauth_clients rows (2026-10-25): any chatgpt.com user can mint their
+  // own ID, so a pattern would let someone else's connector register here.
+  // A new ChatGPT connector needs its ID added by hand.
+  'https://chatgpt.com/connector/oauth/JtL22DYxfAQu',
 ]
-
-// ChatGPT's connector callback carries a per-connector ID segment, e.g.
-// /connector/oauth/JtL22DYxfAQu (seen in the live oauth_clients rows).
-const CHATGPT_ORIGIN = 'https://chatgpt.com'
-const CHATGPT_CALLBACK_PATH = /^\/connector\/oauth\/[A-Za-z0-9]+$/
 
 // RFC 8252 loopback redirect for native/CLI clients; any port and path.
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]']
@@ -32,7 +32,6 @@ function checkRedirectUri(uri) {
   if (url.protocol === 'https:') {
     if (url.search || uri.includes('?')) return 'redirect_uri must not contain a query string.'
     if (ALLOWED_HTTPS_REDIRECTS.includes(url.origin + url.pathname)) return null
-    if (url.origin === CHATGPT_ORIGIN && CHATGPT_CALLBACK_PATH.test(url.pathname)) return null
     return 'redirect_uri is not an allowed callback.'
   }
   if (url.protocol === 'http:' && LOOPBACK_HOSTS.includes(url.hostname)) return null
