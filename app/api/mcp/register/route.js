@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
+import { validateRedirectUris, sanitizeClientName } from '../../../../src/lib/mcp/oauthPolicy.js'
 
 // Dynamic Client Registration (RFC 7591) — lets claude.ai's "Add custom
 // connector" flow register itself automatically instead of you hand-entering
@@ -21,20 +22,25 @@ export async function POST(request) {
     )
   }
 
+  const validation = validateRedirectUris(redirectUris)
+  if (!validation.ok) {
+    return Response.json({ error: 'invalid_redirect_uri', error_description: validation.reason }, { status: 400 })
+  }
+
   const clientId = randomUUID()
-  const clientName = typeof body.client_name === 'string' ? body.client_name : null
+  const clientName = sanitizeClientName(body.client_name)
 
   try {
     const sql = getNeonSql()
     await sql`
       INSERT INTO oauth_clients (client_id, client_name, redirect_uris)
-      VALUES (${clientId}, ${clientName}, ${redirectUris})
+      VALUES (${clientId}, ${clientName}, ${validation.uris})
     `
     return Response.json(
       {
         client_id: clientId,
         client_name: clientName,
-        redirect_uris: redirectUris,
+        redirect_uris: validation.uris,
         token_endpoint_auth_method: 'none',
         grant_types: ['authorization_code'],
         response_types: ['code'],
