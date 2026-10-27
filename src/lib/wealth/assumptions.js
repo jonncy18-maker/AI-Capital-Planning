@@ -2,7 +2,10 @@
 // validation. The set is stored as one jsonb object on an immutable wealth_plans
 // row, so a changed assumption is always a new plan version.
 
+import { parseCentsStrict } from '../money.js'
+
 export const PROJECTION_END_AGE = 65
+export const CASHFLOW_SOURCES = ['actual_forecast', 'budget', 'outlook', 'growth', 'manual']
 
 // S&P 500 nominal total returns (Damodaran data via clark.com). Stored with an
 // as-of date and edited by hand; nothing here is scraped live.
@@ -89,6 +92,39 @@ function int(value, field, min, max) {
 }
 const dollars = (value, field, min = 0) => num(value, field, min, 1e9)
 
+// Optional frozen take-home and spending per calendar year. The surplus is never
+// stored: it is always take-home less spending, so it cannot contradict them.
+function validateCashflow(input) {
+  if (input === undefined || input === null) return null
+  if (typeof input !== 'object' || Array.isArray(input))
+    fail('Take-home and spending must be a calendar-year map.')
+  const entries = Object.entries(input)
+  if (entries.length > 100) fail('Take-home and spending must be a calendar-year map.')
+  const out = {}
+  for (const [year, v] of entries) {
+    if (!/^\d{4}$/.test(year) || +year < 2000 || +year > 2200)
+      fail('Take-home and spending has an invalid year.')
+    obj(v, `${year} take-home and spending`)
+    for (const [key, label] of [
+      ['take_home', 'take-home'],
+      ['spending', 'spending'],
+    ]) {
+      const x = v[key]
+      if (
+        typeof x !== 'number' ||
+        !Number.isFinite(x) ||
+        x < 0 ||
+        x > 1e9 ||
+        parseCentsStrict(x) == null
+      )
+        fail(`${year} ${label} must be between 0 and 1000000000 with at most two decimals.`)
+    }
+    if (!CASHFLOW_SOURCES.includes(v.source)) fail(`${year} source is not recognised.`)
+    out[year] = { take_home: v.take_home, spending: v.spending, source: v.source }
+  }
+  return out
+}
+
 export function validateAssumptions(input) {
   const a = obj(input, 'Assumptions')
   if (a.version !== 1) fail('Unsupported assumptions version.')
@@ -136,6 +172,7 @@ export function validateAssumptions(input) {
     if (!/^\d{4}$/.test(year) || +year < 2000 || +year > 2200) fail('Surplus has an invalid year.')
     surplus_by_year[year] = dollars(amount, 'Surplus', -1e9)
   }
+  const cashflow_by_year = validateCashflow(a.cashflow_by_year)
   return {
     version: 1,
     current_age,
@@ -174,5 +211,6 @@ export function validateAssumptions(input) {
     surplus: { base: dollars(surplus.base, 'Surplus', -1e9), source: surplus.source },
     surplus_by_year,
     ytd_estimated: a.ytd_estimated === true,
+    ...(cashflow_by_year ? { cashflow_by_year } : {}),
   }
 }
