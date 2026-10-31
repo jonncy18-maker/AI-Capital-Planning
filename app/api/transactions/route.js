@@ -8,7 +8,7 @@ function buildDedupKey({ date, merchant, amount, account }) {
   return `${date}|${merchant.toLowerCase()}|${amount}|${account ?? ''}`
 }
 
-// GET /api/transactions?from=&to=&category=&limit=
+// GET /api/transactions?from=&to=&category=&merchant=&account=&limit=&offset=
 // Mirrors src/lib/db/transactions.js#getTransactions: general-purpose
 // filtered fetch, newest first, capped by limit (default 500).
 export async function GET(request) {
@@ -22,6 +22,10 @@ export async function GET(request) {
   const from = searchParams.get('from')
   const to = searchParams.get('to')
   const category = searchParams.get('category')
+  const merchant = searchParams.get('merchant')
+  const account = searchParams.get('account')
+  const offsetParam = Number.parseInt(searchParams.get('offset'), 10)
+  const offset = Number.isFinite(offsetParam) && offsetParam > 0 ? offsetParam : 0
   const limitParam = Number.parseInt(searchParams.get('limit'), 10)
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 500
 
@@ -36,8 +40,10 @@ export async function GET(request) {
         AND (${from}::date IS NULL OR date >= ${from}::date)
         AND (${to}::date IS NULL OR date <= ${to}::date)
         AND (${category}::text IS NULL OR category = ${category})
-      ORDER BY date DESC
-      LIMIT ${limit}
+        AND (${merchant}::text IS NULL OR merchant ILIKE '%' || ${merchant} || '%')
+        AND (${account}::text IS NULL OR account = ${account})
+      ORDER BY date DESC, id
+      LIMIT ${limit} OFFSET ${offset}
     `
     return Response.json(rows)
   } catch (err) {
@@ -98,7 +104,9 @@ export async function POST(request) {
   }))
 
   const BATCH = 500
+  const totalBatches = Math.ceil(prepared.length / BATCH)
   let inserted = 0
+  let committedBatches = 0
 
   try {
     const sql = getNeonSql()
@@ -120,10 +128,18 @@ export async function POST(request) {
         RETURNING id
       `
       inserted += result.length
+      committedBatches++
     }
     const skipped = prepared.length - inserted
     return Response.json({ inserted, skipped }, { status: 201 })
   } catch (err) {
+    // Batches are not wrapped in a transaction, so earlier ones stay committed.
+    if (committedBatches > 0) {
+      return Response.json(
+        { error: err.message, inserted, committed_batches: committedBatches, total_batches: totalBatches },
+        { status: 500 }
+      )
+    }
     return Response.json({ error: err.message }, { status: 500 })
   }
 }
