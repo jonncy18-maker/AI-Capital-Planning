@@ -111,14 +111,14 @@ describe('import route', () => {
     expect(body.counts).toMatchObject({ new: 0, reclassified: 1 })
   })
 
-  it('without migration 027 uses no marker or tags columns', async () => {
+  it('without migration 028 uses no marker or tags columns', async () => {
     const body = await (await call({ csv: csv('2026-10-03,S,Qwerty Zxcv,Amex,S,,-5,x,J'), mode: 'commit' })).json()
     const t = state.txns[0].join('\n')
     expect(t).not.toMatch(/mapping_source|tags/)
     expect(body).toMatchObject({ marker_column_present: false, tags_column_present: false })
   })
 
-  it('with migration 027 writes the marker and tags', async () => {
+  it('with migration 028 writes the marker and tags', async () => {
     state.columns = [
       { table_name: 'budget_categories', column_name: 'mapping_source' },
       { table_name: 'budget_categories', column_name: 'mapping_note' },

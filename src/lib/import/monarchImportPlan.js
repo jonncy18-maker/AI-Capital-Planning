@@ -212,9 +212,9 @@ export function shapeImportResult(plan, { mode, filename, chunk, columns = {}, c
     notes.push('Ambiguous rows were skipped; fix them in Monarch or import them by hand.')
   }
   if (!columns.mappingSource) {
-    notes.push('Migration 027 is not applied: auto-created categories carry no marker and are identifiable only from this result.')
+    notes.push('Migration 028 is not applied: auto-created categories carry no marker and are identifiable only from this result.')
   }
-  if (!columns.tags) notes.push('Tags are not stored yet (migration 027 not applied); they were ignored.')
+  if (!columns.tags) notes.push('Tags are not stored yet (migration 028 not applied); they were ignored.')
   if (chunk) {
     notes.push(
       'Chunk mode: each chunk needs the header row and a date boundary, ambiguity and collapsing are checked within one chunk only, ' +
