@@ -22,6 +22,7 @@ import { parseAccountsFromFile } from '../../lib/ai/accountParser.js'
 import { parseBillAmountsFromFile } from '../../lib/ai/billAmountsParser.js'
 import TrendsTab from './TrendsTab.jsx'
 import CashFlowTab from './CashFlowTab.jsx'
+import WeeksTab from './WeeksTab.jsx'
 import CCScheduleTab from './CCScheduleTab.jsx'
 import BillAmountItems from './BillAmountItems.jsx'
 import { isBillAmountItemsEligible } from '../../lib/payperiods/billAmountItems.js'
@@ -1139,6 +1140,7 @@ function AccountParseReviewPanel({ selections, onToggle, onNameEdit, onPrimaryTo
 
 const TABS = [
   { id: 'cash-flow',   label: 'CASH FLOW' },
+  { id: 'weeks',       label: 'WEEKS' },
   { id: 'trends',      label: 'TRENDS' },
   { id: 'schedule',    label: 'SCHEDULE' },
   { id: 'bills',       label: 'BILLS' },
@@ -3019,6 +3021,22 @@ export default function PayPeriodPlanner({ userId, mobile }) {
           payDay2={payDay2}
           mobile={mobile}
           profile={profile}
+          creditCards={creditCards}
+          budgetCategories={budgetCategories}
+          earnRateMap={earnRateMap}
+          ccCoverage={ccCoverage}
+          ccOptimization={ccOptimization}
+        />
+      )}
+
+      {/* ── Weeks Tab ── */}
+      {tab === 'weeks' && (
+        <WeeksTab
+          userId={userId}
+          mobile={mobile}
+          profile={profile}
+          bills={bills}
+          accounts={accounts}
           creditCards={creditCards}
           budgetCategories={budgetCategories}
           earnRateMap={earnRateMap}
