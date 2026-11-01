@@ -139,4 +139,74 @@ describe('import route', () => {
     expect(await res.json()).toEqual({ error: 'boom', committed: false, inserted: 0, reclassified: 0 })
     spy.mockRestore()
   })
+
+  describe('with migration 030 (undo)', () => {
+    const UNDO_COLUMNS = [
+      { table_name: 'import_logs', column_name: 'status' },
+      { table_name: 'import_logs', column_name: 'undo_token' },
+      { table_name: 'transactions', column_name: 'import_log_id' },
+      { table_name: 'import_log_rows', column_name: 'tags_tracked' },
+      { table_name: 'import_log_categories', column_name: 'budget_category_id' },
+    ]
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    const idx = (list, re) => list.findIndex(q => re.test(q))
+
+    it('without the 030 columns the response says it is not undoable', async () => {
+      const body = await (await call({ csv: GOOD, mode: 'commit' })).json()
+      expect(body.undoable).toBe(false)
+      expect(state.txns[0].join('\n')).not.toMatch(/import_log_rows|import_log_categories|import_log_id/)
+    })
+
+    it('writes the log first, links inserts, snapshots, counts and prunes in order', async () => {
+      state.columns = UNDO_COLUMNS
+      state.existing = [{ id: 'e1', dedup_key: '2026-10-03|starbucks|-5.25|Amex', category: 'Restaurants', notes: '' }]
+      const two = csv(
+        '2026-10-03,Starbucks,Coffee Shops,Amex,STARBUCKS,,-5.25,,John',
+        '2026-10-04,Peets,Qwerty Zxcv,Amex,PEETS,,-4,,John',
+      )
+      const body = await (await call({ csv: two, mode: 'commit' })).json()
+      const t = state.txns[0]
+      expect(t[0]).toMatch(/INSERT INTO import_logs/)
+      expect(t[0]).toMatch(/source/)
+      expect(t[0]).toMatch(/'monarch_import'/)
+      expect(t[0]).toMatch(/'committed'/)
+
+      const insert = idx(t, /INSERT INTO transactions/)
+      expect(t[insert]).toMatch(/import_log_id/)
+      expect(t.find(q => q.includes('INSERT INTO import_log_categories'))).toMatch(/WITH ins AS/)
+
+      const order = [
+        insert,
+        idx(t, /INSERT INTO import_log_rows[\s\S]*'insert'/),
+        idx(t, /INSERT INTO import_log_rows[\s\S]*'reclassify'/),
+        idx(t, /UPDATE transactions/),
+        idx(t, /UPDATE import_log_rows/),
+        idx(t, /UPDATE import_logs SET/),
+        idx(t, /DELETE FROM import_log_rows/),
+        idx(t, /DELETE FROM import_log_categories/),
+      ]
+      expect(order.every(i => i >= 0)).toBe(true)
+      expect([...order].sort((a, b) => a - b)).toEqual(order)
+
+      expect(body.import_log_id).toMatch(UUID)
+      expect(body.undoable).toBe(true)
+      expect(body.counts).toMatchObject({ inserted: 1, reclassified: 1 })
+    })
+
+    it('a failed commit reports committed:false and no log id', async () => {
+      state.columns = UNDO_COLUMNS
+      const { getNeonSql } = await import('../../src/lib/neon/client.js')
+      const spy = vi.spyOn(getNeonSql(), 'transaction').mockRejectedValueOnce(new Error('boom'))
+      const res = await call({ csv: GOOD, mode: 'commit' })
+      spy.mockRestore()
+      expect(res.status).toBe(500)
+      expect(await res.json()).toEqual({ error: 'boom', committed: false, inserted: 0, reclassified: 0 })
+    })
+
+    it('preview stays SELECT-only', async () => {
+      state.columns = UNDO_COLUMNS
+      await call({ csv: GOOD, mode: 'preview' })
+      for (const q of state.queries) expect(q).not.toMatch(/INSERT|UPDATE|DELETE/i)
+    })
+  })
 })

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { derivePeriods } from '../../lib/periods.js'
 import { getImportHistory } from '../../lib/db/importLog.js'
+import ImportUndoPanel from './ImportUndoPanel.jsx'
 import { estimateNet } from '../../lib/db/taxBrackets.js'
 import BudgetMapImport from '../import/BudgetMapImport.jsx'
 import MonarchConnect from './MonarchConnect.jsx'
@@ -71,6 +72,12 @@ const TABS = [
 ]
 
 const fmtUSD = n => '$' + Math.round(Number(n) || 0).toLocaleString()
+
+const NOT_UNDOABLE_TITLE = {
+  pre_migration: 'Made before undo existed, or imported in the app. Only Monarch imports made after migration 030 can be undone.',
+  expired: 'Older than 90 days. Undo snapshots are kept for 90 days.',
+  migration_not_applied: 'Migration 030 is not applied to this database.',
+}
 
 // ── Settings Component ────────────────────────────────────────────────────────
 
@@ -183,16 +190,22 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
   const [saved, setSaved] = useState(false)
   const [importHistory, setImportHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [undoingId, setUndoingId] = useState(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef(null)
 
-  useEffect(() => {
-    if (!userId) return
+  const loadHistory = () => {
     setHistoryLoading(true)
     getImportHistory(userId)
       .then(setImportHistory)
       .catch(() => setImportHistory([]))
       .finally(() => setHistoryLoading(false))
+  }
+
+  useEffect(() => {
+    if (!userId) return
+    loadHistory()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
   // Recompute the gross→net estimate whenever an input changes. Loads bracket
@@ -724,51 +737,86 @@ export default function Settings({ profile, onSave, onBack, onImport, userId, co
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
             {importHistory.map(log => (
-              <div key={log.id} style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '9px 0',
-                borderBottom: '0.5px solid var(--bd-light, #1a1d2e)',
-                gap: '12px',
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: '12.5px',
-                    color: 'var(--tx-1, #e2e8f0)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {log.filename ?? 'CSV import'}
+              <div key={log.id} style={{ borderBottom: '0.5px solid var(--bd-light, #1a1d2e)' }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '9px 0',
+                  gap: '12px',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: '12.5px',
+                      color: 'var(--tx-1, #e2e8f0)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {log.filename ?? 'CSV import'}
+                    </div>
+                    <div style={{
+                      fontFamily: "'DM Mono', monospace",
+                      fontSize: '9.5px',
+                      color: 'var(--tx-3, #475569)',
+                      marginTop: '2px',
+                    }}>
+                      {new Date(log.created_at).toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric', year: 'numeric',
+                      })}
+                    </div>
                   </div>
-                  <div style={{
-                    fontFamily: "'DM Mono', monospace",
-                    fontSize: '9.5px',
-                    color: 'var(--tx-3, #475569)',
-                    marginTop: '2px',
-                  }}>
-                    {new Date(log.created_at).toLocaleDateString('en-US', {
-                      month: 'short', day: 'numeric', year: 'numeric',
-                    })}
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{
+                      fontFamily: "'DM Mono', monospace",
+                      fontSize: '11px',
+                      color: 'var(--accent, #00C2A8)',
+                    }}>
+                      +{log.inserted.toLocaleString()}
+                    </div>
+                    <div style={{
+                      fontFamily: "'DM Mono', monospace",
+                      fontSize: '9.5px',
+                      color: 'var(--tx-3, #475569)',
+                    }}>
+                      {log.skipped.toLocaleString()} skipped
+                      {log.reclassified != null && ` · ${log.reclassified.toLocaleString()} reclassified`}
+                      {log.categories_auto_mapped != null && ` · ${log.categories_auto_mapped} categories auto-mapped`}
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0, minWidth: 84, textAlign: 'right' }}>
+                    {log.status === 'undone' ? (
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '9.5px', color: 'var(--tx-3, #475569)' }}>
+                        Undone {new Date(log.undone_at).toLocaleDateString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                        })}
+                      </span>
+                    ) : log.undoable ? (
+                      <button
+                        onClick={() => setUndoingId(undoingId === log.id ? null : log.id)}
+                        style={{
+                          padding: '5px 10px', background: 'transparent', color: 'var(--tx-2, #94a3b8)',
+                          border: '1px solid var(--bd, #1a1d2e)', borderRadius: 6, fontSize: '11px', cursor: 'pointer',
+                        }}
+                      >
+                        Undo
+                      </button>
+                    ) : (
+                      <span
+                        title={NOT_UNDOABLE_TITLE[log.not_undoable_reason] ?? NOT_UNDOABLE_TITLE.pre_migration}
+                        style={{ fontFamily: "'DM Mono', monospace", fontSize: '9.5px', color: 'var(--tx-3, #475569)' }}
+                      >
+                        Not undoable
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{
-                    fontFamily: "'DM Mono', monospace",
-                    fontSize: '11px',
-                    color: 'var(--accent, #00C2A8)',
-                  }}>
-                    +{log.inserted.toLocaleString()}
-                  </div>
-                  <div style={{
-                    fontFamily: "'DM Mono', monospace",
-                    fontSize: '9.5px',
-                    color: 'var(--tx-3, #475569)',
-                  }}>
-                    {log.skipped.toLocaleString()} skipped
-                  </div>
-                </div>
+                {undoingId === log.id && (
+                  <ImportUndoPanel
+                    log={log}
+                    onDone={() => { setUndoingId(null); loadHistory() }}
+                  />
+                )}
               </div>
             ))}
           </div>
