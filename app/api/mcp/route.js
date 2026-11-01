@@ -3,18 +3,18 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { getNeonSql } from '../../../src/lib/neon/client.js'
-import { toolSchemas, getTool, executeTool } from '../../../src/lib/ai/tools/index.js'
+import { mcpToolSchemas, getMcpTool, executeMcpTool } from '../../../src/lib/ai/tools/mcp/index.js'
 import { runAsToken } from '../../../src/lib/db/mcpContext.js'
 
-// Remote MCP connector — gives Claude Code the same 39 tools the in-app
-// assistant uses (src/lib/ai/tools/index.js), over the same app/api/**
-// routes and validation, authenticated by a personal access token instead
-// of a browser session cookie. See ROADMAP.md for the design writeup.
+// Remote MCP connector: the in-app assistant's tools plus MCP-only tools (see
+// src/lib/ai/tools/mcp/index.js), over the same app/api/** routes and
+// validation, authenticated by a personal access token instead of a browser
+// session cookie. See ROADMAP.md for the design writeup.
 //
-// Writes execute immediately on a call — there's no in-app confirmation
-// card here, because there's no browser to show one to. The safety gate is
-// whatever approval step the connecting Claude client itself uses before
-// invoking a tool.
+// There's no in-app confirmation card here, because there's no browser to
+// show one to. The in-app tools' writes execute immediately on a call; the
+// MCP-only write tools default to mode:'preview' and save only with
+// mode:'commit'. The connecting Claude client's own approval step still applies.
 
 async function resolveToken(request) {
   const header = request.headers.get('authorization') || ''
@@ -51,16 +51,16 @@ function buildServer(auth) {
   )
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: toolSchemas().map(s => toMcpTool({ schema: s })),
+    tools: mcpToolSchemas().map(s => toMcpTool({ schema: s })),
   }))
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const { name, arguments: args } = req.params
-    if (!getTool(name)) {
+    if (!getMcpTool(name)) {
       return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
     }
     try {
-      const out = await runAsToken(auth.token, () => executeTool(name, auth.userId, args ?? {}, {}))
+      const out = await runAsToken(auth.token, () => executeMcpTool(name, auth.userId, args ?? {}, { userId: auth.userId }))
       const payload = { summary: out?.summary, ...(out?.result ?? {}) }
       return { content: [{ type: 'text', text: JSON.stringify(payload) }] }
     } catch (e) {

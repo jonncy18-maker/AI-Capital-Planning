@@ -26,7 +26,14 @@ export async function importTransactions(_userId, rows) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ rows }),
   })
-  return parseJsonOrThrow(res)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const err = new Error(body?.error || `Request failed (${res.status})`)
+    // Present when an earlier batch already committed before a later one failed.
+    if (body?.committed_batches != null) err.partial = body
+    throw err
+  }
+  return res.json().catch(() => ({}))
 }
 
 // Fetch recent transactions for AI context (last N days, summary level).
@@ -38,12 +45,15 @@ export async function getRecentTransactions(_userId, days = 365) {
 }
 
 // Fetch transactions with optional filters.
-export async function getTransactions(_userId, { from, to, category, limit = 500 } = {}) {
+export async function getTransactions(_userId, { from, to, category, merchant, account, limit = 500, offset } = {}) {
   const params = new URLSearchParams()
   if (from) params.set('from', from)
   if (to) params.set('to', to)
   if (category) params.set('category', category)
+  if (merchant) params.set('merchant', merchant)
+  if (account) params.set('account', account)
   params.set('limit', String(limit))
+  if (offset) params.set('offset', String(offset))
   const res = await apiFetch(`/api/transactions?${params}`, { credentials: 'include' })
   return parseJsonOrThrow(res)
 }
@@ -84,4 +94,27 @@ export async function getTransactionsByMonth(_userId, fromDate, toDate) {
   // Neon returns numeric columns as strings; normalize once at this boundary
   // so every consumer sees a number (display and stored data are unchanged).
   return Array.isArray(rows) ? rows.map(r => ({ ...r, amount: Number(r.amount) })) : rows
+}
+
+// Change category / group / notes on existing rows by id. With dryRun the
+// server only reads and reports before -> after.
+export async function reclassifyTransactions(_userId, updates, { dryRun = false } = {}) {
+  const res = await apiFetch('/api/transactions/reclassify', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ updates, dry_run: dryRun }),
+  })
+  return parseJsonOrThrow(res)
+}
+
+// Server-side Monarch CSV import. mode 'preview' saves nothing.
+export async function importMonarchCsv(_userId, { csv, mode, filename, chunk, category_groups }) {
+  const res = await apiFetch('/api/transactions/import', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ csv, mode, filename, chunk, category_groups }),
+  })
+  return parseJsonOrThrow(res)
 }
