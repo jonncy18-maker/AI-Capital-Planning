@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defaultAssumptions } from '../src/lib/wealth/assumptions.js'
-import { planFromAssumptions } from '../src/lib/wealth/projection.js'
+import { planFromAssumptions, annualFlows } from '../src/lib/wealth/projection.js'
 import { validDate, latestSnapshots, expectedAt, buildPlanSeries } from '../src/lib/wealth/plans.js'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const baseline = {
@@ -254,5 +254,50 @@ test('plan with assumptions is validated and stored on the new row; bad assumpti
     h.request({ ...body, assumptions: { ...body.assumptions, retirement_age: 20 } })
   )
   assert.equal(bad.status, 400)
+  assert.equal(h.state.calls.length, before)
+})
+test('plan with take-home and spending per year is stored and re-derived; bad shapes rejected before SQL', async () => {
+  const h = await harness()
+  const map = {
+    2026: { take_home: 100000, spending: 70000, source: 'actual_forecast' },
+    2027: { take_home: 103000, spending: 72100, source: 'growth' },
+    2028: { take_home: 106090, spending: 74263, source: 'manual' },
+  }
+  const assumptions = { ...defaultAssumptions(), cashflow_by_year: map }
+  const body = planFromAssumptions({
+    name: 'With cash flow',
+    startDate: '2026-10-18',
+    startBalance: 1000,
+    assumptions,
+  })
+  const res = await h.plans.POST(
+    h.request({
+      ...body,
+      assumptions: {
+        ...body.assumptions,
+        cashflow_by_year: { ...map, 2026: { ...map[2026], surplus: 1 } },
+      },
+    })
+  )
+  assert.equal(res.status, 201)
+  assert.deepEqual(h.state.plans.at(-1).assumptions.cashflow_by_year, map)
+  const flows = annualFlows(assumptions, '2026-10-18', body.horizon)
+  assert.equal(h.state.plans.at(-1).annual_contributions[2027], flows[1].total)
+  const forged = await h.plans.POST(h.request({ ...body, annual_contributions: { 2027: 1 } }))
+  assert.equal(forged.status, 201)
+  assert.equal(h.state.plans.at(-1).annual_contributions[2027], flows[1].total)
+  const before = h.state.calls.length
+  for (const bad of [
+    { ...map, 2026: { ...map[2026], source: 'magic' } },
+    { ...map, 2026: { ...map[2026], spending: -1 } },
+    { ...map, 2026: { ...map[2026], take_home: 1.001 } },
+    [map],
+    { '20x6': map[2026] },
+  ]) {
+    const r = await h.plans.POST(
+      h.request({ ...body, assumptions: { ...body.assumptions, cashflow_by_year: bad } })
+    )
+    assert.equal(r.status, 400)
+  }
   assert.equal(h.state.calls.length, before)
 })

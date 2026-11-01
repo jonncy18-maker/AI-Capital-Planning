@@ -1,5 +1,6 @@
 import { buildPlanSeries, validatePlan } from './plans.js'
 import { PROJECTION_END_AGE } from './assumptions.js'
+import { toCents, fromCents } from '../money.js'
 
 // Deterministic wealth trajectory projection.
 //
@@ -125,8 +126,10 @@ export function annualFlows(a, startDate, horizon) {
       a.employee_401k * pay + (cu && age >= a.catch_up.age_50 ? a.catch_up.k401 : 0)
     )
     const match = employee * a.match_rate
-    const surplus =
-      a.surplus_by_year[year] != null
+    const cf = a.cashflow_by_year?.[year]
+    const surplus = cf
+      ? fromCents(toCents(cf.take_home) - toCents(cf.spending))
+      : a.surplus_by_year[year] != null
         ? a.surplus_by_year[year]
         : a.surplus.base * Math.pow(1 + a.pay_growth, year - a.caps.year)
     const ira = Math.min(iraCap, Math.max(0, surplus))
