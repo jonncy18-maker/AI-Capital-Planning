@@ -23,6 +23,7 @@ import { parseBillAmountsFromFile } from '../../lib/ai/billAmountsParser.js'
 import TrendsTab from './TrendsTab.jsx'
 import CashFlowTab from './CashFlowTab.jsx'
 import WeeksTab from './WeeksTab.jsx'
+import { MONARCH_NAME_MAX } from '../../lib/accounts/monarchAccountName.js'
 import CCScheduleTab from './CCScheduleTab.jsx'
 import BillAmountItems from './BillAmountItems.jsx'
 import { isBillAmountItemsEligible } from '../../lib/payperiods/billAmountItems.js'
@@ -830,10 +831,16 @@ function AccountForm({ initial, onSave, onCancel, onDelete }) {
 
   async function handleSave() {
     if (!form.name.trim()) return setErr('Name is required.')
+    const mapped = (form.monarch_account_name ?? '').trim()
+    if (mapped.length > MONARCH_NAME_MAX) return setErr(`Monarch account name must be at most ${MONARCH_NAME_MAX} characters.`)
     setSaving(true)
     setErr(null)
     try {
-      await onSave(form)
+      // Sent only when changed, so saving any other field works before migration 029 is applied.
+      const payload = { ...form }
+      if (form.type !== 'checking' || mapped === (initial?.monarch_account_name ?? '').trim()) delete payload.monarch_account_name
+      else payload.monarch_account_name = mapped
+      await onSave(payload)
     } catch (e) {
       setErr(e.message)
     } finally {
@@ -880,6 +887,20 @@ function AccountForm({ initial, onSave, onCancel, onDelete }) {
           Primary checking account (used for transfer calculations)
         </label>
       </div>
+
+      {form.type === 'checking' && (
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>MONARCH ACCOUNT NAME (WEEKS HISTORY)</label>
+          <input
+            style={inputStyle} value={form.monarch_account_name ?? ''} maxLength={MONARCH_NAME_MAX + 20}
+            onChange={e => set('monarch_account_name', e.target.value)}
+            placeholder="e.g. Checking - 9377 (...9377)"
+          />
+          <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 4 }}>
+            Exactly as it appears on your Monarch transactions.
+          </div>
+        </div>
+      )}
 
       {err && <div style={{ fontSize: 12, color: 'var(--warn)', marginBottom: 10 }}>{err}</div>}
 
@@ -3042,6 +3063,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
           earnRateMap={earnRateMap}
           ccCoverage={ccCoverage}
           ccOptimization={ccOptimization}
+          onAccountsChanged={reload}
         />
       )}
 

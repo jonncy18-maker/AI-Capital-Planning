@@ -11,7 +11,7 @@ import { daysInMonth } from '../cashflow/cashflowEngine.js'
 export const DEFAULT_PAY_DAYS = [5, 20]
 
 const DEFAULT_DUE_DAYS = 21
-const KIND_ORDER = { income: 0, bill: 1, card: 2, spend: 3 }
+const KIND_ORDER = { income: 0, bill: 1, card: 2, spend: 3, oneoff: 4, scenario: 5 }
 
 const pad = n => String(n).padStart(2, '0')
 const ymdOf = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`
@@ -21,7 +21,7 @@ function parseYmd(ymd) {
   return { y, m, d }
 }
 
-function toDayNum(ymd) {
+export function toDayNum(ymd) {
   const { y, m, d } = parseYmd(ymd)
   return Date.UTC(y, m - 1, d) / 86400000
 }
@@ -122,8 +122,25 @@ export function buildWeeklyCashSeries(input) {
   const lo = hasAnchor ? (addDays(asOf, 1) < start ? addDays(asOf, 1) : start) : start
   const counts = date => date <= end && (hasAnchor ? date > asOf : date >= start)
 
-  const events = [] // { date, kind, label, amountC, unknownAmount?, manual? }
+  // What-ifs are read-only overlays: nothing below mutates input or input.whatIf.
+  const wi = input.whatIf ?? {}
+  const occKey = (id, ym) => `${id}|${ym}`
+  const skipSet = new Set((wi.skipBills ?? []).map(s => occKey(s.billId, s.ym)))
+  const moveBillMap = new Map()
+  for (const mv of wi.moveBills ?? []) {
+    if (!moveBillMap.has(occKey(mv.billId, mv.ym))) moveBillMap.set(occKey(mv.billId, mv.ym), mv)
+  }
+  const moveCardMap = new Map()
+  for (const mv of wi.moveCards ?? []) {
+    if (!moveCardMap.has(occKey(mv.cardId, mv.dueYm))) moveCardMap.set(occKey(mv.cardId, mv.dueYm), mv)
+  }
+
+  const events = [] // { date, kind, label, amountC, unknownAmount?, manual?, direction?, whatIf? }
   const push = e => { if (counts(e.date)) events.push(e) }
+  const pushWhatIf = (e, label) => {
+    if (counts(e.date)) events.push(e)
+    else warn(`What-if "${label}" on ${e.date} is outside the projection; ignored`)
+  }
   const monthKey = (y, m) => `${y}-${m}`
   const months = monthsBetween(lo, end)
 
@@ -162,12 +179,18 @@ export function buildWeeklyCashSeries(input) {
     const day = bill.pay_day ?? bill.due_day
     if (day == null) { warn(`${bill.name}: no pay day or due day; skipped`); continue }
     for (const { y, m } of months) {
-      const amount = billAmountsByMonth[monthKey(y, m)]?.[bill.id]
+      const ym = monthKey(y, m)
+      const amount = billAmountsByMonth[ym]?.[bill.id]
       const unknown = amount == null
-      push({
-        date: ymdOf(y, m, clampDay(y, m, day)), kind: 'bill', label: bill.name,
+      if (skipSet.has(occKey(bill.id, ym))) continue
+      const mv = moveBillMap.get(occKey(bill.id, ym))
+      const ev = {
+        date: mv ? mv.toDate : ymdOf(y, m, clampDay(y, m, day)), kind: 'bill', label: bill.name,
         amountC: unknown ? 0 : toCents(amount), ...(unknown ? { unknownAmount: true } : {}),
-      })
+        billId: bill.id, ym, ...(mv ? { whatIf: true } : {}),
+      }
+      if (mv) pushWhatIf(ev, bill.name)
+      else push(ev)
     }
   }
 
@@ -192,11 +215,24 @@ export function buildWeeklyCashSeries(input) {
     for (const [key, slot] of Object.entries(byDueMonth)) {
       const override = manual[key]
       const isManual = typeof override === 'number' && Number.isFinite(override)
-      push({
-        date: slot.dueDate, kind: 'card', label: `${card.name} statement`,
+      const mv = moveCardMap.get(occKey(card.id, key))
+      const ev = {
+        date: mv ? mv.toDate : slot.dueDate, kind: 'card', label: `${card.name} statement`,
         amountC: isManual ? toCents(override) : slot.amountC, ...(isManual ? { manual: true } : {}),
-      })
+        cardId: card.id, ym: key, ...(mv ? { whatIf: true } : {}),
+      }
+      if (mv) pushWhatIf(ev, ev.label)
+      else push(ev)
     }
+  }
+
+  for (const x of wi.extraEvents ?? []) {
+    const amountC = toCents(x.amount)
+    if (amountC <= 0) continue
+    pushWhatIf({
+      date: x.date, kind: 'oneoff', label: `What-if: ${x.label}`, amountC,
+      direction: x.direction === 'in' ? 'in' : 'out', whatIf: true,
+    }, x.label)
   }
 
   // Day-to-day cash spend, spread evenly over each month's days
@@ -212,15 +248,34 @@ export function buildWeeklyCashSeries(input) {
     }
   }
 
-  const signedC = e => (e.unknownAmount ? 0 : e.kind === 'income' ? e.amountC : -e.amountC)
+  // Month deltas spread per day like spend; days outside the window are clipped silently.
+  const deltaByDay = {}
+  for (const { y, m } of months) {
+    const delta = wi.monthDeltas?.[monthKey(y, m)]
+    if (!delta) continue
+    const dim = daysInMonth(y, m)
+    const parts = allocateCents(toCents(delta), dim)
+    for (let d = 1; d <= dim; d++) {
+      const date = ymdOf(y, m, d)
+      if (counts(date) && parts[d - 1] !== 0) deltaByDay[date] = parts[d - 1]
+    }
+  }
+
+  const isInflow = e => e.kind === 'income' || (e.kind === 'oneoff' && e.direction === 'in')
+  const signedC = e => (e.unknownAmount ? 0 : isInflow(e) ? e.amountC : -e.amountC)
 
   let carriedC = 0
   const dayOut = {}
   const dayIn = {}
   for (const e of events) {
     if (e.date < start) { carriedC += signedC(e); continue }
-    const bucket = e.kind === 'income' ? dayIn : dayOut
+    const bucket = isInflow(e) ? dayIn : dayOut
     bucket[e.date] = (bucket[e.date] ?? 0) + (e.unknownAmount ? 0 : e.amountC)
+  }
+  for (const [date, c] of Object.entries(deltaByDay)) {
+    if (date < start) { carriedC += c; continue }
+    const bucket = c > 0 ? dayIn : dayOut
+    bucket[date] = (bucket[date] ?? 0) + Math.abs(c)
   }
   for (const [date, c] of Object.entries(spendByDay)) {
     if (date < start) { carriedC -= c; continue }
@@ -230,7 +285,7 @@ export function buildWeeklyCashSeries(input) {
   const minC = toCents(minBalance)
   let balC = hasAnchor ? toCents(anchor.balance) + carriedC : null
   const outWeeks = []
-  const totalsC = { income: 0, bills: 0, cardPayments: 0, spend: 0 }
+  const totalsC = { income: 0, bills: 0, cardPayments: 0, spend: 0, other: 0 }
 
   for (let i = 0; i < weeks; i++) {
     const wStart = addDays(start, i * 7)
@@ -238,7 +293,8 @@ export function buildWeeklyCashSeries(input) {
     const openingC = balC
     let lowC = openingC
     let lowDate = openingC == null ? null : wStart
-    const sums = { income: 0, bills: 0, cardPayments: 0, spend: 0 }
+    const sums = { income: 0, bills: 0, cardPayments: 0, spend: 0, other: 0 }
+    let firstBelowDate = null
 
     const weekEvents = events
       .filter(e => e.date >= wStart && e.date <= wEnd)
@@ -247,6 +303,7 @@ export function buildWeeklyCashSeries(input) {
       if (e.unknownAmount) continue
       if (e.kind === 'income') sums.income += e.amountC
       else if (e.kind === 'bill') sums.bills += e.amountC
+      else if (e.kind === 'oneoff') sums.other += isInflow(e) ? e.amountC : -e.amountC
       else sums.cardPayments += e.amountC
     }
 
@@ -257,20 +314,40 @@ export function buildWeeklyCashSeries(input) {
       if (balC != null) {
         balC -= out
         if (out > 0 && balC < lowC) { lowC = balC; lowDate = date }
+        // Day-1 opening counts too: a week can start already below the minimum.
+        if (firstBelowDate == null && balC < minC) firstBelowDate = date
         balC += inc
       }
     }
-    for (let d = 0; d < 7; d++) sums.spend += spendByDay[addDays(wStart, d)] ?? 0
+    let deltaWeekC = 0
+    for (let d = 0; d < 7; d++) {
+      const date = addDays(wStart, d)
+      sums.spend += spendByDay[date] ?? 0
+      deltaWeekC += deltaByDay[date] ?? 0
+    }
+    sums.other += deltaWeekC
 
-    const netC = sums.income - sums.bills - sums.cardPayments - sums.spend
+    const netC = sums.income - sums.bills - sums.cardPayments - sums.spend + sums.other
     const outEvents = weekEvents.map(e => ({
       date: e.date, kind: e.kind, label: e.label,
       amount: fromCents(e.amountC),
       ...(e.unknownAmount ? { unknownAmount: true } : {}),
       ...(e.manual ? { manual: true } : {}),
+      ...(e.billId != null ? { billId: e.billId } : {}),
+      ...(e.cardId != null ? { cardId: e.cardId } : {}),
+      ...(e.ym != null ? { ym: e.ym } : {}),
+      ...(e.direction ? { direction: e.direction } : {}),
+      ...(e.whatIf ? { whatIf: true } : {}),
     }))
     if (sums.spend !== 0) {
       outEvents.push({ date: wStart, kind: 'spend', label: 'Day-to-day spend (cash)', amount: fromCents(sums.spend) })
+    }
+
+    if (deltaWeekC !== 0) {
+      outEvents.push({
+        date: wStart, kind: 'scenario', label: 'Scenario (approx., spread over month)',
+        amount: fromCents(Math.abs(deltaWeekC)), direction: deltaWeekC > 0 ? 'in' : 'out', whatIf: true,
+      })
     }
 
     for (const k of Object.keys(totalsC)) totalsC[k] += sums[k]
@@ -281,10 +358,12 @@ export function buildWeeklyCashSeries(input) {
       bills: fromCents(sums.bills),
       cardPayments: fromCents(sums.cardPayments),
       spend: fromCents(sums.spend),
+      other: fromCents(sums.other),
       net: fromCents(netC),
       closing: balC == null ? null : fromCents(balC),
       low: lowC == null ? null : fromCents(lowC),
       lowDate,
+      firstBelowDate: balC == null ? null : firstBelowDate,
       belowMin: lowC != null && lowC < minC,
       negative: lowC != null && lowC < 0,
       events: outEvents,
@@ -293,13 +372,14 @@ export function buildWeeklyCashSeries(input) {
 
   const firstBelow = outWeeks.find(w => w.belowMin)
   return {
-    hasAnchor, start, end,
+    hasAnchor, start, end, asOfDate: asOf,
     carriedIn: hasAnchor ? fromCents(carriedC) : null,
     weeks: outWeeks,
     firstBelowMinIndex: firstBelow ? firstBelow.index : null,
     totals: {
       income: fromCents(totalsC.income), bills: fromCents(totalsC.bills),
       cardPayments: fromCents(totalsC.cardPayments), spend: fromCents(totalsC.spend),
+      other: fromCents(totalsC.other),
     },
     warnings,
   }
