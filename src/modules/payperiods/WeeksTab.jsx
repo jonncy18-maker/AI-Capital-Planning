@@ -1,14 +1,28 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { formatMoney, parseMoneyInput } from '../../lib/money.js'
+import { parseMoneyInput } from '../../lib/money.js'
 import { getCheckingAnchor, saveCheckingAnchor } from '../../lib/db/checkingAnchor.js'
+import { upsertAccount } from '../../lib/db/bills.js'
 import { loadWeeklyCashInputs } from '../../lib/payperiods/weeklyCashLoader.js'
+import { loadCheckingHistoryInputs } from '../../lib/payperiods/checkingHistoryLoader.js'
+import {
+  buildCheckingHistory, snapshotCheckpoints, monarchAccountOptions, HISTORY_WEEKS,
+} from '../../lib/payperiods/checkingHistory.js'
+import { buildWhatIfParam, hasWhatIf } from '../../lib/payperiods/whatIfs.js'
+import { summarizeWeeks, buildWeeksChartModel } from '../../lib/payperiods/weeksSummary.js'
 import {
   buildWeeklyCashSeries, resolvePayDays, addDays,
 } from '../../lib/payperiods/weeklyCashSeries.js'
+import {
+  MonoLabel, Segmented, WHATIF, fmtDate, inputStyle, money2, signedMoney,
+} from './weeks/WeeksShared.jsx'
+import WeeksTiles from './weeks/WeeksTiles.jsx'
+import WeeksChart, { buildSelectables } from './weeks/WeeksChart.jsx'
+import WeeksNetBars from './weeks/WeeksNetBars.jsx'
+import WeeksScenarioPanel from './weeks/WeeksScenarioPanel.jsx'
+import WeekDetail from './weeks/WeekDetail.jsx'
 
-const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const STALE_DAYS = 14
+const NO_SCENARIO = { id: '', deltas: {}, skippedIncome: 0, skippedOther: 0 }
 
 const pad = n => String(n).padStart(2, '0')
 
@@ -23,145 +37,128 @@ function dayDiff(a, b) {
   return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000)
 }
 
-function fmtDate(ymd, withWeekday = false) {
-  const [y, m, d] = ymd.split('-').map(Number)
-  const label = `${MONTH_ABBR[m - 1]} ${d}`
-  return withWeekday ? `${DAY_ABBR[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${label}` : label
-}
+function HistoryStatus({ primary, history, historyInputs, historyError, historyLoading, onRetry, onMapped }) {
+  const [pick, setPick] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [mapError, setMapError] = useState(null)
+  const options = useMemo(() => monarchAccountOptions(historyInputs?.transactions), [historyInputs])
 
-const money = n => (n == null ? '—' : formatMoney(n))
-const signedMoney = n => formatMoney(n, { signed: true })
-
-function MonoLabel({ children, style }) {
-  return (
-    <div style={{
-      fontFamily: "'DM Mono', monospace", fontSize: 9.5,
-      color: 'var(--tx-3)', letterSpacing: '0.06em', ...style,
-    }}>{children}</div>
-  )
-}
-
-function Badge({ children, color = 'var(--tx-3)' }) {
-  return (
-    <span style={{
-      fontFamily: "'DM Mono', monospace", fontSize: 8.5, letterSpacing: '0.06em',
-      color, border: `1px solid ${color}`, borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap',
-    }}>{children}</span>
-  )
-}
-
-function Segmented({ value, options, onChange }) {
-  return (
-    <div style={{ display: 'inline-flex', border: '1px solid var(--bd)', borderRadius: 8, overflow: 'hidden' }}>
-      {options.map(o => (
-        <button
-          key={o.value} type="button" onClick={() => onChange(o.value)}
-          style={{
-            fontFamily: "'DM Mono', monospace", fontSize: 10, letterSpacing: '0.06em',
-            padding: '7px 12px', border: 'none', cursor: 'pointer',
-            background: value === o.value ? 'var(--accent-bg)' : 'var(--bg-card)',
-            color: value === o.value ? 'var(--accent)' : 'var(--tx-3)',
-          }}
-        >{o.label}</button>
-      ))}
-    </div>
-  )
-}
-
-const inputStyle = {
-  fontFamily: "'DM Mono', monospace", fontSize: 12, color: 'var(--tx-1)',
-  background: 'var(--bg-app)', border: '1px solid var(--bd)', borderRadius: 6, padding: '7px 9px',
-}
-
-function EventList({ events }) {
-  if (events.length === 0) {
-    return <MonoLabel style={{ padding: '4px 0' }}>NO EVENTS THIS WEEK</MonoLabel>
+  if (historyError) {
+    return (
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ color: 'var(--warn)', fontSize: 12 }}>History unavailable: {historyError}</span>
+        <button type="button" style={{ ...inputStyle, cursor: 'pointer', padding: '3px 8px' }} onClick={onRetry}>Retry</button>
+      </div>
+    )
   }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      {events.map((e, i) => (
-        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', minWidth: 52 }}>
-            {fmtDate(e.date)}
-          </span>
-          <span style={{ flex: 1, minWidth: 100, fontSize: 12, color: 'var(--tx-2)' }}>{e.label}</span>
-          {e.unknownAmount && <Badge color="var(--warn)">AMOUNT UNKNOWN</Badge>}
-          {e.manual && <Badge>MANUAL</Badge>}
-          <span style={{
-            fontFamily: "'DM Mono', monospace", fontSize: 11,
-            color: e.kind === 'income' ? 'var(--accent)' : 'var(--tx-1)',
-          }}>
-            {e.unknownAmount ? '—' : `${e.kind === 'income' ? '+' : '−'}${formatMoney(e.amount)}`}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
+  if (!history) {
+    return historyLoading ? <MonoLabel>Loading history…</MonoLabel> : null
+  }
 
-function Cell({ label, value, color, mobile }) {
-  return (
-    <div style={{ minWidth: 0 }}>
-      {mobile && <MonoLabel style={{ fontSize: 8.5 }}>{label}</MonoLabel>}
+  async function saveMapping() {
+    if (!pick) return
+    setSaving(true)
+    setMapError(null)
+    try {
+      await upsertAccount(null, { id: primary.id, monarch_account_name: pick })
+      await onMapped()
+    } catch (e) {
+      setMapError(`Couldn't save the mapping: ${e.message}. Migration 029 may not be applied yet.`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (history.status === 'no-mapping') {
+    return (
       <div style={{
-        fontFamily: "'DM Mono', monospace", fontSize: 12, color: color || 'var(--tx-1)',
-        whiteSpace: 'nowrap',
-      }}>{value}</div>
-    </div>
-  )
-}
+        border: '1px solid var(--accent-bd)', borderRadius: 10, background: 'var(--accent-bg)', padding: '10px 14px',
+        display: 'flex', flexDirection: 'column', gap: 8,
+      }}>
+        <div style={{ fontSize: 13, color: 'var(--tx-1)' }}>Map your Monarch checking account to see the last 4 weeks</div>
+        {options.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--tx-3)' }}>
+            No transactions in the last 5 weeks to pick from. Map it in ACCOUNTS.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <select
+              style={{ ...inputStyle, maxWidth: '100%' }} value={pick} aria-label="Monarch account"
+              onChange={e => setPick(e.target.value)}
+            >
+              <option value="">Pick the Monarch account…</option>
+              {options.map(o => <option key={o.name} value={o.name}>{o.name} ({o.count})</option>)}
+            </select>
+            <button
+              type="button" onClick={saveMapping} disabled={!pick || saving}
+              style={{ ...inputStyle, cursor: 'pointer', color: 'var(--accent)', borderColor: 'var(--accent-bd)' }}
+            >{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+        )}
+        {mapError && <div style={{ color: 'var(--warn)', fontSize: 12 }}>{mapError}</div>}
+      </div>
+    )
+  }
 
-function WeekRow({ week, hasAnchor, showSpend, mobile, open, onToggle }) {
-  const flagged = week.belowMin
-  const cols = showSpend
-    ? 'minmax(90px,1fr) repeat(4, minmax(70px,1fr)) minmax(90px,1fr) minmax(110px,1fr)'
-    : 'minmax(90px,1fr) repeat(3, minmax(70px,1fr)) minmax(90px,1fr) minmax(110px,1fr)'
-  const low = hasAnchor ? `${money(week.low)} · ${fmtDate(week.lowDate)}` : '—'
-  const cells = [
-    { label: 'INCOME', value: week.income ? signedMoney(week.income) : '—', color: week.income ? 'var(--accent)' : undefined },
-    { label: 'BILLS', value: money(week.bills) },
-    { label: 'CARDS', value: money(week.cardPayments) },
-    ...(showSpend ? [{ label: 'SPEND', value: money(week.spend) }] : []),
-    { label: 'CLOSING', value: money(week.closing), color: week.negative ? 'var(--warn)' : undefined },
-    { label: 'LOW POINT', value: low },
-  ]
+  const bad = history.reconciliation.find(r => !r.ok)
+  const good = history.reconciliation.filter(r => r.ok)
   return (
-    <div style={{
-      border: '1px solid var(--bd)', borderLeft: flagged ? '4px solid var(--warn)' : '1px solid var(--bd)',
-      borderRadius: 10, background: 'var(--bg-card)', padding: mobile ? '10px 12px' : '10px 14px',
-    }}>
-      <button
-        type="button" onClick={onToggle} aria-expanded={open}
-        style={{
-          all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: mobile ? 8 : 0 }}>
-          <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: 'var(--tx-1)' }}>
-            {fmtDate(week.start, true)}
-          </span>
-          {week.negative && <Badge color="var(--warn)">OVERDRAWN</Badge>}
-          {!week.negative && flagged && <Badge color="var(--warn)">BELOW MIN</Badge>}
-          <span style={{ marginLeft: 'auto', color: 'var(--tx-3)', fontSize: 11 }}>{open ? '▾' : '▸'}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <MonoLabel>
+        History: {history.accountName} · transactions through {history.coverageThrough ?? 'never'}
+      </MonoLabel>
+      {bad ? (
+        <div style={{ fontSize: 12, color: 'var(--warn)' }}>
+          Off from your {bad.label} ({money2(bad.snapshot)}) by {money2(bad.diff)}; history is approximate.
         </div>
-        <div style={mobile
-          ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }
-          : { display: 'grid', gridTemplateColumns: cols, gap: 12, alignItems: 'center', marginTop: 6 }}
-        >
-          {cells.map(c => <Cell key={c.label} mobile={mobile} {...c} />)}
+      ) : good.length > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--tx-3)' }}>
+          Matches your {good[good.length - 1].label} within {money2(good[good.length - 1].diff)}
         </div>
-      </button>
-      {open && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--bd)' }}>
-          <EventList events={week.events} />
+      )}
+      {history.possibleDuplicates.length > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--warn)' }}>
+          {history.possibleDuplicates.length} possible duplicate{history.possibleDuplicates.length === 1 ? '' : 's'} (kept in the totals)
         </div>
       )}
     </div>
   )
 }
 
+function AnchorForm({
+  primary, asOfInput, setAsOfInput, balanceInput, setBalanceInput, today, saving, formError, onSave,
+}) {
+  return (
+    <div>
+      <MonoLabel style={{ marginBottom: 8 }}>STARTING BALANCE · {primary.name}</MonoLabel>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <MonoLabel>AS OF</MonoLabel>
+          <input
+            type="date" value={asOfInput} max={today} style={inputStyle}
+            onChange={e => setAsOfInput(e.target.value)}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <MonoLabel>BALANCE</MonoLabel>
+          <input
+            type="text" inputMode="decimal" value={balanceInput} placeholder="0.00"
+            style={{ ...inputStyle, width: 130 }}
+            onChange={e => setBalanceInput(e.target.value)}
+          />
+        </label>
+        <button
+          type="button" onClick={onSave} disabled={saving}
+          style={{ ...inputStyle, cursor: 'pointer', color: 'var(--accent)', borderColor: 'var(--accent-bd)' }}
+        >{saving ? 'Saving…' : 'Save'}</button>
+      </div>
+      {formError && <div style={{ color: 'var(--warn)', fontSize: 12, marginTop: 8 }}>{formError}</div>}
+    </div>
+  )
+}
+
 export default function WeeksTab({
-  userId, mobile, profile, bills, accounts,
+  userId, mobile, profile, bills, accounts, onAccountsChanged,
   creditCards = [], budgetCategories = [], earnRateMap = {}, ccCoverage = 80, ccOptimization = 100,
 }) {
   const [weeks, setWeeks] = useState(13)
@@ -171,12 +168,23 @@ export default function WeeksTab({
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
-  const [openWeek, setOpenWeek] = useState(null)
+  const [selected, setSelected] = useState(null)
 
   const [asOfInput, setAsOfInput] = useState('')
   const [balanceInput, setBalanceInput] = useState('')
   const [formError, setFormError] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [anchorOpen, setAnchorOpen] = useState(false)
+
+  const [historyInputs, setHistoryInputs] = useState(null)
+  const [historyError, setHistoryError] = useState(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyReloadKey, setHistoryReloadKey] = useState(0)
+
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [panelEverOpen, setPanelEverOpen] = useState(false)
+  const [quickItems, setQuickItems] = useState([])
+  const [scenarioPick, setScenarioPick] = useState(NO_SCENARIO)
 
   const today = useMemo(() => toYmd(new Date()), [])
   const primary = useMemo(
@@ -184,6 +192,7 @@ export default function WeeksTab({
     [accounts],
   )
   const primaryId = primary?.id ?? null
+  const monarchName = primary?.monarch_account_name ?? null
 
   const applyAnchor = useCallback(row => {
     setAnchor(row)
@@ -216,14 +225,65 @@ export default function WeeksTab({
   }, [userId, primaryId, profile, bills, accounts, creditCards, budgetCategories, earnRateMap,
     ccCoverage, ccOptimization, today, reloadKey, applyAnchor])
 
+  // History is separate so a failure never blocks the projection.
+  useEffect(() => {
+    if (!userId || !primaryId) return
+    let cancelled = false
+    setHistoryLoading(true)
+    setHistoryError(null)
+    loadCheckingHistoryInputs({ userId, primary: { monarch_account_name: monarchName }, today })
+      .then(r => { if (!cancelled) setHistoryInputs(r) })
+      .catch(e => { if (!cancelled) setHistoryError(e.message || 'Failed to load history') })
+      .finally(() => { if (!cancelled) setHistoryLoading(false) })
+    return () => { cancelled = true }
+  }, [userId, primaryId, monarchName, today, historyReloadKey])
+
   const minBalance = Number(profile?.min_checking_balance ?? 0)
-  const series = useMemo(() => {
+  const baseArgs = useMemo(() => {
     if (!inputs) return null
-    return buildWeeklyCashSeries({
+    return {
       ...inputs, today, weeks, includeSpend, minBalance,
       anchor: anchor ? { asOfDate: anchor.as_of_date, balance: anchor.balance } : null,
-    })
+    }
   }, [inputs, today, weeks, includeSpend, minBalance, anchor])
+  const series = useMemo(() => (baseArgs ? buildWeeklyCashSeries(baseArgs) : null), [baseArgs])
+
+  const whatIfParam = useMemo(
+    () => buildWhatIfParam(quickItems, scenarioPick.deltas),
+    [quickItems, scenarioPick.deltas],
+  )
+  const overlay = useMemo(
+    () => (baseArgs && hasWhatIf(whatIfParam) ? buildWeeklyCashSeries({ ...baseArgs, whatIf: whatIfParam }) : null),
+    [baseArgs, whatIfParam],
+  )
+
+  const history = useMemo(() => {
+    if (!historyInputs || !series) return null
+    return buildCheckingHistory({
+      today, start: series.start,
+      anchor: anchor ? { asOfDate: anchor.as_of_date, balance: anchor.balance } : null,
+      accountName: monarchName,
+      transactions: historyInputs.transactions,
+      checkpoints: snapshotCheckpoints(historyInputs.balanceRows, primaryId, profile),
+      fetchFrom: historyInputs.fetchFrom,
+    })
+  }, [historyInputs, series, anchor, today, monarchName, primaryId, profile])
+
+  const summary = useMemo(() => (series ? summarizeWeeks(series, { minBalance }) : null), [series, minBalance])
+  const overlaySummary = useMemo(
+    () => (overlay ? summarizeWeeks(overlay, { minBalance }) : null),
+    [overlay, minBalance],
+  )
+  const model = useMemo(() => {
+    if (!series) return null
+    return buildWeeksChartModel({
+      history: history ?? { points: [] }, series, overlay, minBalance, today,
+    })
+  }, [series, history, overlay, minBalance, today])
+  const selectables = useMemo(
+    () => (series ? buildSelectables(history, series, overlay) : []),
+    [series, history, overlay],
+  )
 
   const payDays = useMemo(() => resolvePayDays(profile), [profile])
 
@@ -238,6 +298,7 @@ export default function WeeksTab({
       const saved = await saveCheckingAnchor({ accountId: primaryId, asOfDate: asOfInput, balance })
       setReloadKey(k => k + 1)
       setAnchor(saved)
+      setAnchorOpen(false)
     } catch (e) {
       setFormError(e.message || 'Could not save')
     } finally {
@@ -265,14 +326,29 @@ export default function WeeksTab({
   }
   if (!series) return null
 
-  const shown = series.weeks
   const staleDays = anchor ? dayDiff(anchor.as_of_date, today) : 0
   const noData = series.totals.income === 0 && series.totals.bills === 0
     && series.totals.cardPayments === 0 && series.totals.spend === 0
-  const first = series.firstBelowMinIndex != null ? shown[series.firstBelowMinIndex] : null
+  const minIndex = history && history.points.length > 0 ? -HISTORY_WEEKS : 0
+  const maxIndex = series.weeks.length - 1
+  const defaultSel = series.firstBelowMinIndex ?? 0
+  const selectedIdx = Math.min(maxIndex, Math.max(minIndex, selected ?? defaultSel))
+  const hasOverlay = !!overlay
+  const anchorForm = (
+    <AnchorForm
+      primary={primary} asOfInput={asOfInput} setAsOfInput={setAsOfInput}
+      balanceInput={balanceInput} setBalanceInput={setBalanceInput} today={today}
+      saving={saving} formError={formError} onSave={handleSave}
+    />
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, opacity: loading ? 0.6 : 1 }}>
+      <WeeksTiles
+        mobile={mobile} anchor={anchor} minBalance={minBalance} today={today} staleDays={staleDays}
+        summary={summary} overlaySummary={overlaySummary}
+      />
+
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <Segmented
           value={weeks} onChange={setWeeks}
@@ -282,81 +358,72 @@ export default function WeeksTab({
           <input type="checkbox" checked={includeSpend} onChange={e => setIncludeSpend(e.target.checked)} />
           Include day-to-day spend
         </label>
+        <button
+          type="button" aria-pressed={panelOpen}
+          onClick={() => { setPanelOpen(v => !v); setPanelEverOpen(true) }}
+          style={{
+            ...inputStyle, cursor: 'pointer', color: panelOpen || hasOverlay ? WHATIF : 'var(--tx-2)',
+            borderColor: panelOpen || hasOverlay ? WHATIF : 'var(--bd)',
+          }}
+        >+ What-if</button>
+        {anchor && (
+          <div style={{ fontSize: 12, color: 'var(--tx-2)' }}>
+            Balance {money2(Number(anchor.balance))} as of {fmtDate(anchor.as_of_date)} ·{' '}
+            <button
+              type="button" onClick={() => setAnchorOpen(v => !v)}
+              style={{ all: 'unset', cursor: 'pointer', color: 'var(--accent)', textDecoration: 'underline' }}
+            >Update</button>
+          </div>
+        )}
       </div>
 
-      <div style={{
-        border: `1px solid ${anchor ? 'var(--bd)' : 'var(--accent-bd)'}`, borderRadius: 11,
-        background: anchor ? 'var(--bg-card)' : 'var(--accent-bg)', padding: mobile ? '12px 14px' : '14px 18px',
-      }}>
-        <MonoLabel style={{ marginBottom: 8 }}>STARTING BALANCE · {primary.name}</MonoLabel>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <MonoLabel>AS OF</MonoLabel>
-            <input
-              type="date" value={asOfInput} max={today} style={inputStyle}
-              onChange={e => setAsOfInput(e.target.value)}
-            />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <MonoLabel>BALANCE</MonoLabel>
-            <input
-              type="text" inputMode="decimal" value={balanceInput} placeholder="0.00"
-              style={{ ...inputStyle, width: 130 }}
-              onChange={e => setBalanceInput(e.target.value)}
-            />
-          </label>
-          <button
-            type="button" onClick={handleSave} disabled={saving}
-            style={{ ...inputStyle, cursor: 'pointer', color: 'var(--accent)', borderColor: 'var(--accent-bd)' }}
-          >{saving ? 'Saving…' : 'Save'}</button>
+      {anchor && anchorOpen && (
+        <div style={{
+          border: '1px solid var(--bd)', borderRadius: 11, background: 'var(--bg-card)',
+          padding: mobile ? '12px 14px' : '14px 18px',
+        }}>
+          {anchorForm}
+          {staleDays > STALE_DAYS && (
+            <div style={{ color: 'var(--warn)', fontSize: 12, marginTop: 8 }}>
+              Stale: as-of date is {staleDays} days old
+            </div>
+          )}
         </div>
-        {formError && <div style={{ color: 'var(--warn)', fontSize: 12, marginTop: 8 }}>{formError}</div>}
-        {anchor && staleDays > STALE_DAYS && (
-          <div style={{ color: 'var(--warn)', fontSize: 12, marginTop: 8 }}>
-            Stale: as-of date is {staleDays} days old
-          </div>
-        )}
-        {!anchor && (
-          <div style={{ color: 'var(--tx-3)', fontSize: 12, marginTop: 8 }}>
-            Enter your checking balance to see running balances and flags.
-          </div>
-        )}
-      </div>
+      )}
 
-      <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <MonoLabel>MINIMUM {formatMoney(minBalance)}</MonoLabel>
-        {series.hasAnchor && (first ? (
-          <span style={{ color: 'var(--warn)', fontSize: 13 }}>
-            Dips below minimum in week of {fmtDate(first.start, true)}
-          </span>
-        ) : (
-          <span style={{ color: 'var(--accent)', fontSize: 13 }}>Stays above minimum</span>
-        ))}
-      </div>
+      {panelEverOpen && (
+        <div hidden={!(panelOpen || hasOverlay)}>
+          <WeeksScenarioPanel
+            userId={userId} series={series} budgetCategories={budgetCategories}
+            items={quickItems} onItemsChange={setQuickItems}
+            scenarioPick={scenarioPick} onScenarioChange={setScenarioPick}
+          />
+        </div>
+      )}
+
+      <WeeksChart
+        model={model} selectables={selectables} selected={selectedIdx} onSelect={setSelected}
+        hasOverlay={hasOverlay} minBalance={minBalance} emptyChildren={anchorForm}
+      />
+
+      {!model.empty && (
+        <WeeksNetBars model={model} selected={selectedIdx} onSelect={setSelected} hasOverlay={hasOverlay} />
+      )}
+
+      <HistoryStatus
+        primary={primary} history={history} historyInputs={historyInputs} historyError={historyError}
+        historyLoading={historyLoading} onRetry={() => setHistoryReloadKey(k => k + 1)}
+        onMapped={async () => { if (onAccountsChanged) await onAccountsChanged(); setHistoryReloadKey(k => k + 1) }}
+      />
 
       {noData && (
         <MonoLabel>No inflows or outflows were found for this window.</MonoLabel>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {!mobile && (
-          <div style={{
-            display: 'grid', gap: 12, padding: '0 14px',
-            gridTemplateColumns: includeSpend
-              ? 'minmax(90px,1fr) repeat(4, minmax(70px,1fr)) minmax(90px,1fr) minmax(110px,1fr)'
-              : 'minmax(90px,1fr) repeat(3, minmax(70px,1fr)) minmax(90px,1fr) minmax(110px,1fr)',
-          }}>
-            {['WEEK OF', 'INCOME', 'BILLS', 'CARDS', ...(includeSpend ? ['SPEND'] : []), 'CLOSING', 'LOW POINT']
-              .map(h => <MonoLabel key={h}>{h}</MonoLabel>)}
-          </div>
-        )}
-        {shown.map(w => (
-          <WeekRow
-            key={w.index} week={w} hasAnchor={series.hasAnchor} showSpend={includeSpend} mobile={mobile}
-            open={openWeek === w.index} onToggle={() => setOpenWeek(openWeek === w.index ? null : w.index)}
-          />
-        ))}
-      </div>
+      <WeekDetail
+        selected={selectedIdx} minIndex={minIndex} maxIndex={maxIndex} onSelect={setSelected}
+        series={series} overlay={overlay} history={history} showSpend={includeSpend} mobile={mobile}
+      />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {series.hasAnchor && series.carriedIn !== 0 && (
@@ -367,6 +434,8 @@ export default function WeeksTab({
         <MonoLabel>Pay days used: {payDays.days.join(' / ')}</MonoLabel>
         {payDays.mismatch && <MonoLabel style={{ color: 'var(--warn)' }}>{payDays.mismatch}</MonoLabel>}
         {series.warnings.map(w => <MonoLabel key={w} style={{ color: 'var(--warn)' }}>{w}</MonoLabel>)}
+        {overlay && overlay.warnings.filter(w => !series.warnings.includes(w))
+          .map(w => <MonoLabel key={w} style={{ color: WHATIF }}>{w}</MonoLabel>)}
         <MonoLabel>Pay dates are not shifted for weekends.</MonoLabel>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
+import { normalizeMonarchAccountName } from '../../../src/lib/accounts/monarchAccountName.js'
 
 const ALLOWED_TYPES = ['checking', 'savings', 'investment', 'other']
 
@@ -57,6 +58,16 @@ export async function POST(request) {
     )
   }
 
+  // Only a body that carries the key touches the column, so every other save
+  // keeps working on a database where migration 029 is not applied yet.
+  const hasMonarchName = Object.prototype.hasOwnProperty.call(body || {}, 'monarch_account_name')
+  let monarchName = null
+  if (hasMonarchName) {
+    const norm = normalizeMonarchAccountName(body.monarch_account_name)
+    if (!norm.ok) return Response.json({ error: norm.error }, { status: 400 })
+    monarchName = norm.value
+  }
+
   try {
     const sql = getNeonSql()
 
@@ -91,6 +102,25 @@ export async function POST(request) {
         active: active !== undefined ? !!active : existing.active,
       }
 
+      if (hasMonarchName) {
+        if (monarchName !== null && merged.type !== 'checking') {
+          return Response.json({ error: 'Only checking accounts can be mapped to Monarch.' }, { status: 400 })
+        }
+        const [mapped] = await sql`
+          UPDATE accounts
+          SET
+            name = ${merged.name},
+            type = ${merged.type},
+            is_primary_checking = ${merged.is_primary_checking},
+            display_order = ${merged.display_order},
+            active = ${merged.active},
+            monarch_account_name = ${monarchName}
+          WHERE id = ${existing.id} AND user_id = ${userId}
+          RETURNING *
+        `
+        return Response.json(mapped)
+      }
+
       const [row] = await sql`
         UPDATE accounts
         SET
@@ -114,6 +144,20 @@ export async function POST(request) {
         WHERE user_id = ${userId} AND type = ${type}
       `
       order = Number(next)
+    }
+
+    if (hasMonarchName) {
+      if (monarchName !== null && type !== 'checking') {
+        return Response.json({ error: 'Only checking accounts can be mapped to Monarch.' }, { status: 400 })
+      }
+      const [mapped] = await sql`
+        INSERT INTO accounts
+          (user_id, name, type, is_primary_checking, display_order, active, monarch_account_name)
+        VALUES
+          (${userId}, ${name}, ${type}, ${!!is_primary_checking}, ${order}, ${active !== undefined ? !!active : true}, ${monarchName})
+        RETURNING *
+      `
+      return Response.json(mapped, { status: 201 })
     }
 
     const [row] = await sql`
