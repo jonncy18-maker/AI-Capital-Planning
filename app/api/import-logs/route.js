@@ -1,5 +1,7 @@
 import { getNeonSql } from '../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../src/lib/neon/apiAuth.js'
+import { detectImportColumns } from '../../../src/lib/import/importColumns.js'
+import { undoEligibility } from '../../../src/lib/import/undoPlan.js'
 
 export async function GET(request) {
   const { data: session } = await getSessionOrToken(request)
@@ -16,7 +18,11 @@ export async function GET(request) {
       ORDER BY created_at DESC
       LIMIT 50
     `
-    return Response.json(rows)
+    const columns = await detectImportColumns(sql)
+    return Response.json(rows.map(row => {
+      const { undoable, reason } = undoEligibility(row, { columns })
+      return { ...row, undoable, not_undoable_reason: reason }
+    }))
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 })
   }

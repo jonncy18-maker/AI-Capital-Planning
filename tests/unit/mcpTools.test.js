@@ -24,6 +24,18 @@ const db = vi.hoisted(() => ({
       auto_mappings: [],
     })),
   },
+  importLog: {
+    getImportHistory: vi.fn(async () => [
+      { id: 'l1', filename: 'a.csv', created_at: '2026-10-30', inserted: 3, reclassified: 1, categories_auto_mapped: 0, status: 'committed', undoable: true, not_undoable_reason: null },
+      { id: 'l2', filename: 'b.csv', created_at: '2026-01-01', inserted: 9, status: null, undoable: false, not_undoable_reason: 'pre_migration' },
+    ]),
+    previewImportUndo: vi.fn(async () => ({
+      mode: 'preview', committed: false, counts: { delete: 1, restore: 0, skip: 0 }, expected: { delete: 1, restore: 0, skip: 0, remove_mappings: 0 },
+    })),
+    commitImportUndo: vi.fn(async () => ({
+      mode: 'commit', committed: true, counts: { deleted: 1, restored: 0, skipped: 0, mappings_removed: 0 },
+    })),
+  },
   cats: { getBudgetCategories: vi.fn(async () => [{ category: 'Gifts', group: 'Shopping' }]), getExcludedCategoryNames: vi.fn(async () => new Set()) },
 }))
 vi.mock('../../src/lib/db/outlook.js', () => db.outlook)
@@ -31,6 +43,7 @@ vi.mock('../../src/lib/db/scenarios.js', async (orig) => ({ ...(await orig()), .
 vi.mock('../../src/lib/db/wealthPlans.js', () => db.plans)
 vi.mock('../../src/lib/db/aiBriefings.js', () => db.briefings)
 vi.mock('../../src/lib/db/transactions.js', async (orig) => ({ ...(await orig()), ...db.tx }))
+vi.mock('../../src/lib/db/importLog.js', () => db.importLog)
 vi.mock('../../src/lib/db/budgetCategories.js', async (orig) => ({ ...(await orig()), ...db.cats }))
 
 const { ALL_TOOLS } = await import('../../src/lib/ai/tools/index.js')
@@ -50,6 +63,7 @@ const CASES = {
   briefings: ['save_ai_briefing', { narrative: 'hello' }, () => db.briefings.saveBriefing],
   transactions: ['recategorize_transactions', { ids: [ID], category: 'Gifts' }, () => db.tx.reclassifyTransactions],
   import: ['import_monarch_transactions', { csv: 'h\nr' }, () => db.tx.importMonarchCsv],
+  undoImport: ['undo_monarch_import', { import_id: ID, expected: { delete: 1, restore: 0, skip: 0, remove_mappings: 0 } }, () => db.importLog.commitImportUndo],
 }
 const realWrites = (fn) => fn.mock.calls.filter(c => !(c[2]?.dryRun) && c[1]?.mode !== 'preview' && c[0]?.mode !== 'preview')
 
@@ -61,7 +75,7 @@ describe('registry', () => {
   })
   it('adds MCP-only tools on top, with unique names and none shared', () => {
     expect(mcpTools()).toHaveLength(48 + MCP_ONLY_TOOLS.length)
-    expect(MCP_ONLY_TOOLS).toHaveLength(18)
+    expect(MCP_ONLY_TOOLS).toHaveLength(20)
     const names = mcpTools().map(t => t.name)
     expect(new Set(names).size).toBe(names.length)
     const inApp = new Set(ALL_TOOLS.map(t => t.name))
@@ -75,7 +89,7 @@ describe('registry', () => {
     }
   })
   it('only the import tool opts out of the generic gate', () => {
-    expect(MCP_ONLY_TOOLS.filter(t => t.write && !t.mcpGated).map(t => t.name)).toEqual(['import_monarch_transactions'])
+    expect(MCP_ONLY_TOOLS.filter(t => t.write && !t.mcpGated).map(t => t.name)).toEqual(['import_monarch_transactions', 'undo_monarch_import'])
   })
   it('does not gate in-app tools', () => {
     expect(ALL_TOOLS.some(t => t.mcpGated)).toBe(false)
@@ -88,7 +102,7 @@ describe.each(Object.entries(CASES))('%s group gate', (_group, [name, input, sea
   it('saves nothing when mode is absent', async () => {
     const out = await runMcpTool(tool, 'u1', input, {})
     expect(realWrites(seam())).toHaveLength(0)
-    if (name !== 'import_monarch_transactions') expect(out.result).toMatchObject({ mode: 'preview', committed: false })
+    if (!['import_monarch_transactions', 'undo_monarch_import'].includes(name)) expect(out.result).toMatchObject({ mode: 'preview', committed: false })
   })
 
   it('saves nothing when mode is preview', async () => {
@@ -127,5 +141,30 @@ describe('recategorize', () => {
   it('resolves the group from budget categories and strips nothing else', async () => {
     await runMcpTool(getMcpTool('recategorize_transactions'), 'u1', { ids: [ID], category: 'Gifts', mode: 'commit' }, {})
     expect(db.tx.reclassifyTransactions.mock.calls[0][1]).toEqual([{ id: ID, category: 'Gifts', group: 'Shopping' }])
+  })
+})
+
+describe('monarch import undo tools', () => {
+  it('undo previews by default and only commits through commitImportUndo', async () => {
+    const tool = getMcpTool('undo_monarch_import')
+    const out = await runMcpTool(tool, 'u1', { import_id: ID }, {})
+    expect(db.importLog.previewImportUndo).toHaveBeenCalledTimes(1)
+    expect(db.importLog.commitImportUndo).not.toHaveBeenCalled()
+    expect(out.result.committed).toBe(false)
+
+    const expected = { delete: 1, restore: 0, skip: 0, remove_mappings: 0 }
+    await runMcpTool(tool, 'u1', { import_id: ID, mode: 'commit', expected, remove_auto_mappings: true }, {})
+    expect(db.importLog.commitImportUndo).toHaveBeenCalledWith('u1', ID, { expected, removeAutoMappings: true })
+  })
+
+  it('list_monarch_imports is a read tool that returns compact rows', async () => {
+    const tool = getMcpTool('list_monarch_imports')
+    expect(tool.write).toBe(false)
+    const out = await runMcpTool(tool, 'u1', { limit: 1 }, {})
+    expect(out.result.imports).toHaveLength(1)
+    expect(out.result.imports[0]).toMatchObject({ id: 'l1', undoable: true, reclassified: 1 })
+    const all = await runMcpTool(tool, 'u1', {}, {})
+    expect(all.result.imports[1]).toMatchObject({ undoable: false, not_undoable_reason: 'pre_migration', reclassified: null })
+    expect(all.summary).toMatch(/1 can be undone/)
   })
 })

@@ -409,6 +409,12 @@ created_at          timestamptz
 updated_at          timestamptz
 ```
 
+**import_logs / import_log_rows / import_log_categories (Monarch import undo, migration 030, not yet applied to any branch)**
+
+`import_logs` gains `source` (`'monarch_import'` for `POST /api/transactions/import`; null for older and in-app `ImportFlow` logs, which are never undoable), `status` (null = pre-030, `'committed'`, `'undone'`; no default), `reclassified`, `categories_auto_mapped`, `undone_at`, `undo_summary` (jsonb) and `undo_token` (uuid set by the undo transaction). `transactions.import_log_id` (nullable, `on delete set null`) marks rows an import inserted. `import_log_rows` holds one snapshot per inserted or reclassified row (`kind`, `before_*` for reclassifications, `after_*` read back from the database, `tags_tracked`; no FK on `transaction_id`, so a deleted transaction leaves its snapshot). `import_log_categories` records the budget categories an import auto-created. Snapshots and recorded categories are kept 90 days and pruned only by the next import commit; the log header stays.
+
+`POST /api/transactions/import/undo` (`import_id`, `mode` preview|commit, `remove_auto_mappings`, `expected`) previews from snapshots and commits as one `sql.transaction`: it flips `status` to `'undone'` first and stamps `undo_token`, and every later write carries a token guard plus a check that the row still equals its `after_*` snapshot, so a row John edited after the import is skipped and listed, never overwritten. Auto-created categories are removed only on an unticked-by-default checkbox and only when no transaction and none of the five referencing tables (`budget_line_items`, `scenario_adjustments`, `forecast_line_items`, `forecast_overrides`, `bills.forecast_category_id`) use them; this needs the 028 `mapping_source` marker. A chunked import writes one log per chunk, so each chunk is undone separately. Without 030 the import route runs exactly its pre-undo statements and reports `undoable: false`. `GET /api/import-logs` adds `undoable` and `not_undoable_reason` per row.
+
 ### 5.1.1 Recovered Tables (existed live only, never committed)
 
 Discovered during Supabase → Neon migration assessment (2026-07-04): 5 tables were created directly in the Supabase SQL editor and queried by the app, but never had a `CREATE TABLE` in any committed migration — only later `ALTER TABLE` statements referenced them. Recovered from live introspection and committed as `db/migrations/015_recover_undocumented_tables.sql`. Live row counts as of the audit noted in parens.

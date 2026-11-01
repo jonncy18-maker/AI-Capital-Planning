@@ -33,3 +33,30 @@ export async function getImportHistory(_userId) {
   const data = await parseJsonOrThrow(res)
   return data ?? []
 }
+
+async function undoRequest(body) {
+  const res = await apiFetch('/api/transactions/import/undo', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(data?.error || `Request failed (${res.status})`)
+    err.status = res.status
+    err.body = data
+    throw err
+  }
+  return data
+}
+
+export function previewImportUndo(_userId, importId, { removeAutoMappings = false } = {}) {
+  return undoRequest({ import_id: importId, mode: 'preview', remove_auto_mappings: removeAutoMappings })
+}
+
+export function commitImportUndo(_userId, importId, { expected, removeAutoMappings = false } = {}) {
+  return undoRequest({
+    import_id: importId, mode: 'commit', remove_auto_mappings: removeAutoMappings, expected,
+  })
+}
