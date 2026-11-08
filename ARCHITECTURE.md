@@ -251,6 +251,9 @@ Retirement and long-term wealth modeling. Answers "where is my overall financial
 ### 4.8 Mapping Module (Stub)
 Navigation entry point exists in sidebar. Clicking opens a "Coming Soon" page. UI real estate and navigation path reserved for Phase 2 build-out.
 
+### 4.9 History (read-only)
+`/history`, `src/modules/history/`, pure math in `src/lib/history/historySeries.js`. Past months of income and spending from `transactions`, with budget from `budget_line_items` overlaid only where a budget exists. Read-only by design: no writes, no migrations, no API routes of its own. Uses the same exclude-from-totals rule as the Dashboard (`exclude_from_totals` categories, expenses are negative amounts). Budget is the annual plan (Budget module), forecast is forward-looking (Forecast, Scenarios); History is the record of what happened.
+
 ---
 
 ## 5. Data Architecture

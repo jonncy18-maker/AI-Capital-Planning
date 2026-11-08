@@ -10,6 +10,7 @@ export const MODULES = [
   { id: 'creditcards', label: 'Credit Cards',           short: 'Credit Cards', icon: '▬', section: 'modules', hue: 'var(--dom-creditcards)' },
   { id: 'scenarios',   label: 'Scenario Planner',      short: 'Scenarios',   icon: '◑', section: 'modules', hue: 'var(--dom-scenarios)' },
   { id: 'budget',      label: 'Annual Budget Builder', short: 'Budget',      icon: '▦', section: 'modules', hue: 'var(--dom-budget)' },
+  { id: 'history',     label: 'History',               short: 'History',     icon: '▤', section: 'modules', hue: 'var(--dom-history)' },
   { id: 'forecast',    label: 'Forecast',              short: 'Forecast',    icon: '⬡', section: 'modules', hue: 'var(--dom-forecast)' },
   { id: 'commitments', label: 'Long-Term Commitments', short: 'Commitments', icon: '◈', section: 'modules', hue: 'var(--dom-commitments)' },
   { id: 'wealth',      label: 'Wealth Trajectory',     short: 'Wealth',      icon: '↗', section: 'modules', hue: 'var(--dom-wealth)' },
