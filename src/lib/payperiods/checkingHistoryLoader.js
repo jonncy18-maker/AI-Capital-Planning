@@ -6,6 +6,14 @@ import { getAccountBalances } from '../db/bills.js'
 import { addDays, mondayOnOrBefore } from './weeklyCashSeries.js'
 import { HISTORY_WEEKS, RECONCILE_WINDOW_DAYS } from './checkingHistory.js'
 
+const ACCOUNT_NAME_LOOKBACK_DAYS = 548
+
+// Account names from roughly 18 months of transactions, so quiet accounts still appear.
+export async function loadMonarchAccountNames({ userId, today }) {
+  const rows = await getTransactionsByMonth(userId, addDays(today, -ACCOUNT_NAME_LOOKBACK_DAYS), today)
+  return (Array.isArray(rows) ? rows : []).map(r => ({ account: String(r.account ?? '') }))
+}
+
 export async function loadCheckingHistoryInputs({ userId, primary, today }) {
   const start = mondayOnOrBefore(today)
   const fetchFrom = addDays(start, -(HISTORY_WEEKS * 7) - RECONCILE_WINDOW_DAYS - 1)

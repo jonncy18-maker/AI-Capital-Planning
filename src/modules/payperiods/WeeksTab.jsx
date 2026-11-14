@@ -3,9 +3,9 @@ import { parseMoneyInput } from '../../lib/money.js'
 import { getCheckingAnchor, saveCheckingAnchor } from '../../lib/db/checkingAnchor.js'
 import { upsertAccount } from '../../lib/db/bills.js'
 import { loadWeeklyCashInputs } from '../../lib/payperiods/weeklyCashLoader.js'
-import { loadCheckingHistoryInputs } from '../../lib/payperiods/checkingHistoryLoader.js'
+import { loadCheckingHistoryInputs, loadMonarchAccountNames } from '../../lib/payperiods/checkingHistoryLoader.js'
 import {
-  buildCheckingHistory, snapshotCheckpoints, monarchAccountOptions, HISTORY_WEEKS,
+  buildCheckingHistory, snapshotCheckpoints, monarchAccountOptions, buildMonarchAccountChoices, HISTORY_WEEKS,
 } from '../../lib/payperiods/checkingHistory.js'
 import { buildWhatIfParam, hasWhatIf } from '../../lib/payperiods/whatIfs.js'
 import { summarizeWeeks, buildWeeksChartModel } from '../../lib/payperiods/weeksSummary.js'
@@ -37,11 +37,27 @@ function dayDiff(a, b) {
   return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000)
 }
 
-function HistoryStatus({ primary, history, historyInputs, historyError, historyLoading, onRetry, onMapped }) {
+function HistoryStatus({ userId, today, primary, history, historyInputs, historyError, historyLoading, onRetry, onMapped }) {
   const [pick, setPick] = useState('')
   const [saving, setSaving] = useState(false)
   const [mapError, setMapError] = useState(null)
-  const options = useMemo(() => monarchAccountOptions(historyInputs?.transactions), [historyInputs])
+  const [wideRows, setWideRows] = useState(null)
+  const needsMapping = history?.status === 'no-mapping'
+  const narrowOptions = useMemo(() => monarchAccountOptions(historyInputs?.transactions), [historyInputs])
+
+  useEffect(() => {
+    if (!needsMapping || !userId) return undefined
+    let cancelled = false
+    loadMonarchAccountNames({ userId, today })
+      .then(rows => { if (!cancelled) setWideRows(rows) })
+      .catch(() => { if (!cancelled) setWideRows(null) })
+    return () => { cancelled = true }
+  }, [needsMapping, userId, today])
+
+  const options = useMemo(() => {
+    const wide = wideRows ? buildMonarchAccountChoices(wideRows, null) : []
+    return wide.length > 0 ? wide : narrowOptions
+  }, [wideRows, narrowOptions])
 
   if (historyError) {
     return (
@@ -78,7 +94,7 @@ function HistoryStatus({ primary, history, historyInputs, historyError, historyL
         <div style={{ fontSize: 13, color: 'var(--tx-1)' }}>Map your Monarch checking account to see the last 4 weeks</div>
         {options.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--tx-3)' }}>
-            No transactions in the last 5 weeks to pick from. Map it in ACCOUNTS.
+            No Monarch transactions found to pick from. Map it in ACCOUNTS.
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -411,7 +427,7 @@ export default function WeeksTab({
       )}
 
       <HistoryStatus
-        primary={primary} history={history} historyInputs={historyInputs} historyError={historyError}
+        userId={userId} today={today} primary={primary} history={history} historyInputs={historyInputs} historyError={historyError}
         historyLoading={historyLoading} onRetry={() => setHistoryReloadKey(k => k + 1)}
         onMapped={async () => { if (onAccountsChanged) await onAccountsChanged(); setHistoryReloadKey(k => k + 1) }}
       />

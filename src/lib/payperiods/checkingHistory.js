@@ -33,6 +33,30 @@ export function monarchAccountOptions(transactions) {
     .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }
 
+// Dropdown list for mapping a checking account: names containing "check" lead,
+// each group alphabetical. A saved name missing from the data stays selectable.
+export function buildMonarchAccountChoices(transactions, savedName) {
+  const counts = new Map()
+  for (const t of transactions ?? []) {
+    const name = String(t?.account ?? '').trim()
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  const alpha = (a, b) => {
+    const x = a.name.toLowerCase()
+    const y = b.name.toLowerCase()
+    return x < y ? -1 : x > y ? 1 : 0
+  }
+  const all = [...counts.entries()].map(([name, count]) => ({ name, count }))
+  const isChecking = o => o.name.toLowerCase().includes('check')
+  const out = [
+    ...all.filter(isChecking).sort(alpha),
+    ...all.filter(o => !isChecking(o)).sort(alpha),
+  ]
+  const saved = String(savedName ?? '').trim()
+  if (saved && !counts.has(saved)) out.unshift({ name: saved, count: 0, saved: true })
+  return out
+}
+
 // Manual balance snapshots, dated by the planner's own period semantics.
 export function snapshotCheckpoints(balanceRows, accountId, profile) {
   const d1 = profile?.pay_day_1 ?? 15

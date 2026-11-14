@@ -24,6 +24,8 @@ import TrendsTab from './TrendsTab.jsx'
 import CashFlowTab from './CashFlowTab.jsx'
 import WeeksTab from './WeeksTab.jsx'
 import { MONARCH_NAME_MAX } from '../../lib/accounts/monarchAccountName.js'
+import { loadMonarchAccountNames } from '../../lib/payperiods/checkingHistoryLoader.js'
+import { buildMonarchAccountChoices } from '../../lib/payperiods/checkingHistory.js'
 import CCScheduleTab from './CCScheduleTab.jsx'
 import BillAmountItems from './BillAmountItems.jsx'
 import { isBillAmountItemsEligible } from '../../lib/payperiods/billAmountItems.js'
@@ -822,12 +824,38 @@ function BillForm({ initial, accounts, budgetCategories = [], creditCards = [], 
 
 const EMPTY_ACCOUNT = { name: '', type: 'checking', is_primary_checking: false }
 
-function AccountForm({ initial, onSave, onCancel, onDelete }) {
+const TYPE_OWN_NAME = '__type_own__'
+
+function AccountForm({ initial, onSave, onCancel, onDelete, userId }) {
   const [form, setForm] = useState(initial || EMPTY_ACCOUNT)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
+  const [monarchRows, setMonarchRows] = useState(null) // null = loading, [] = none or failed
+  const [typeOwn, setTypeOwn] = useState(false)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const isChecking = form.type === 'checking'
+  // Loads once, the first time the form is a checking account (type can be switched in the form).
+  useEffect(() => {
+    if (!isChecking) return undefined
+    if (!userId) return undefined
+    let cancelled = false
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    loadMonarchAccountNames({ userId, today })
+      .then(rows => { if (!cancelled) setMonarchRows(rows) })
+      .catch(() => { if (!cancelled) setMonarchRows([]) })
+    return () => { cancelled = true }
+  }, [isChecking, userId])
+
+  const choices = useMemo(
+    () => buildMonarchAccountChoices(monarchRows, initial?.monarch_account_name),
+    [monarchRows, initial?.monarch_account_name],
+  )
+  const hasRealNames = choices.some(c => !c.saved)
+  const loading = monarchRows === null && !!userId
+  const useSelect = loading || hasRealNames
 
   async function handleSave() {
     if (!form.name.trim()) return setErr('Name is required.')
@@ -891,11 +919,37 @@ function AccountForm({ initial, onSave, onCancel, onDelete }) {
       {form.type === 'checking' && (
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>MONARCH ACCOUNT NAME (WEEKS HISTORY)</label>
-          <input
-            style={inputStyle} value={form.monarch_account_name ?? ''} maxLength={MONARCH_NAME_MAX + 20}
-            onChange={e => set('monarch_account_name', e.target.value)}
-            placeholder="e.g. Checking - 9377 (...9377)"
-          />
+          {useSelect && !typeOwn ? (
+            <select
+              style={{ ...inputStyle, cursor: 'pointer' }} aria-label="Monarch account"
+              disabled={loading}
+              value={(form.monarch_account_name ?? '').trim()}
+              onChange={e => {
+                if (e.target.value === TYPE_OWN_NAME) setTypeOwn(true)
+                else set('monarch_account_name', e.target.value)
+              }}
+            >
+              {loading ? (
+                <option value="">Loading Monarch accounts…</option>
+              ) : (
+                <>
+                  <option value="">None / not mapped</option>
+                  {choices.map(c => (
+                    <option key={c.name} value={c.name}>
+                      {c.name} ({c.saved ? 'saved' : c.count})
+                    </option>
+                  ))}
+                  <option value={TYPE_OWN_NAME}>Type a name instead…</option>
+                </>
+              )}
+            </select>
+          ) : (
+            <input
+              style={inputStyle} value={form.monarch_account_name ?? ''} maxLength={MONARCH_NAME_MAX + 20}
+              onChange={e => set('monarch_account_name', e.target.value)}
+              placeholder="e.g. Checking - 9377 (...9377)"
+            />
+          )}
           <div style={{ fontSize: 11, color: 'var(--tx-3)', marginTop: 4 }}>
             Exactly as it appears on your Monarch transactions.
           </div>
@@ -2880,6 +2934,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
               onSave={handleSaveAccount}
               onCancel={() => setEditingAccount(null)}
               onDelete={handleDeleteAccount}
+              userId={userId}
             />
           )}
 
@@ -2957,6 +3012,7 @@ export default function PayPeriodPlanner({ userId, mobile }) {
                                   onSave={handleSaveAccount}
                                   onCancel={() => setEditingAccount(null)}
                                   onDelete={handleDeleteAccount}
+                                  userId={userId}
                                 />
                               </div>
                             ) : (
