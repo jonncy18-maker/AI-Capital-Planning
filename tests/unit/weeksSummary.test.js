@@ -56,7 +56,7 @@ describe('summarizeWeeks', () => {
 
 const hist = (over = {}) => {
   const mk = (index, balance, gap = false) => ({
-    index, weekStart: `2026-10-${String(26 + 7 * index).padStart(2, '0')}`.replace(/^2026-10-(\d+)$/, (m, d) => m),
+    index, weekStart: `2026-10-${String(26 + 7 * index).padStart(2, '0')}`.replace(/^2026-10-(\d+)$/, m => m),
     weekEnd: '', balance: gap ? null : balance, gap, gapReason: gap ? 'gap' : null,
     approximate: false, approxReasons: [], net: gap ? null : 10, netGapReason: null, netApproximate: false,
   })

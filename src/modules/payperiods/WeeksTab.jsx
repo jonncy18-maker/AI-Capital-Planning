@@ -217,6 +217,8 @@ export default function WeeksTab({
   }, [today])
 
   useEffect(() => {
+    // Loading flags are set here, before the async fetch below; this is the standard fetch-on-change pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!userId || !primaryId) { setLoading(false); return }
     let cancelled = false
     setLoading(true)
@@ -245,6 +247,7 @@ export default function WeeksTab({
   useEffect(() => {
     if (!userId || !primaryId) return
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistoryLoading(true)
     setHistoryError(null)
     loadCheckingHistoryInputs({ userId, primary: { monarch_account_name: monarchName }, today })
