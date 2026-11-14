@@ -668,7 +668,8 @@ function NewPlan({
                 onChange={(v) => set({ spend_growth: v })}
               />
               <p className="wealth-muted">
-                Spending growth is used only for years with no budget groups or outlook figures.
+                Spending growth applies to years after the 5-year outlook. Earlier years come from
+                your budget and outlook.
               </p>
             </fieldset>
           </div>
@@ -733,7 +734,7 @@ function NewPlan({
             then fills the emergency fund, then goes to the taxable brokerage. {curYear} uses the
             Dashboard&apos;s actual + forecast; {curYear + 1}–{curYear + 5} use the 5-year outlook
             (budget groups at their own rates, commitments on their real dates, planned events);
-            later years grow each budget group at its outlook rate and take-home at pay growth. Edit
+            later years grow spending at the Spending growth % and take-home at pay growth. Edit
             any figure to override it. Figures and sources are frozen when you save.
             {noCurrentData
               ? ` No Dashboard or budget figures for ${curYear}: enter take-home and spending.`

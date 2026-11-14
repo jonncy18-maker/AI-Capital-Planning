@@ -14,6 +14,7 @@ import {
   derivePlan,
 } from '../../src/lib/wealth/projection.js'
 import { validatePlan, captureOutlook } from '../../src/lib/wealth/plans.js'
+import { commitmentYearSchedule } from '../../src/lib/commitments/schedule.js'
 import { buildOutlook } from '../../src/lib/outlook/outlookEngine.js'
 import { toCents, fromCents, mulCents, parseCentsStrict } from '../../src/lib/money.js'
 
@@ -271,27 +272,93 @@ describe('after the window', () => {
     commitments: [monthly100],
     events: [{ year: CUR + 8, amount: 2000 }],
   }
-  it('grows each group at its rate and keeps commitments and events on real dates', () => {
-    const rows = derive({ outlook: handOutlook(), extras, endYear: CUR + 8 })
+  const commitCents = (year, list = extras.commitments) =>
+    list.reduce(
+      (s, c) => s + toCents(commitmentYearSchedule(c, year).reduce((x, y) => x + y, 0)),
+      0
+    )
+
+  it('grows the last outlook group total at spend growth, with commitments and events on real dates', () => {
+    const rows = derive({ outlook: handOutlook(), extras, endYear: CUR + 8, spendGrowth: 0.04 })
     const r6 = rowFor(rows, CUR + 6)
     expect(r6.spending).toBe(
-      fromCents(mulCents(toCents(1000), Math.pow(1.05, 5)) + toCents(500) + toCents(1200))
+      fromCents(mulCents(toCents(1700), 1.04) + commitCents(CUR + 6))
     )
     expect(r6.take_home).toBe(fromCents(mulCents(toCents(54000), 1.03)))
     expect(r6.source).toBe('growth')
     const r8 = rowFor(rows, CUR + 8)
     expect(r8.spending).toBe(
-      fromCents(mulCents(toCents(1000), Math.pow(1.05, 7)) + toCents(500) + toCents(2000))
+      fromCents(mulCents(toCents(1700), Math.pow(1.04, 3)) + commitCents(CUR + 8) + toCents(2000))
     )
   })
 
-  it('spend growth is ignored with groups present but drives an outlook-less plan', () => {
-    const at = (spendGrowth, outlook) =>
-      derive({ outlook, extras, endYear: CUR + 8, spendGrowth }).map((r) => r.spending)
-    expect(at(0.03, handOutlook())).toEqual(at(0.06, handOutlook()))
-    const low = at(0.03, null)
-    const high = at(0.06, null)
+  it('spend growth moves years after the window but not years inside it', () => {
+    const at = (spendGrowth) =>
+      derive({ outlook: handOutlook(), extras, endYear: CUR + 8, spendGrowth })
+    const low = at(0.03)
+    const high = at(0.06)
+    for (let n = 0; n <= 5; n++)
+      expect(rowFor(high, CUR + n).spending).toBe(rowFor(low, CUR + n).spending)
+    for (let n = 6; n <= 8; n++)
+      expect(rowFor(high, CUR + n).spending).toBeGreaterThan(rowFor(low, CUR + n).spending)
+  })
+
+  it('does not compound a last-year event into later years', () => {
+    const o = handOutlook()
+    o.events[4] = { total: 5000 }
+    const rows = derive({ outlook: o, extras: { commitments: [monthly100], events: [] }, endYear: CUR + 6 })
+    expect(rowFor(rows, CUR + 5).spending).toBe(fromCents(toCents(1700) + toCents(1200) + toCents(5000)))
+    expect(rowFor(rows, CUR + 6).spending).toBe(
+      fromCents(mulCents(toCents(1700), 1.03) + commitCents(CUR + 6, [monthly100]))
+    )
+  })
+
+  it('keeps commitments on their schedule dates after the window', () => {
+    const ending = { ...monthly100, end_date: `${CUR + 6}-06-30` }
+    const starting = { ...monthly100, start_date: `${CUR + 7}-01-01`, end_date: `${CUR + 9}-12-31` }
+    const list = [ending, starting]
+    const rows = derive({ outlook: handOutlook(), extras: { commitments: list, events: [] }, endYear: CUR + 8 })
+    for (const n of [6, 7, 8])
+      expect(rowFor(rows, CUR + n).spending).toBe(
+        fromCents(mulCents(toCents(1700), Math.pow(1.03, n - 5)) + commitCents(CUR + n, list))
+      )
+    expect(commitCents(CUR + 6, list)).toBeGreaterThan(0)
+  })
+
+  it('adds a planned event once in its year without compounding it', () => {
+    const rows = derive({ outlook: handOutlook(), extras, endYear: CUR + 9 })
+    const base = (n) => mulCents(toCents(1700), Math.pow(1.03, n - 5)) + commitCents(CUR + n)
+    expect(rowFor(rows, CUR + 8).spending).toBe(fromCents(base(8) + toCents(2000)))
+    expect(rowFor(rows, CUR + 9).spending).toBe(fromCents(base(9)))
+  })
+
+  it('an outlook-less plan still chains from the prior year at spend growth', () => {
+    const at = (spendGrowth) =>
+      derive({ outlook: null, endYear: CUR + 8, spendGrowth }).map((r) => r.spending)
+    const low = at(0.03)
+    const high = at(0.06)
     for (let i = 1; i < low.length; i++) expect(high[i]).toBeGreaterThan(low[i])
+  })
+
+  it('chains from the prior year when no outlook column is after the current year', () => {
+    const o = handOutlook()
+    o.columns = [{ year: CUR - 1, kind: 'outlook' }, { year: CUR, kind: 'outlook' }]
+    const rows = derive({ outlook: o, endYear: CUR + 2, spendGrowth: 0.06 })
+    const r1 = rowFor(rows, CUR + 1)
+    expect(r1.spending).toBe(fromCents(mulCents(toCents(70000), 1.06)))
+    expect(rowFor(rows, CUR + 2).spending).toBe(fromCents(mulCents(toCents(r1.spending), 1.06)))
+  })
+
+  it('a later-year manual override sticks and does not move the growth base', () => {
+    const base = derive({ outlook: handOutlook(), extras, endYear: CUR + 8 })
+    const rows = derive({
+      outlook: handOutlook(),
+      extras,
+      endYear: CUR + 8,
+      overrides: { [CUR + 6]: { take_home: 1, spending: 2 } },
+    })
+    expect(rowFor(rows, CUR + 6)).toMatchObject({ spending: 2, source: 'manual' })
+    expect(rowFor(rows, CUR + 7).spending).toBe(rowFor(base, CUR + 7).spending)
   })
 })
 

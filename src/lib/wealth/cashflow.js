@@ -66,6 +66,20 @@ export function deriveCashflow({
   const rows = []
   let prior = null
 
+  // Spending growth drives only the years after the outlook's last column, grown
+  // from that column's group total (not commitments or events, which keep their
+  // own dates). Without a usable later column, such years chain from the prior
+  // year so the growth rate always has an effect.
+  let lastIdx = -1
+  if (outlookOk) {
+    outlook.columns.forEach((c, i) => {
+      if (lastIdx < 0 || c.year > outlook.columns[lastIdx].year) lastIdx = i
+    })
+  }
+  const lastYear = lastIdx >= 0 ? outlook.columns[lastIdx].year : null
+  const lastBase = lastIdx >= 0 ? outlook.groupTotals?.[lastIdx] : null
+  const growFromLast = outlookOk && lastYear > curYear && isFiniteNumber(lastBase)
+
   for (let year = curYear; year <= endYear; year++) {
     let takeHome
     let spending
@@ -112,10 +126,14 @@ export function deriveCashflow({
             toCents(outlook.events?.[col]?.total)
         )
         spendFromOutlook = true
-      } else if (outlookOk) {
-        const groups = sumCents(outlook.groups, (g) =>
-          mulCents(toCents(g.base), Math.pow(1 + g.rate, year - outlook.baseYear))
-        )
+      } else if (outlookOk && growFromLast) {
+        const groups =
+          year > lastYear
+            ? mulCents(toCents(lastBase), Math.pow(1 + spendGrowth, year - lastYear))
+            : // A gap before a late-starting window keeps the per-group rates.
+              sumCents(outlook.groups, (g) =>
+                mulCents(toCents(g.base), Math.pow(1 + g.rate, year - outlook.baseYear))
+              )
         const fixed = sumCents(commitments, (c) =>
           toCents(commitmentYearSchedule(c, year).reduce((x, y) => x + y, 0))
         )
