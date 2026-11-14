@@ -47,6 +47,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
   --dom-payperiods: #38BDF8;
   --dom-forecast: #4F9CF0;
   --dom-budget: #7B8CFA;
+  --dom-history: #5FB8D9;
   --dom-scenarios: #A87CF6;
   --dom-creditcards: #CE7BE6;
   --dom-wealth: #F0728F;
@@ -96,6 +97,7 @@ html, body { margin: 0; padding: 0; height: 100%; }
   --dom-payperiods: #0C74B8;
   --dom-forecast: #1E62C4;
   --dom-budget: #4B57C9;
+  --dom-history: #1F7FA3;
   --dom-scenarios: #7A45C4;
   --dom-creditcards: #A03FB8;
   --dom-wealth: #C43A63;

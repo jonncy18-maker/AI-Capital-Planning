@@ -64,7 +64,7 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
 - **Frontend:** React 19 on Next.js App Router, responsive at mobile and desktop breakpoints
 - **Backend/Database:** Neon (serverless PostgreSQL) via `app/api/**` route handlers — every route does its own `auth.getSession()` check and scopes every query by `user_id` (no RLS layer; the API route is the authorization boundary)
 - **Auth:** Neon Auth (Better Auth), session via an httpOnly cookie; `src/lib/neon/authServer.js`/`authClient.js`
-- **AI:** Anthropic API (model resolved per-family at request time), proxied through `/api/ai-chat` — the key lives server-side only, never shipped to the browser. Two text-only Haiku-class tasks (`suggest-buckets`, `suggest-tab-matches`) run on GPT-6 Luna whenever `OPENAI_API_KEY` is set (`src/lib/ai/luna.js`), so scope the key to Preview first; unset, or with `AI_FORCE_ANTHROPIC=1`, they stay on Anthropic, and any Luna failure falls back to Anthropic
+- **AI:** Anthropic API (model resolved per-family at request time), proxied through `/api/ai-chat` — the key lives server-side only, never shipped to the browser. All model calls are Anthropic; the Haiku-class import tasks use the `haiku` family (GPT-6 Luna removed 2026-10-31)
 - **Deployment:** Vercel (production + branch previews); `main` merged and set as Vercel's Production-tracked branch (2026-07-05) — auto-deploys on every push
 - **GitHub Pages — retired (2026-07-05):** `.github/workflows/deploy.yml` (the old Vite+Supabase static build/deploy pipeline) has been deleted now that `main` is fully on the Neon/Vercel stack. The last successful Pages build stays published as a frozen snapshot (deleting the workflow doesn't take down existing Pages content), but nothing will deploy there again. GitHub itself remains the source-control repo throughout — only the old static-hosting pipeline is gone.
 - **Remaining fallback:** the Supabase project itself is still live (not paused/deleted) as a final, deliberately temporary safety net — see `MIGRATION_PLAN.md` Phase D.
@@ -251,6 +251,9 @@ Retirement and long-term wealth modeling. Answers "where is my overall financial
 ### 4.8 Mapping Module (Stub)
 Navigation entry point exists in sidebar. Clicking opens a "Coming Soon" page. UI real estate and navigation path reserved for Phase 2 build-out.
 
+### 4.9 History (read-only)
+`/history`, `src/modules/history/`, pure math in `src/lib/history/historySeries.js`. Past months of income and spending from `transactions`, with budget from `budget_line_items` overlaid only where a budget exists. Read-only by design: no writes, no migrations, no API routes of its own. Uses the same exclude-from-totals rule as the Dashboard (`exclude_from_totals` categories, expenses are negative amounts). Budget is the annual plan (Budget module), forecast is forward-looking (Forecast, Scenarios); History is the record of what happened.
+
 ---
 
 ## 5. Data Architecture
@@ -408,6 +411,12 @@ bonus_also_subject  boolean         -- whether 401k/benefits apply in bonus mont
 created_at          timestamptz
 updated_at          timestamptz
 ```
+
+**import_logs / import_log_rows / import_log_categories (Monarch import undo, migration 030, not yet applied to any branch)**
+
+`import_logs` gains `source` (`'monarch_import'` for `POST /api/transactions/import`; null for older and in-app `ImportFlow` logs, which are never undoable), `status` (null = pre-030, `'committed'`, `'undone'`; no default), `reclassified`, `categories_auto_mapped`, `undone_at`, `undo_summary` (jsonb) and `undo_token` (uuid set by the undo transaction). `transactions.import_log_id` (nullable, `on delete set null`) marks rows an import inserted. `import_log_rows` holds one snapshot per inserted or reclassified row (`kind`, `before_*` for reclassifications, `after_*` read back from the database, `tags_tracked`; no FK on `transaction_id`, so a deleted transaction leaves its snapshot). `import_log_categories` records the budget categories an import auto-created. Snapshots and recorded categories are kept 90 days and pruned only by the next import commit; the log header stays.
+
+`POST /api/transactions/import/undo` (`import_id`, `mode` preview|commit, `remove_auto_mappings`, `expected`) previews from snapshots and commits as one `sql.transaction`: it flips `status` to `'undone'` first and stamps `undo_token`, and every later write carries a token guard plus a check that the row still equals its `after_*` snapshot, so a row John edited after the import is skipped and listed, never overwritten. Auto-created categories are removed only on an unticked-by-default checkbox and only when no transaction and none of the five referencing tables (`budget_line_items`, `scenario_adjustments`, `forecast_line_items`, `forecast_overrides`, `bills.forecast_category_id`) use them; this needs the 028 `mapping_source` marker. A chunked import writes one log per chunk, so each chunk is undone separately. Without 030 the import route runs exactly its pre-undo statements and reports `undoable: false`. `GET /api/import-logs` adds `undoable` and `not_undoable_reason` per row.
 
 ### 5.1.1 Recovered Tables (existed live only, never committed)
 

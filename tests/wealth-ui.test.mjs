@@ -10,6 +10,7 @@ import * as money from '../src/lib/money.js'
 import * as selection from '../src/lib/wealth/selection.js'
 import * as assumptions from '../src/lib/wealth/assumptions.js'
 import * as projection from '../src/lib/wealth/projection.js'
+import * as cashflow from '../src/lib/wealth/cashflow.js'
 const require = createRequire(import.meta.url)
 const babel = require('next/dist/compiled/babel/core')
 const source = await readFile(new URL('../src/modules/wealth/Wealth.jsx', import.meta.url), 'utf8')
@@ -39,7 +40,7 @@ const baseline = {
   annual_commitment_drain: 0,
   include_commitments: true,
 }
-function harness({ storage = new Map(), blocked = false } = {}) {
+function harness({ storage = new Map(), blocked = false, props = {} } = {}) {
   const fixtures = {
     alice: [
       { ...baseline, id: 'newest' },
@@ -156,6 +157,10 @@ function harness({ storage = new Map(), blocked = false } = {}) {
     '../../lib/money.js': money,
     '../../lib/wealth/assumptions.js': assumptions,
     '../../lib/wealth/projection.js': projection,
+    '../../lib/wealth/cashflow.js': cashflow,
+    '../../lib/dashboard/widgetData.js': {
+      incomeVsExpenses: (ctx) => ctx.__ive ?? { hasData: false },
+    },
     './TrajectoryPanel.jsx': { default: () => {} },
     '../../lib/wealth/selection.js': {
       ...selection,
@@ -183,7 +188,7 @@ function harness({ storage = new Map(), blocked = false } = {}) {
   vm.runInContext(code, context)
   function render() {
     index = 0
-    return context.exports.default({ userId: owner, mobile: false })
+    return context.exports.default({ userId: owner, mobile: false, ...props })
   }
   async function settle() {
     let tree = render()
@@ -403,4 +408,54 @@ test("a previous user's late delete refresh cannot drop the current user's read"
   h.resolvePlans('bob')
   tree = await h.settle()
   assert.equal(h.version(tree)?.props.value, 'bob-plan')
+})
+
+test('new plan table derives sources, overrides stick and save freezes them', async () => {
+  const aiContext = {
+    thisYear: 2026,
+    __ive: { hasData: true, fullYearIncome: 100000, fullYearExpenses: 70000 },
+  }
+  const h = harness({ props: { aiContext } })
+  let tree = await h.settle()
+  h.all(tree)
+    .find((n) => n.type === 'button' && n.props.children.includes('Save new baseline'))
+    .props.onClick()
+  // The harness never calls function components; NewPlan runs right after each
+  // Wealth render so its hook slots stay in a fixed order.
+  const draw = () => {
+    const node = h.all(h.render()).find((n) => n.type?.name === 'NewPlan')
+    return node.type(node.props)
+  }
+  let form = draw()
+  const snapshotSelect = h
+    .all(form)
+    .find((n) => n.type === 'select' && h.all(n).some((o) => o.props?.value === 'pre'))
+  snapshotSelect.props.onChange({ target: { value: 'pre' } })
+  form = draw()
+  const table = () =>
+    h.all(form).filter((n) => n.type === 'tr' && n.props.children.some((c) => c.type === 'td'))
+  const cells = (row) => h.all(row).filter((n) => n.type === 'td')
+  const badge = (row) =>
+    h.all(row).find((n) => n.props?.className === 'wealth-badge').props.children[0]
+  const input = (label) => h.all(form).find((n) => n.props?.['aria-label'] === label)
+  const [first, second] = table()
+  assert.equal(cells(first)[0].props.children[0], 2026)
+  assert.equal(badge(first), 'Actual + Forecast')
+  assert.equal(cells(first)[3].props.children[0], '$30,000')
+  assert.equal(badge(second), 'Growth rates')
+  const spending2027 = input('Spending 2027').props.value
+  input('Take-home 2027').props.onChange({ target: { value: '5000' } })
+  form = draw()
+  assert.equal(badge(table()[1]), 'Manual')
+  await form.props.onSubmit({ preventDefault() {} })
+  const saved = h.fixtures.alice[0].assumptions
+  assert.deepEqual(saved.cashflow_by_year['2027'], {
+    take_home: 5000,
+    spending: spending2027,
+    source: 'manual',
+  })
+  assert.equal(saved.cashflow_by_year['2026'].source, 'actual_forecast')
+  assert.deepEqual(saved.surplus_by_year, {})
+  assert.equal(saved.surplus.base, 30000)
+  assert.ok(Object.values(saved.cashflow_by_year).every((e) => !('surplus' in e)))
 })

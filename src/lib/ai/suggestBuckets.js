@@ -10,7 +10,7 @@
 
 import { invokeAIChatRaw } from './aiChatRaw.js'
 import { ALL_GROUPS } from '../csv/categoryMap.js'
-import { AI_MODEL_FAMILIES, AI_TASKS } from './models.js'
+import { AI_MODEL_FAMILIES } from './models.js'
 import { buildBucketSystemPrompt } from './suggestBuckets.prompts.js'
 
 // Returns:
@@ -48,7 +48,6 @@ export async function suggestBuckets(unmappedCats, profile, groups) {
     messages: [{ role: 'user', content: userMessage }],
     maxTokens: 1500,
     modelFamily: AI_MODEL_FAMILIES.groupMapping, // classification → newest Haiku
-    task: AI_TASKS.suggestBuckets, // Luna instead when OPENAI_API_KEY is set (luna.js)
   })
 
   if (error || data?.error) {

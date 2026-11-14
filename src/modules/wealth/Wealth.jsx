@@ -7,18 +7,24 @@ import {
 import { getWealthPlans, saveWealthPlan } from '../../lib/db/wealthPlans.js'
 import { loadOutlookInputs } from '../../lib/outlook/loadOutlook.js'
 import { buildOutlook } from '../../lib/outlook/outlookEngine.js'
+import { incomeVsExpenses } from '../../lib/dashboard/widgetData.js'
 import {
   buildPlanSeries,
   expectedAt,
   investmentActual,
   optionalActual,
   latestSnapshots,
-  captureOutlook,
   validatePlan,
 } from '../../lib/wealth/plans.js'
 import { defaultAssumptions } from '../../lib/wealth/assumptions.js'
-import { planFromAssumptions } from '../../lib/wealth/projection.js'
-import { sumDollars } from '../../lib/money.js'
+import { planFromAssumptions, planHorizon } from '../../lib/wealth/projection.js'
+import {
+  deriveCashflow,
+  budgetFallback,
+  cashflowMap,
+  sourceLabel,
+} from '../../lib/wealth/cashflow.js'
+import { sumDollars, toCents, fromCents } from '../../lib/money.js'
 import ModuleHeader from '../common/ModuleHeader.jsx'
 import { CONTENT_MAX } from '../common/layout.js'
 import WealthChart from './WealthChart.jsx'
@@ -290,24 +296,71 @@ function Num({ label, value, onChange, step = 1, percent = false, min = 0 }) {
   )
 }
 
-function NewPlan({ snapshots, outlook, onSave, onCancel, saving }) {
+function NewPlan({
+  snapshots,
+  outlook,
+  outlookInputs,
+  aiContext,
+  current,
+  onSave,
+  onCancel,
+  saving,
+}) {
   const eligible = snapshots.filter((s) => investmentActual(s) != null)
   const [snapshotId, setSnapshotId] = useState(eligible[0]?.id || '')
   const [name, setName] = useState('My baseline plan')
   const [a, setA] = useState(defaultAssumptions)
-  const [useOutlook, setUseOutlook] = useState(false)
+  const [overrides, setOverrides] = useState({})
   const [error, setError] = useState('')
   const snapshot = eligible.find((s) => s.id === snapshotId)
   const set = (patch) => setA((old) => ({ ...old, ...patch }))
   const setIn = (key, patch) => setA((old) => ({ ...old, [key]: { ...old[key], ...patch } }))
-  const captured = captureOutlook(outlook)
   const emergencyNow = optionalActual(snapshot?.emergency_cash) ?? a.emergency.current
+  const curYear = aiContext?.thisYear ?? new Date().getFullYear()
+  const startYear = snapshot ? +snapshot.snapshot_date.slice(0, 4) : curYear
+  // Derived during render so the table fills in when the Dashboard figures or the
+  // outlook arrive after the form is open; only the user's edits are state.
+  const rows = deriveCashflow({
+    startYear,
+    endYear: startYear + planHorizon(a),
+    curYear,
+    payGrowth: a.pay_growth,
+    spendGrowth: a.spend_growth,
+    current,
+    budget: budgetFallback(aiContext),
+    outlook,
+    extras: {
+      commitments: outlookInputs?.commitments ?? [],
+      events: outlookInputs?.events ?? [],
+    },
+    overrides,
+  })
+  const anchor = rows.find((r) => r.year === a.caps.year) ?? rows[0]
   const effective = {
     ...a,
     emergency: { ...a.emergency, current: emergencyNow },
-    surplus: { ...a.surplus, source: useOutlook && captured ? 'outlook' : 'manual' },
-    surplus_by_year: useOutlook && captured ? captured.withCommitments : {},
+    surplus: { base: anchor ? anchor.surplus : a.surplus.base, source: 'manual' },
+    surplus_by_year: {},
+    cashflow_by_year: cashflowMap(rows),
   }
+  const clampCents = (n) => Math.max(0, fromCents(toCents(n === '' ? 0 : Number(n))))
+  const edit = (row, key, value) =>
+    setOverrides((old) => ({
+      ...old,
+      [row.year]: {
+        take_home: row.take_home,
+        spending: row.spending,
+        [key]: clampCents(value),
+      },
+    }))
+  const reset = (year) =>
+    setOverrides((old) => {
+      const rest = { ...old }
+      delete rest[year]
+      return rest
+    })
+  const noCurrentData =
+    rows.find((r) => r.year === curYear)?.source === 'manual' && !overrides[curYear]
   const draft = snapshot
     ? planFromAssumptions({
         name,
@@ -601,13 +654,6 @@ function NewPlan({ snapshots, outlook, onSave, onCancel, saving }) {
                 onChange={(v) => setIn('emergency', { current: v })}
               />
               <Num
-                label={`Surplus ${a.caps.year} / yr`}
-                value={a.surplus.base}
-                step={500}
-                min={-1000000}
-                onChange={(v) => setIn('surplus', { base: v })}
-              />
-              <Num
                 label="Pay growth %"
                 value={a.pay_growth}
                 step={0.1}
@@ -621,24 +667,79 @@ function NewPlan({ snapshots, outlook, onSave, onCancel, saving }) {
                 percent
                 onChange={(v) => set({ spend_growth: v })}
               />
-              <label>
-                <span>Use 5-year outlook net savings for its years</span>
-                <input
-                  type="checkbox"
-                  checked={useOutlook && !!captured}
-                  disabled={!captured}
-                  onChange={(e) => setUseOutlook(e.target.checked)}
-                />
-              </label>
               <p className="wealth-muted">
-                Surplus (take-home less spending, after 401(k) and HSA payroll deductions) pays the
-                Roth IRA, then fills the emergency fund, then goes to the taxable brokerage.{' '}
-                {captured
-                  ? `Outlook years: ${Object.keys(captured.withCommitments).join(', ')}.`
-                  : 'Outlook unavailable: needs a loaded budget and income.'}
+                Spending growth applies to years after the 5-year outlook. Earlier years come from
+                your budget and outlook.
               </p>
             </fieldset>
           </div>
+          <h4>Take-home and spending</h4>
+          <div className="wealth-table-wrap">
+            <table className="wealth-table wealth-cashflow">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th>Take-home</th>
+                  <th>Spending</th>
+                  <th>Surplus</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.year}>
+                    <td>{row.year}</td>
+                    <td>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        aria-label={`Take-home ${row.year}`}
+                        value={row.take_home}
+                        onChange={(e) => edit(row, 'take_home', e.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        aria-label={`Spending ${row.year}`}
+                        value={row.spending}
+                        onChange={(e) => edit(row, 'spending', e.target.value)}
+                      />
+                    </td>
+                    <td>{fmtFull(row.surplus)}</td>
+                    <td>
+                      <span className="wealth-badge" data-source={row.source}>
+                        {sourceLabel(row.source, row.year)}
+                      </span>
+                      {row.source === 'manual' && (
+                        <button
+                          type="button"
+                          aria-label={`Reset ${row.year}`}
+                          onClick={() => reset(row.year)}
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="wealth-muted">
+            Surplus is take-home less spending, after payroll 401(k) and HSA. It pays the Roth IRA,
+            then fills the emergency fund, then goes to the taxable brokerage. {curYear} uses the
+            Dashboard&apos;s actual + forecast; {curYear + 1}–{curYear + 5} use the 5-year outlook
+            (budget groups at their own rates, commitments on their real dates, planned events);
+            later years grow spending at the Spending growth % and take-home at pay growth. Edit
+            any figure to override it. Figures and sources are frozen when you save.
+            {noCurrentData
+              ? ` No Dashboard or budget figures for ${curYear}: enter take-home and spending.`
+              : ''}
+          </p>
           <button disabled={saving} type="submit" style={primaryBtn}>
             {saving ? 'Saving…' : 'Save baseline version'}
           </button>
@@ -649,7 +750,7 @@ function NewPlan({ snapshots, outlook, onSave, onCancel, saving }) {
   )
 }
 
-export default function Wealth({ userId, mobile }) {
+export default function Wealth({ userId, mobile, aiContext = null, yearTxns = [] }) {
   const [snapshots, setSnapshots] = useState([]),
     [plans, setPlans] = useState([])
   const [selection, setSelection] = useState({ userId: null, id: '' }),
@@ -669,6 +770,7 @@ export default function Wealth({ userId, mobile }) {
     [checkpoint, setCheckpoint] = useState(new Date().getFullYear()),
     [metric, setMetric] = useState('balance'),
     [compareCommitments, setCompareCommitments] = useState(false)
+  const [outlookInputs, setOutlookInputs] = useState(null)
   const selectionRef = useRef({ userId: null, id: '' })
   const activeUserRef = useRef(null)
   const readRevision = useRef(0)
@@ -732,10 +834,14 @@ export default function Wealth({ userId, mobile }) {
     let cancelled = false
     loadOutlookInputs(userId, { curYear: new Date().getFullYear() })
       .then((i) => {
-        if (!cancelled) setOutlook(buildOutlook(i))
+        if (cancelled) return
+        setOutlook(buildOutlook(i))
+        setOutlookInputs(i ?? null)
       })
       .catch(() => {
-        if (!cancelled) setOutlook(null)
+        if (cancelled) return
+        setOutlook(null)
+        setOutlookInputs(null)
       })
     return () => {
       cancelled = true
@@ -754,6 +860,10 @@ export default function Wealth({ userId, mobile }) {
   const withoutSeries = useMemo(
     () => (plan ? buildPlanSeries(plan, { withoutCommitments: true }) : null),
     [plan]
+  )
+  const current = useMemo(
+    () => (aiContext ? incomeVsExpenses(aiContext, yearTxns) : null),
+    [aiContext, yearTxns]
   )
   const latest = actuals[0]
   const yearlyActual = actuals.find((s) => +s.snapshot_date.slice(0, 4) === checkpoint)
@@ -1003,6 +1113,9 @@ export default function Wealth({ userId, mobile }) {
             <NewPlan
               snapshots={actuals}
               outlook={outlook}
+              outlookInputs={outlookInputs}
+              aiContext={aiContext}
+              current={current}
               onSave={savePlan}
               onCancel={() => setNewPlan(false)}
               saving={saving}

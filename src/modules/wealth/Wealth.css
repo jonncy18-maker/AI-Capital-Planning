@@ -394,3 +394,19 @@
 .wealth-trajectory .wealth-baseline-head p {
   margin: 4px 0 0;
 }
+.wealth-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  color: var(--tx-2);
+  white-space: nowrap;
+}
+.wealth-badge[data-source='manual'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.wealth-cashflow input {
+  width: 96px;
+  text-align: right;
+}

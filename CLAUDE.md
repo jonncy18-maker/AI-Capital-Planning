@@ -25,7 +25,17 @@ When you give John information (a plan, review, status, comparison, folder or br
 
 ## Subagent routing
 
-Follow "Subagent models" in `~/.claude/CLAUDE.md`: Haiku (5.5) for all exploratory jobs (exploration, searches, file reads), sweeps and mechanical edits, Sonnet for implementation and reviews, Opus for planning and final review. Agentic Loop: Phase 1 file reading on Haiku; Phase 2 instructions by Opus (or the main session); Phase 3 Build and Phase 4 Audit on Sonnet, with a costly or ambiguous audit on Opus.
+| Model | Use for | Agentic Loop |
+|---|---|---|
+| Haiku 5.5 (`claude-haiku-5-5`) | Exploration, searches, file reads, sweeps, mechanical edits | Phase 1 file reading |
+| Sonnet 5.5 (`claude-sonnet-5-5`) | Implementation, reviews | Phase 3 Build, Phase 4 Audit |
+| Opus 5.5 (`claude-opus-5-5`) | Planning, final review | Phase 2 instructions (or the main session); a costly or ambiguous audit |
+
+- Always pass the model in the Agent tool's `model` parameter. Built-in types such as Explore inherit the main session's model; they do not default to Haiku.
+- Each subagent starts cold: it does not see this conversation. Write a self-contained brief with the goal, the files, any rule it must follow (Explore and Plan skip `CLAUDE.md`) and what done looks like.
+- Ask for a short summary back, not raw file dumps.
+- One write-heavy agent per set of files. Parallel agents are for independent reads, or each in its own worktree.
+- Do not spawn an agent for a quick, targeted change or for work that needs back-and-forth; do it in the main session.
 
 ## Git workflow (set by John, 2026-10-03)
 

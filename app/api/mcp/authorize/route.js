@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
 import { auth } from '../../../../src/lib/neon/authServer.js'
+import { isSameOrigin, describeRedirect } from '../../../../src/lib/mcp/oauthPolicy.js'
 
 // OAuth authorization endpoint. Deliberately checks the Neon Auth session
 // cookie directly (auth.getSession()), not getSessionOrToken() — this page
@@ -38,6 +39,8 @@ function consentPage({ clientName, values, error }) {
   .card { max-width:420px; width:calc(100% - 48px); background:#131a1e; border:1px solid #1f2a2f; border-radius:16px; padding:32px; }
   h1 { font-size:18px; margin:0 0 6px; }
   p { font-size:14px; line-height:1.6; color:#a7b2bc; margin:0 0 24px; }
+  .meta { margin:0 0 10px; word-break:break-all; }
+  .meta strong { color:#eef2f5; }
   .err { color:#f87171; font-size:13px; margin-bottom:16px; }
   .retry { font-size:13px; color:#6c838c; margin:0; }
   .row { display:flex; gap:10px; }
@@ -47,7 +50,9 @@ function consentPage({ clientName, values, error }) {
 </style></head>
 <body>
   <div class="card">
-    <h1>${hasForm ? `Allow ${escapeHtml(clientName || 'this app')} to access your data?` : 'Couldn’t start this authorization'}</h1>
+    <h1>${hasForm ? 'Allow this app to access your data?' : 'Couldn’t start this authorization'}</h1>
+    ${hasForm ? `<p class="meta">Name reported by the app: <strong>${escapeHtml(clientName || 'unnamed app')}</strong></p>
+    <p class="meta">Sends your authorization to: <strong>${escapeHtml(describeRedirect(values.redirect_uri).host)}</strong></p>` : ''}
     ${hasForm ? `<p>This grants full read/write access to your AI Capital Planning data — bills, budget, forecast, scenarios, and everything else the in-app assistant can see.</p>` : ''}
     ${error ? `<div class="err">${escapeHtml(error)}</div>` : ''}
     ${action}
@@ -110,6 +115,10 @@ export async function POST(request) {
   const { data: session } = await auth.getSession()
   if (!session?.user?.id) {
     return Response.json({ error: 'access_denied', error_description: 'Not authenticated.' }, { status: 401 })
+  }
+
+  if (!isSameOrigin(request)) {
+    return Response.json({ error: 'access_denied', error_description: 'Cross-origin request blocked.' }, { status: 403 })
   }
 
   const form = await request.formData()
