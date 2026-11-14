@@ -78,11 +78,18 @@ async function harness({ dateOffset = '+00:00' } = {}) {
   }
   const context = vm.createContext({ Response, Request, URL, console })
   const cache = new Map()
-  async function load(path) {
-    if (cache.has(path)) return cache.get(path)
+  // Cache the in-flight promise, not the finished module: two imports of the same file
+  // (e.g. assumptions.js from plans.js and projection.js) are linked concurrently and must
+  // share one module instance. Paths are normalised so the stubs also match on Windows.
+  function load(path) {
+    if (!cache.has(path)) cache.set(path, build(path))
+    return cache.get(path)
+  }
+  async function build(path) {
+    const posix = path.replaceAll('\\', '/')
     let exports
-    if (path.endsWith('/neon/client.js')) exports = { getNeonSql: () => sql }
-    if (path.endsWith('/neon/apiAuth.js'))
+    if (posix.endsWith('/neon/client.js')) exports = { getNeonSql: () => sql }
+    if (posix.endsWith('/neon/apiAuth.js'))
       exports = {
         getSessionOrToken: async () => ({ data: state.user ? { user: { id: state.user } } : null }),
       }
@@ -95,7 +102,6 @@ async function harness({ dateOffset = '+00:00' } = {}) {
           { context, identifier: path }
         )
       : new vm.SourceTextModule(await readFile(path, 'utf8'), { context, identifier: path })
-    cache.set(path, module)
     if (!exports) await module.link((specifier) => load(resolve(dirname(path), specifier)))
     return module
   }
