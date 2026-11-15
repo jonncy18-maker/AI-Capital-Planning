@@ -52,14 +52,23 @@ export async function POST(request) {
 
   try {
     const sql = getNeonSql()
+    // One statement, two guards: the INSERT only happens for a card the caller
+    // owns, and a conflicting row is only updated if it is already theirs. The
+    // owner is never rewritten. No row back means the card is not the caller's
+    // (or the row belongs to someone else); answer 404 either way.
     const [row] = await sql`
       INSERT INTO credit_card_earn_rates (card_id, user_id, cc_category, earn_rate)
-      VALUES (${cardId}, ${userId}, ${ccCategory}, ${earnRate})
+      SELECT c.id, c.user_id, ${ccCategory}, ${earnRate}
+      FROM credit_cards c
+      WHERE c.id = ${cardId} AND c.user_id = ${userId}
       ON CONFLICT (card_id, cc_category) DO UPDATE SET
-        earn_rate = EXCLUDED.earn_rate,
-        user_id = EXCLUDED.user_id
+        earn_rate = EXCLUDED.earn_rate
+      WHERE credit_card_earn_rates.user_id = EXCLUDED.user_id
       RETURNING *
     `
+    if (!row) {
+      return Response.json({ error: 'Card not found.' }, { status: 404 })
+    }
     return Response.json(row)
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 })
