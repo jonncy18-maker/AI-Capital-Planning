@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
+import { ownsAllCreditCards, UNOWNED_CREDIT_CARD } from '../../../../src/lib/neon/ownership.js'
 
 // Mirrors src/lib/db/creditCards.js#getPointsBalances: fetch all snapshot
 // rows ordered newest-first, then reduce to the latest row per card in JS
@@ -61,6 +62,10 @@ export async function POST(request) {
 
   try {
     const sql = getNeonSql()
+    // The card must be the caller's; the FK only checks that it exists.
+    if (!(await ownsAllCreditCards(sql, userId, [cardId]))) {
+      return Response.json(UNOWNED_CREDIT_CARD, { status: 404 })
+    }
     const [row] = await sql`
       INSERT INTO credit_card_points (card_id, user_id, balance, as_of_date)
       VALUES (${cardId}, ${userId}, ${balance}, ${asOfDate})

@@ -1,5 +1,6 @@
 import { getNeonSql } from '../../../../src/lib/neon/client.js'
 import { getSessionOrToken } from '../../../../src/lib/neon/apiAuth.js'
+import { ownsAllCreditCards, UNOWNED_CREDIT_CARD } from '../../../../src/lib/neon/ownership.js'
 
 // Mirrors src/lib/db/creditCards.js#getPointRedemptions.
 export async function GET(request) {
@@ -70,6 +71,11 @@ export async function POST(request) {
         description: redemption.description ?? existing.description,
       }
 
+      // Moving a redemption to another card requires owning that card.
+      if (!(await ownsAllCreditCards(sql, userId, [merged.card_id]))) {
+        return Response.json(UNOWNED_CREDIT_CARD, { status: 404 })
+      }
+
       const [row] = await sql`
         UPDATE credit_card_point_redemptions
         SET
@@ -104,6 +110,10 @@ export async function POST(request) {
     }
     if (pointsAmount === undefined || pointsAmount === null) {
       return Response.json({ error: 'Field "pointsAmount" is required.' }, { status: 400 })
+    }
+
+    if (!(await ownsAllCreditCards(sql, userId, [cardId]))) {
+      return Response.json(UNOWNED_CREDIT_CARD, { status: 404 })
     }
 
     const [row] = await sql`
