@@ -1,5 +1,5 @@
 import { parseLocalDate } from '../../lib/dates.js'
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   getScenarios,
   createScenario,
@@ -20,10 +20,8 @@ import {
 } from '../../lib/db/outlook.js'
 import { expenseGroups } from '../../lib/outlook/outlookEngine.js'
 import { summarizeOutlookAdjustments, outlookChip, formatSignedMoney } from '../../lib/outlook/scenarioSummary.js'
-import { runScenarioAgent, confirmPendingScenario, cancelPendingScenario, runAdjustmentAgent, confirmPendingAdjustments, cancelPendingAdjustments } from '../../lib/ai/scenarioAgent.js'
 import { headerStyles } from '../common/headerStyles.js'
 import { moduleHue } from '../registry.js'
-import Markdown from '../common/Markdown.jsx'
 import { computeImpactSummary, cashEffect, grossToNet } from '../../lib/scenarios/scenarioUtils.js'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -1202,326 +1200,6 @@ function BaselinePanel({ ctx }) {
   )
 }
 
-// ── AI Scenario Composer (iterative, conversational) ─────────────────────────
-
-function ChatMessage({ message, onOpenScenario, onConfirm, onCancel }) {
-  const isUser = message.role === 'user'
-
-  if (isUser) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <div style={{
-          background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)',
-          borderRadius: '12px 12px 4px 12px', padding: '9px 14px',
-          maxWidth: '82%', fontSize: 13, color: 'var(--tx-1)', lineHeight: 1.5,
-        }}>
-          {message.text}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <span style={{ flexShrink: 0, color: 'var(--accent)', fontSize: 13, marginTop: 3 }}>✦</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {message.loading ? (
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: 'var(--tx-3)', letterSpacing: '0.04em', padding: '4px 0' }}>
-            {message.statusText || 'Thinking…'}
-          </div>
-        ) : message.pending ? (
-          <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 10, overflow: 'hidden', maxWidth: 420 }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--bd-light)', background: 'var(--accent-bg)' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--tx-1)', marginBottom: 2 }}>
-                ✦ {message.pending.preview.name}
-              </div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)' }}>
-                {message.pending.preview.adjustmentCount} adjustment{message.pending.preview.adjustmentCount !== 1 ? 's' : ''} · net {message.pending.preview.netDelta >= 0 ? '+' : '−'}${Math.abs(Math.round(message.pending.preview.netDelta)).toLocaleString()}
-              </div>
-            </div>
-            <div style={{ padding: '8px 14px', maxHeight: 140, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {message.pending.preview.adjustments.slice(0, 8).map((a, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--tx-2)' }}>
-                  <span>{a.category} · {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][a.month - 1]} {a.year}</span>
-                  <span style={{ fontFamily: "'DM Mono', monospace", color: a.delta_amount >= 0 ? 'var(--warn)' : 'var(--success, #4ade80)', fontWeight: 600 }}>
-                    {a.delta_amount >= 0 ? '+' : '−'}${Math.abs(Math.round(a.delta_amount)).toLocaleString()}
-                  </span>
-                </div>
-              ))}
-              {message.pending.preview.adjustments.length > 8 && (
-                <div style={{ fontSize: 10, color: 'var(--tx-4)', fontStyle: 'italic' }}>
-                  +{message.pending.preview.adjustments.length - 8} more…
-                </div>
-              )}
-            </div>
-            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--bd-light)', display: 'flex', gap: 8 }}>
-              <button onClick={onConfirm} style={{
-                flex: 1, background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none',
-                borderRadius: 7, padding: '7px 0', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              }}>
-                ✓ Create Scenario
-              </button>
-              <button onClick={onCancel} style={{
-                background: 'none', border: '1px solid var(--bd)', color: 'var(--tx-3)',
-                borderRadius: 7, padding: '7px 14px', fontSize: 12, cursor: 'pointer',
-              }}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : message.error ? (
-          <div style={{ fontSize: 13, color: 'var(--warn)', lineHeight: 1.5 }}>{message.text}</div>
-        ) : (
-          <div>
-            <Markdown text={message.text} />
-            {message.created?.length > 0 && (
-              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {message.created.map((c, i) => (
-                  <div key={i} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                    border: '1px solid var(--accent-bd)', background: 'var(--accent-bg)',
-                    borderRadius: 8, padding: '8px 12px',
-                  }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, color: 'var(--tx-1)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        ✓ {c.name}
-                      </div>
-                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: 'var(--tx-3)', marginTop: 2 }}>
-                        {c.adjustmentCount} adjustment{c.adjustmentCount !== 1 ? 's' : ''} · net {c.netDelta >= 0 ? '+' : '−'}${Math.abs(Math.round(c.netDelta)).toLocaleString()}
-                      </div>
-                    </div>
-                    {onOpenScenario && (
-                      <button onClick={() => onOpenScenario(c.scenarioId)} style={{
-                        flexShrink: 0, background: 'var(--accent)', color: 'var(--accent-tx-on)',
-                        border: 'none', borderRadius: 6, padding: '5px 11px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                      }}>
-                        Open →
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-const COMPOSER_EXAMPLE = "In Oct 2026 my car lease expires. Instead of $467/mo I'll lease a Tesla Model Y Premium at ~$550/mo plus $99/mo for FSD. Run this scenario."
-
-function AiScenarioComposer({ userId, context, onCreated, onOpenScenario, mobile }) {
-  const [messages, setMessages] = useState([]) // [{role, text, loading, pending, created, error, statusText}]
-  const [prompt, setPrompt] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [pendingScenario, setPendingScenario] = useState(null)
-  const messagesEndRef = useRef(null)
-
-  useEffect(() => {
-    if (messages.length) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  async function run() {
-    const text = prompt.trim()
-    if (!text || busy) return
-
-    const userMsg = { role: 'user', text }
-    const loadingMsg = { role: 'ai', text: '', loading: true, statusText: 'Thinking…' }
-    setMessages(prev => [...prev, userMsg, loadingMsg])
-    setPrompt('')
-    setBusy(true)
-
-    // Build history from prior completed messages
-    const history = messages
-      .filter(m => m.text && !m.loading)
-      .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
-
-    try {
-      const res = await runScenarioAgent({
-        userId,
-        history,
-        prompt: text,
-        context,
-        onStatus: (statusText) => setMessages(prev => {
-          const next = [...prev]
-          const last = next[next.length - 1]
-          if (last?.loading) next[next.length - 1] = { ...last, statusText }
-          return next
-        }),
-      })
-      if (res.status === 'pending') {
-        setPendingScenario(res.pending)
-        setMessages(prev => {
-          const next = [...prev]
-          next[next.length - 1] = { role: 'ai', text: '', pending: res.pending }
-          return next
-        })
-        setBusy(false)
-        return
-      }
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = { role: 'ai', text: res.text, created: res.created, error: res.status !== 'ok' }
-        return next
-      })
-      if (res.created?.length) onCreated?.(res.created)
-    } catch (e) {
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = { role: 'ai', text: e.message, error: true }
-        return next
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleConfirmScenario() {
-    const pending = pendingScenario
-    if (!pending) return
-    setPendingScenario(null)
-    setBusy(true)
-    setMessages(prev => {
-      const next = [...prev]
-      next[next.length - 1] = { role: 'ai', text: '', loading: true, statusText: `Building "${pending.preview.name}" …` }
-      return next
-    })
-    try {
-      const res = await confirmPendingScenario({ userId, pending, context,
-        onStatus: (statusText) => setMessages(prev => {
-          const next = [...prev]
-          const last = next[next.length - 1]
-          if (last?.loading) next[next.length - 1] = { ...last, statusText }
-          return next
-        }),
-      })
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = { role: 'ai', text: res.text, created: res.created, error: res.status !== 'ok' }
-        return next
-      })
-      if (res.created?.length) onCreated?.(res.created)
-    } catch (e) {
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = { role: 'ai', text: e.message, error: true }
-        return next
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleCancelScenario() {
-    const pending = pendingScenario
-    if (!pending) return
-    setPendingScenario(null)
-    setBusy(true)
-    setMessages(prev => {
-      const next = [...prev]
-      next[next.length - 1] = { role: 'ai', text: '', loading: true, statusText: 'Cancelling…' }
-      return next
-    })
-    try {
-      const res = await cancelPendingScenario({ pending, context })
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = { role: 'ai', text: res.text || 'Scenario cancelled.', created: [] }
-        return next
-      })
-    } catch {
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = { role: 'ai', text: 'Scenario cancelled.', created: [] }
-        return next
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div style={{ border: '1px solid var(--accent-bd)', borderRadius: 14, background: 'var(--bg-card)', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{
-        padding: '13px 18px', borderBottom: '1px solid var(--bd-light)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: 'var(--accent)', fontSize: 14 }}>✦</span>
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--tx-1)' }}>AI Scenario Builder</span>
-          <span style={{ fontSize: 11, color: 'var(--tx-4)', marginLeft: 2 }}>— describe in plain English, then keep chatting to refine</span>
-        </div>
-        {messages.length > 0 && (
-          <button onClick={() => setMessages([])} style={{
-            background: 'none', border: '1px solid var(--bd)', color: 'var(--tx-3)',
-            fontSize: 10, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
-            fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em',
-          }}>
-            ↺ CLEAR
-          </button>
-        )}
-      </div>
-
-      {/* Chat history */}
-      {messages.length > 0 && (
-        <div style={{ maxHeight: 300, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {messages.map((msg, i) => (
-            <ChatMessage
-              key={i}
-              message={msg}
-              onOpenScenario={onOpenScenario}
-              onConfirm={msg.pending ? handleConfirmScenario : undefined}
-              onCancel={msg.pending ? handleCancelScenario : undefined}
-            />
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-      )}
-
-      {/* Input */}
-      <div style={{ padding: messages.length ? '10px 18px 16px' : '14px 18px 18px' }}>
-        {!messages.length && (
-          <div style={{ fontSize: 12.5, color: 'var(--tx-2)', lineHeight: 1.55, marginBottom: 12 }}>
-            Describe a financial "what if" — changes to income, recurring expenses, one-time costs, or any combination. After a scenario is built, keep chatting to adjust it.
-          </div>
-        )}
-        <textarea
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run() }}
-          placeholder={messages.length ? 'Continue refining… (⌘↵ to send)' : 'e.g. "Starting in Oct 2026, my car lease upgrades to a Tesla Model Y at $550/mo instead of $467/mo"'}
-          rows={mobile ? 4 : 3}
-          disabled={busy}
-          style={{
-            width: '100%', resize: 'vertical', background: 'var(--field)',
-            border: '1px solid var(--bd)', borderRadius: 10, padding: '10px 13px',
-            color: 'var(--tx-1)', fontFamily: 'Inter, sans-serif', fontSize: 13, lineHeight: 1.55,
-            outline: 'none', boxSizing: 'border-box',
-          }}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-          <button onClick={run} disabled={busy || !prompt.trim()} style={{
-            background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none', borderRadius: 8,
-            padding: '8px 18px', fontSize: 13, fontWeight: 600,
-            cursor: busy || !prompt.trim() ? 'not-allowed' : 'pointer', opacity: busy || !prompt.trim() ? 0.6 : 1,
-          }}>
-            {busy ? 'Building…' : '✦ Send'}
-          </button>
-          {!messages.length && !busy && !prompt && (
-            <button onClick={() => setPrompt(COMPOSER_EXAMPLE)} style={{
-              background: 'none', border: 'none', color: 'var(--tx-3)', fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline',
-            }}>
-              Try an example
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Waterfall / bridge chart ─────────────────────────────────────────────────
 
 function WaterfallChart({ adjustments }) {
@@ -1728,165 +1406,14 @@ function WaterfallChart({ adjustments }) {
   )
 }
 
-// ── AI Adjustment Composer ───────────────────────────────────────────────────
-
-function AiAdjustmentComposer({ userId, scenarioId, scenarioName, existingAdjustments, categories, context, onCompleted }) {
-  const [messages, setMessages] = useState([])
-  const [prompt, setPrompt] = useState('')
-  const [busy, setBusy] = useState(false)
-  const messagesEndRef = useRef(null)
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  async function run() {
-    const text = prompt.trim()
-    if (!text || busy) return
-    const userMsg = { role: 'user', text }
-    const loadingMsg = { role: 'ai', text: '', loading: true }
-    setMessages(prev => [...prev, userMsg, loadingMsg])
-    setPrompt('')
-    setBusy(true)
-    const history = messages
-      .filter(m => m.text && !m.loading && !m.pending)
-      .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
-    try {
-      const res = await runAdjustmentAgent({ userId, scenarioId, scenarioName, history, prompt: text, context, existingAdjustments })
-      if (res.status === 'pending') {
-        setMessages(prev => {
-          const next = [...prev]
-          next[next.length - 1] = { role: 'ai', text: '', pending: res.pending }
-          return next
-        })
-        setBusy(false)
-        return
-      }
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = { role: 'ai', text: res.text, error: res.status !== 'ok' }
-        return next
-      })
-    } catch (e) {
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = { role: 'ai', text: e.message, error: true }
-        return next
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleConfirm(pendingData) {
-    setBusy(true)
-    try {
-      const res = await confirmPendingAdjustments({ userId, pending: pendingData, context })
-      setMessages(prev => prev.map(m => m.pending === pendingData ? { role: 'ai', text: res.text } : m))
-      onCompleted?.()
-    } catch (e) {
-      setMessages(prev => prev.map(m => m.pending === pendingData ? { role: 'ai', text: e.message, error: true } : m))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleCancel(pendingData) {
-    const res = await cancelPendingAdjustments({ pending: pendingData, context })
-    setMessages(prev => prev.map(m => m.pending === pendingData ? { role: 'ai', text: res.text } : m))
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 260 }}>
-      <div style={{ flex: 1, overflow: 'auto', maxHeight: 220, display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 4 }}>
-        {messages.length === 0 && (
-          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx-3)', lineHeight: 1.6 }}>
-            Describe what you want to add — e.g. <em>"Add $150/month to Dining from July through December"</em> or <em>"Remove $200/month from Travel in Q3."</em>
-          </p>
-        )}
-        {messages.map((m, i) => {
-          if (m.pending) {
-            const p = m.pending.preview
-            return (
-              <div key={i} style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-bd)', borderRadius: 10, padding: '10px 14px' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--tx-1)', marginBottom: 6 }}>
-                  Preview — {p.adjustmentCount} row{p.adjustmentCount !== 1 ? 's' : ''} · net {(p.netDelta >= 0 ? '+' : '') + '$' + Math.abs(Math.round(p.netDelta)).toLocaleString()}
-                </div>
-                {p.adjustments.map((a, j) => (
-                  <div key={j} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: 'var(--tx-2)', padding: '2px 0' }}>
-                    <span>{a.category} · {MONTHS[a.month - 1]} {a.year}{a.label ? ` · ${a.label}` : ''}</span>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: a.delta_amount < 0 ? 'var(--green)' : 'var(--red)' }}>
-                      {(a.delta_amount >= 0 ? '+' : '') + '$' + Math.abs(Math.round(a.delta_amount)).toLocaleString()}
-                    </span>
-                  </div>
-                ))}
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button onClick={() => handleConfirm(m.pending)} disabled={busy} style={{ padding: '5px 14px', background: 'var(--accent)', color: 'var(--accent-tx-on)', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1 }}>
-                    ✓ Confirm
-                  </button>
-                  <button onClick={() => handleCancel(m.pending)} disabled={busy} style={{ padding: '5px 12px', background: 'transparent', color: 'var(--tx-3)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 12, cursor: busy ? 'not-allowed' : 'pointer' }}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )
-          }
-          return (
-            <div key={i} style={{
-              alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-              maxWidth: '90%',
-              background: m.role === 'user' ? 'var(--accent-bg)' : 'var(--bg-app)',
-              border: '1px solid var(--bd)',
-              borderRadius: m.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
-              padding: '7px 11px',
-              fontSize: 12.5,
-              color: m.error ? 'var(--red)' : m.loading ? 'var(--tx-3)' : 'var(--tx-1)',
-              fontStyle: m.loading ? 'italic' : 'normal',
-            }}>
-              {m.loading ? 'Thinking…' : m.text}
-            </div>
-          )
-        })}
-        <div ref={messagesEndRef} />
-      </div>
-      <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid var(--bd)', marginTop: 8 }}>
-        <textarea
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run() } }}
-          placeholder="Describe the adjustment in plain English…"
-          disabled={busy}
-          rows={2}
-          style={{
-            flex: 1, resize: 'none', padding: '8px 10px', borderRadius: 8,
-            background: 'var(--bg-app)', color: 'var(--tx-1)', border: '1px solid var(--bd)',
-            fontSize: 12.5, fontFamily: 'inherit', outline: 'none',
-          }}
-        />
-        <button
-          onClick={run}
-          disabled={busy || !prompt.trim()}
-          style={{
-            padding: '0 16px', background: 'var(--accent)', color: 'var(--accent-tx-on)',
-            border: 'none', borderRadius: 8, fontSize: 16, fontWeight: 700,
-            cursor: busy || !prompt.trim() ? 'not-allowed' : 'pointer',
-            opacity: busy || !prompt.trim() ? 0.4 : 1, alignSelf: 'stretch',
-          }}
-        >→</button>
-      </div>
-    </div>
-  )
-}
-
 // ── Scenario detail panel ────────────────────────────────────────────────────
 
 function ScenarioDetail({
-  scenario, adjustments, outlookAdjs, outlookError, onOpenOutlook, categories, context, userId,
-  onPromote, onDelete, onAddAdj, onDeleteAdj, onAddOutlookAdj, onDeleteOutlookAdj, onClone, onAdjsRefresh, loading, onGoToForecast, mobile,
+  scenario, adjustments, outlookAdjs, outlookError, onOpenOutlook, categories, context,
+  onPromote, onDelete, onAddAdj, onDeleteAdj, onAddOutlookAdj, onDeleteOutlookAdj, onClone, loading, onGoToForecast, mobile,
 }) {
   const [rightView, setRightView] = useState('forecast')
   const [showAdjModal, setShowAdjModal] = useState(false)
-  const [adjTab, setAdjTab] = useState('manual')
   const [adjMode, setAdjMode] = useState('detailed')
   const [sensitivity, setSensitivity] = useState(1.0)
   const [cloning, setCloning] = useState(false)
@@ -2105,19 +1632,16 @@ function ScenarioDetail({
                   <OutlookAdjustmentsList adjustments={outlookAdjs} onDelete={onDeleteOutlookAdj} readOnly={isCommitted} />
                   {!isCommitted && (
                     <>
-                      {/* Tab toggle */}
-                      <div style={{ display: 'flex', gap: 4, marginTop: 16, marginBottom: 14, background: 'var(--bg-app)', borderRadius: 8, padding: 3, border: '1px solid var(--bd)', width: 'fit-content' }}>
-                        {[['manual', 'Manual'], ['ai', '✦ AI']].map(([key, label]) => (
+                      <div style={{ display: 'flex', gap: 4, marginTop: 16, marginBottom: 12, background: 'var(--bg-app)', borderRadius: 8, padding: 3, border: '1px solid var(--bd)', width: 'fit-content', flexWrap: 'wrap' }}>
+                        {[['detailed', 'Detailed (month · category)'], ['outlook', 'Outlook (year · group)']].map(([key, label]) => (
                           <button
                             key={key}
-                            onClick={() => { setAdjTab(key); setShowAddForm(false) }}
+                            onClick={() => { setAdjMode(key); setShowAddForm(false) }}
                             style={{
-                              padding: '5px 14px', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                              background: adjTab === key ? 'var(--bg-card)' : 'transparent',
-                              color: adjTab === key ? 'var(--tx-1)' : 'var(--tx-3)',
-                              fontWeight: adjTab === key ? 600 : 400,
-                              boxShadow: adjTab === key ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
-                              transition: 'all 0.15s',
+                              padding: '5px 12px', border: 'none', borderRadius: 6, fontSize: 11.5, cursor: 'pointer',
+                              background: adjMode === key ? 'var(--bg-card)' : 'transparent',
+                              color: adjMode === key ? 'var(--tx-1)' : 'var(--tx-3)',
+                              fontWeight: adjMode === key ? 600 : 400,
                             }}
                           >
                             {label}
@@ -2125,26 +1649,7 @@ function ScenarioDetail({
                         ))}
                       </div>
 
-                      {adjTab === 'manual' && (
-                        <div style={{ display: 'flex', gap: 4, marginBottom: 12, background: 'var(--bg-app)', borderRadius: 8, padding: 3, border: '1px solid var(--bd)', width: 'fit-content', flexWrap: 'wrap' }}>
-                          {[['detailed', 'Detailed (month · category)'], ['outlook', 'Outlook (year · group)']].map(([key, label]) => (
-                            <button
-                              key={key}
-                              onClick={() => { setAdjMode(key); setShowAddForm(false) }}
-                              style={{
-                                padding: '5px 12px', border: 'none', borderRadius: 6, fontSize: 11.5, cursor: 'pointer',
-                                background: adjMode === key ? 'var(--bg-card)' : 'transparent',
-                                color: adjMode === key ? 'var(--tx-1)' : 'var(--tx-3)',
-                                fontWeight: adjMode === key ? 600 : 400,
-                              }}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {adjTab === 'manual' && (showAddForm ? (
+                      {showAddForm ? (
                         adjMode === 'outlook'
                           ? <OutlookAdjustmentForm categories={categories} onSubmit={handleAddOutlookAdj} onCancel={() => setShowAddForm(false)} />
                           : <AddAdjustmentForm categories={categories} onSubmit={handleAddAdj} onCancel={() => setShowAddForm(false)} context={context} />
@@ -2152,18 +1657,6 @@ function ScenarioDetail({
                         <button onClick={() => setShowAddForm(true)} style={{ padding: '8px 16px', background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent-bd)', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                           + Add Adjustment
                         </button>
-                      ))}
-
-                      {adjTab === 'ai' && (
-                        <AiAdjustmentComposer
-                          userId={userId}
-                          scenarioId={scenario.id}
-                          scenarioName={scenario.name}
-                          existingAdjustments={adjustments}
-                          categories={categories}
-                          context={context}
-                          onCompleted={() => onAdjsRefresh?.()}
-                        />
                       )}
                     </>
                   )}
@@ -2340,7 +1833,6 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
   const [selectedId, setSelectedId] = useState(null)
   const [activeTab, setActiveTab] = useState('committed')
   const [showNewForm, setShowNewForm] = useState(false)
-  const [showComposer, setShowComposer] = useState(false)
   const [showIdeaForm, setShowIdeaForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -2386,31 +1878,8 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
     if (!openScenarioId) return
     setSelectedId(openScenarioId)
     setActiveTab('modeled')
-    setShowComposer(false)
     loadAdjustments(openScenarioId)
   }, [openScenarioId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleAiCreated(created) {
-    const list = await getScenarios(userId).catch(() => null)
-    if (list) setScenarios(list)
-    getBudgetCategories(userId).then(setCategories).catch(() => {})
-    const first = created?.[0]
-    if (first?.scenarioId) {
-      setAdjustments(prev => { const n = { ...prev }; delete n[first.scenarioId]; return n })
-      setSelectedId(first.scenarioId)
-      setActiveTab('modeled')
-      setShowComposer(false)
-      loadAdjustments(first.scenarioId)
-    }
-    onDataChange?.()
-  }
-
-  function handleOpenScenario(scenarioId) {
-    setSelectedId(scenarioId)
-    setActiveTab('modeled')
-    setShowComposer(false)
-    loadAdjustments(scenarioId)
-  }
 
   async function loadOutlookAdjs(scenarioId) {
     if (outlookAdjs[scenarioId]) return
@@ -2481,12 +1950,6 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
   async function handleDeleteOutlookAdj(adjId) {
     await deleteScenarioOutlookAdjustment(adjId)
     setOutlookAdjs(prev => ({ ...prev, [selectedId]: (prev[selectedId] ?? []).filter(a => a.id !== adjId) }))
-  }
-
-  async function handleAdjsRefresh() {
-    if (!selectedId) return
-    const data = await getAdjustments(userId, selectedId)
-    setAdjustments(prev => ({ ...prev, [selectedId]: data }))
   }
 
   async function handleClone(scenarioId) {
@@ -2625,8 +2088,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
             onViewScenario={(id) => {
               handleSelect(id)
               setActiveTab('modeled')
-              setShowComposer(false)
-            }}
+                      }}
             onDelete={handleDelete}
           />
         )}
@@ -2668,13 +2130,13 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                   {modeled.map(s => (
                     <ScenarioListItem key={s.id} scenario={s}
                       selected={selectedId === s.id}
-                      onClick={() => { handleSelect(s.id); setShowComposer(false) }}
+                      onClick={() => handleSelect(s.id)}
                       adjustments={adjustments[s.id]}
                       outlookAdjustments={outlookAdjs[s.id]} />
                   ))}
                   {modeled.length === 0 && !showNewForm && (
                     <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 12, color: 'var(--tx-3)', lineHeight: 1.6 }}>
-                      No scenarios yet. Start with AI ↓
+                      No scenarios yet. Click + New to start one.
                     </div>
                   )}
                 </div>
@@ -2694,16 +2156,10 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                   </button>
                 )}
 
-                {(!selectedId || showComposer) ? (
+                {!selectedId ? (
                   <div style={{ flex: 1, overflow: 'auto', padding: mobile ? 16 : 24 }}>
-                    <div style={{ maxWidth: 720, margin: '0 auto' }}>
-                      <AiScenarioComposer
-                        userId={userId}
-                        context={context}
-                        onCreated={handleAiCreated}
-                        onOpenScenario={handleOpenScenario}
-                        mobile={mobile}
-                      />
+                    <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center', fontSize: 13, color: 'var(--tx-3)', lineHeight: 1.6, paddingTop: 40 }}>
+                      Select a scenario to see its adjustments, or click + New to start one.
                     </div>
                   </div>
                 ) : (
@@ -2716,7 +2172,6 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                       outlookError={outlookError?.id === selectedId ? outlookError.message : null}
                       categories={categories}
                       context={context}
-                      userId={userId}
                       onPromote={handlePromote}
                       onDelete={handleDelete}
                       onAddAdj={handleAddAdj}
@@ -2724,7 +2179,6 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                       onAddOutlookAdj={handleAddOutlookAdj}
                       onDeleteOutlookAdj={handleDeleteOutlookAdj}
                       onClone={handleClone}
-                      onAdjsRefresh={handleAdjsRefresh}
                       loading={isAdjLoading}
                       onGoToForecast={onGoToForecast}
                       mobile={mobile}
@@ -2852,7 +2306,7 @@ export default function Scenarios({ userId, mobile, reloadSignal, context, onDat
                 </div>
               ) : !showIdeaForm ? (
                 <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--tx-3)', fontSize: 13 }}>
-                  Ideas from your budget grill session will appear here.
+                  Ideas will appear here.
                 </div>
               ) : null}
             </div>

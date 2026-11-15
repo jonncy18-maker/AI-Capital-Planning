@@ -1,13 +1,12 @@
-// Scenario Planner tools. create_scenario and add_adjustment keep the exact
-// schemas and execution paths the Scenario Composer has always used — they are
-// re-exported here so the global assistant reaches them through the same
-// registry as everything else, and so their confirmation card stays the
-// purpose-built scenario preview rather than the generic row list.
+// Scenario Planner tools. create_scenario and add_adjustment keep their exact
+// schemas and execution paths (defined in scenarioWrites.js) and are exposed
+// through the same registry as everything else, with the purpose-built
+// scenario preview rather than the generic row list.
 
 import {
   CREATE_SCENARIO_TOOL, ADD_ADJUSTMENT_TOOL,
   executeCreateScenario, executeAddAdjustments, buildPreview, buildAdjPreview,
-} from '../scenarioAgent.js'
+} from './scenarioWrites.js'
 import {
   getScenarios, getAdjustments, deleteScenario, cloneScenario, updateScenario,
   promoteToCommitted, promoteToModeled, deleteAdjustment,
