@@ -10,17 +10,11 @@ import { parseBudgetCSV } from '../src/lib/csv/budgetParser.js'
 import { importCategoryMappings } from '../src/lib/db/budgetCategories.js'
 import { useTheme } from '../src/lib/theme/useTheme.js'
 import { loadAIContext, summarizeContext } from '../src/lib/ai/contextLoader.js'
-import { runAssistant, confirmPendingActions, cancelPendingActions, reviseWithFeedback } from '../src/lib/ai/toolAgent.js'
-import { buildUserContent } from '../src/lib/ai/attachments.js'
-import { executeTool } from '../src/lib/ai/tools/index.js'
-import { getActionLog, recordActions, markUndone, clearActionLog } from '../src/lib/ai/actionLog.js'
 import { getTransactionsByMonth } from '../src/lib/db/transactions.js'
 import { getModule } from '../src/modules/registry.js'
 import Login from '../src/modules/auth/Login.jsx'
 import Onboarding from '../src/modules/onboarding/Onboarding.jsx'
 import Sidebar from '../src/modules/shell/Sidebar.jsx'
-import CommandBar from '../src/modules/shell/CommandBar.jsx'
-import AIPrefsButton from '../src/modules/shell/AIPrefsButton.jsx'
 import RefreshButton from '../src/modules/shell/RefreshButton.jsx'
 import ImportFlow from '../src/modules/import/ImportFlow.jsx'
 import { ShellContext } from './shellContext.js'
@@ -35,13 +29,6 @@ function useWindowWidth() {
     return () => window.removeEventListener('resize', handle)
   }, [])
   return width
-}
-
-// Replace the last message in the thread (the loading assistant placeholder)
-// with the resolved assistant turn.
-function replaceLast(messages, next) {
-  if (!messages.length) return [next]
-  return [...messages.slice(0, -1), next]
 }
 
 function AppShell({ children }) {
@@ -75,6 +62,7 @@ function AppShell({ children }) {
 
   // Load profile from DB when user session is established
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets stale profile on sign-out
     if (!user) { setProfile(null); return }
     setProfileLoading(true)
     getProfile(user.id)
@@ -143,21 +131,14 @@ function AppShell({ children }) {
   const [collapsed, setCollapsed] = useState(tablet)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // AI context + command bar state. `conversation` is the running multi-turn
-  // thread ([{ role, content, status }]); the assistant can ask a follow-up and
-  // the user answers in the same command bar without losing context.
+  // AI context: a plain data feed (transactions, categories, commitments, wealth)
+  // that pages read through the shell context.
   const [aiContext, setAiContext] = useState(null)
-  const [conversation, setConversation] = useState([]) // { role, content, status, created }
-  const [aiLoading, setAiLoading] = useState(false)
-  // Bumped whenever the AI writes data (e.g. creates a scenario) so dependent
+  // Bumped whenever data changes outside a module (e.g. an import) so dependent
   // modules reload without a manual refresh.
   const [dataNonce, setDataNonce] = useState(0)
-  const [pendingActions, setPendingActions] = useState(null)
-  // Recent assistant writes, with an undo where one is well-defined.
-  const [actionLog, setActionLog] = useState([])
-  const [undoingId, setUndoingId] = useState(null)
-  // When the user clicks "Open →" on an AI-created scenario card, we store the
-  // ID here so the Scenarios module can auto-select it on mount/change.
+  // Lets other screens ask the Scenarios module to auto-select a scenario; it
+  // reads this on mount/change.
   const [openScenarioId, setOpenScenarioId] = useState(null)
 
   const reloadAiContext = useCallback(() => {
@@ -178,11 +159,7 @@ function AppShell({ children }) {
 
   const summary = useMemo(() => summarizeContext(aiContext), [aiContext])
 
-  useEffect(() => {
-    setActionLog(user ? getActionLog(user.id) : [])
-  }, [user?.id])
-
-  // yearTxns lives here so the AI command bar uses the same fresh data as the
+  // yearTxns lives here so every page reads the same fresh data as the
   // dashboard widgets (not the stale ctx.transactions which is capped at 1000 rows).
   const [yearTxns, setYearTxns] = useState([])
   useEffect(() => {
@@ -194,181 +171,6 @@ function AppShell({ children }) {
       .catch(() => { if (!cancelled) setYearTxns([]) })
     return () => { cancelled = true }
   }, [user?.id, aiContext?.thisYear, dataNonce]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleAiSubmit(prompt, file) {
-    // A confirmation card is already up — the user typed a correction instead
-    // of clicking Confirm/Cancel. Route that as feedback on the pending write
-    // rather than starting a fresh top-level turn.
-    if (pendingActions) return handleReviseWhilePending(prompt, file)
-
-    // Build history from completed turns, then run the agent (tool-enabled, so it
-    // can actually create a scenario rather than only describing it).
-    const history = conversation
-      .filter(m => m.content && m.status !== 'loading')
-      .map(m => ({ role: m.role, content: m.content }))
-
-    const content = file ? buildUserContent(prompt, file) : prompt
-
-    setAiLoading(true)
-    setConversation(prev => [
-      ...prev,
-      { role: 'user', content, attachment: file ? { name: file.name, kind: file.kind } : null },
-      { role: 'assistant', content: '', status: 'loading' },
-    ])
-
-    try {
-      const res = await runAssistant({
-        userId: user.id,
-        history,
-        prompt: content,
-        context: aiContext,
-        yearTxns,
-        activeModule: current.short,
-        onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
-      })
-      applyAgentResult(res)
-    } catch (e) {
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
-    } finally {
-      setAiLoading(false)
-    }
-  }
-
-  // Shared tail for every agent turn: a pause parks the pending writes for the
-  // confirmation card; a finished turn logs whatever was written and refreshes
-  // the modules that read it.
-  function applyAgentResult(res) {
-    // Writes are logged and the modules refreshed even when the turn pauses
-    // again — a chained change confirms in two rounds, and the first round's
-    // write is already saved by then.
-    if (res.actions?.length) {
-      setActionLog(recordActions(user.id, res.actions))
-    }
-    if (res.actions?.length || res.created?.length) {
-      setDataNonce(n => n + 1)
-      reloadAiContext()
-    }
-
-    if (res.status === 'pending') {
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text || '', status: 'pending', pending: res.pending }))
-      setPendingActions(res.pending)
-      return
-    }
-
-    setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text, status: res.status, created: res.created }))
-  }
-
-  // The user typed a correction instead of confirming the pending card.
-  // Nothing was saved, so this drops the stale card's Confirm/Cancel buttons
-  // (they'd otherwise still be clickable but now reference cleared state),
-  // then feeds the correction back to the model as feedback on that turn.
-  async function handleReviseWhilePending(prompt, file) {
-    const pending = pendingActions
-    if (!pending) return
-    const trimmed = (prompt || '').trim()
-    const content = file ? buildUserContent(trimmed, file) : (trimmed || 'Let me adjust that.')
-
-    setPendingActions(null)
-    setAiLoading(true)
-    setConversation(prev => {
-      const last = prev[prev.length - 1]
-      const withoutPendingCard = last?.pending
-        ? [...prev.slice(0, -1), { ...last, status: 'ok', pending: null }]
-        : prev
-      return [
-        ...withoutPendingCard,
-        { role: 'user', content, attachment: file ? { name: file.name, kind: file.kind } : null },
-        { role: 'assistant', content: '', status: 'loading' },
-      ]
-    })
-
-    try {
-      const res = await reviseWithFeedback({
-        userId: user.id,
-        pending,
-        content,
-        context: aiContext,
-        yearTxns,
-        activeModule: current.short,
-        onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
-      })
-      applyAgentResult(res)
-    } catch (e) {
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
-    } finally {
-      setAiLoading(false)
-    }
-  }
-
-  async function handleConfirmActions() {
-    const pending = pendingActions
-    if (!pending) return
-    setPendingActions(null)
-    setAiLoading(true)
-    const first = pending.previews?.[0]
-    setConversation(prev => replaceLast(prev, {
-      role: 'assistant',
-      content: '',
-      status: 'loading',
-      statusText: `${first?.title ?? first?.name ?? 'Saving'} …`,
-    }))
-    try {
-      const res = await confirmPendingActions({
-        userId: user.id,
-        pending,
-        context: aiContext,
-        yearTxns,
-        activeModule: current.short,
-        onStatus: (statusText) => setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText })),
-      })
-      applyAgentResult(res)
-    } catch (e) {
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: e.message, status: 'error' }))
-    } finally {
-      setAiLoading(false)
-    }
-  }
-
-  async function handleCancelActions() {
-    const pending = pendingActions
-    if (!pending) return
-    setPendingActions(null)
-    setAiLoading(true)
-    setConversation(prev => replaceLast(prev, { role: 'assistant', content: '', status: 'loading', statusText: 'Cancelling…' }))
-    try {
-      const res = await cancelPendingActions({ pending, context: aiContext, yearTxns })
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: res.text || 'Cancelled — nothing was saved.', status: 'ok', created: [] }))
-    } catch {
-      setConversation(prev => replaceLast(prev, { role: 'assistant', content: 'Cancelled — nothing was saved.', status: 'ok', created: [] }))
-    } finally {
-      setAiLoading(false)
-    }
-  }
-
-  // Undo runs the inverse tool directly — no AI call, no confirmation card:
-  // the user is already looking at what they asked to reverse.
-  async function handleUndoAction(entry) {
-    if (!entry?.undo) return
-    setUndoingId(entry.id)
-    try {
-      await executeTool(entry.undo.tool, user.id, entry.undo.input, {
-        userId: user.id,
-        aiContext,
-        categories: aiContext?.categories ?? [],
-      })
-      setActionLog(markUndone(user.id, entry.id))
-      setDataNonce(n => n + 1)
-      reloadAiContext()
-    } catch (e) {
-      setConversation(prev => [...prev, {
-        role: 'assistant',
-        content: `Could not undo that: ${e.message}`,
-        status: 'error',
-      }])
-    } finally {
-      setUndoingId(null)
-    }
-  }
 
   function selectModule(id) {
     setDrawerOpen(false)
@@ -494,7 +296,7 @@ function AppShell({ children }) {
             </div>
           )}
 
-          {/* Canvas + command bar */}
+          {/* Canvas */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             <main style={{ flex: 1, overflowY: 'auto', padding: mobile ? '22px 18px 80px' : '34px 28px 80px' }}>
               <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
@@ -509,34 +311,6 @@ function AppShell({ children }) {
                 ) : children}
               </div>
             </main>
-
-            <CommandBar
-              mobile={mobile}
-              loading={aiLoading}
-              hasPending={!!pendingActions}
-              onSubmit={handleAiSubmit}
-              onConfirmAction={handleConfirmActions}
-              onCancelAction={handleCancelActions}
-              placeholder={`Ask or change anything in ${current.short.toLowerCase()}…`}
-              conversation={conversation}
-              onClear={() => { setConversation([]); setPendingActions(null) }}
-              actionLog={actionLog}
-              undoingId={undoingId}
-              onUndoAction={handleUndoAction}
-              onClearLog={() => setActionLog(clearActionLog(user.id))}
-              onViewScenarios={(scenarioId) => {
-                setOpenScenarioId(scenarioId ?? null)
-                selectModule('scenarios')
-              }}
-              accessory={
-                <AIPrefsButton
-                  userId={user.id}
-                  context={aiContext}
-                  onChange={reloadAiContext}
-                  mobile={mobile}
-                />
-              }
-            />
           </div>
         </div>
       </div>
@@ -544,7 +318,7 @@ function AppShell({ children }) {
   )
 }
 
-// Routes that render without the signed-in shell (no auth gate, sidebar or AI command bar).
+// Routes that render without the signed-in shell (no auth gate or sidebar).
 const PUBLIC_PATHS = ['/welcome']
 
 export default function AppRoot({ children }) {

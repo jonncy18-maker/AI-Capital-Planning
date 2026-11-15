@@ -1,4 +1,3 @@
-import { parseLocalDate } from '../dates.js'
 import { getRecentTransactions } from '../db/transactions.js'
 import { getBudgetCategories } from '../db/budgetCategories.js'
 import { getCommitments } from '../db/commitments.js'
@@ -10,9 +9,6 @@ import { getForecastLineItems } from '../db/forecastLineItems.js'
 import { getProfile } from '../db/profile.js'
 import { estimateNet } from '../db/taxBrackets.js'
 import { getAIPreferences } from '../db/aiPreferences.js'
-import { formatPreferencesForBrief } from './preferences.js'
-import { incomeVsExpenses } from '../dashboard/widgetData.js'
-import { cashEffect } from '../scenarios/scenarioUtils.js'
 
 // How far back the AI's transaction context reaches. A full trailing year
 // captures the user's actual annual cycle (seasonality, annual bills, bonuses)
@@ -128,136 +124,4 @@ export function summarizeContext(ctx) {
     hasWealth: !!wealth,
     netWorth: wealth ? Number(wealth.net_worth || 0) : null,
   }
-}
-
-// Structured text brief — formatted for the AI to reason against immediately.
-// Used once the Edge Function proxy is wired (see sendMessage.js).
-export function buildContextBrief(ctx, yearTxns) {
-  if (!ctx) return 'No financial context loaded.'
-  const s = summarizeContext(ctx)
-  const lines = []
-
-  lines.push('## Financial Context')
-
-  // Current-year projection: YTD actuals + remaining-month forecasts.
-  // Prefer the freshly-fetched yearTxns (same dataset the dashboard widgets use);
-  // fall back to filtering ctx.transactions when yearTxns isn't passed.
-  const currentYearTxns = yearTxns ?? (ctx?.transactions ?? []).filter(t => {
-    const d = parseLocalDate(t.date)
-    return !Number.isNaN(d.getTime()) && d.getFullYear() === ctx?.thisYear
-  })
-  const ivs = incomeVsExpenses(ctx, currentYearTxns)
-  if (ivs.hasData || (ctx?.budgetLineItems ?? []).length > 0) {
-    const savingsNote = ivs.fullYearSavingsRate != null
-      ? `, ~${Math.round(ivs.fullYearSavingsRate)}% projected savings rate`
-      : ''
-    const netSign = ivs.fullYearNet >= 0 ? '+' : ''
-    lines.push(
-      `- Current year (${ctx.thisYear}) projection: ` +
-      `~$${Math.round(ivs.fullYearIncome).toLocaleString()} net take-home income (post-tax; 401k and benefits are payroll deductions that never appear in bank transactions — this figure IS take-home pay; YTD actuals + salary forecast for remaining months), ` +
-      `~$${Math.round(ivs.fullYearExpenses).toLocaleString()} expenses (YTD actuals + budget targets for remaining months), ` +
-      `net ${netSign}$${Math.round(ivs.fullYearNet).toLocaleString()}${savingsNote}`
-    )
-
-    lines.push(
-      `  - Expense methodology note: forward months (after today) use budget target amounts, not actual run-rate. ` +
-      `If actual spending is tracking under budget, the real net will exceed the projected figure above.`
-    )
-  }
-
-  // Trailing 12-month actuals (spans two calendar years — for trend context only).
-  // Include the trailing net so the AI can explain gaps between this and the
-  // current-year projection: the gap is almost always budget conservatism
-  // (forward months use budget targets > actual run-rate) or one-time income items.
-  const trailingNet = s.incomeTrailing - s.spendTrailing
-  const trailingNetSign = trailingNet >= 0 ? '+' : ''
-  lines.push(
-    `- Trailing 12-month actuals (${s.transactionCount} rows, spans prior + current year): ` +
-    `~$${Math.round(s.spendTrailing).toLocaleString()} spend, ` +
-    `~$${Math.round(s.incomeTrailing).toLocaleString()} income, ` +
-    `net ${trailingNetSign}$${Math.round(trailingNet).toLocaleString()}. ` +
-    `If this trailing net differs from the current-year projection net above, the gap is typically: ` +
-    `(1) budget targets for forward months are more conservative than actual run-rate spending — if spending tracks under budget, the real year-end net will be higher than projected; ` +
-    `(2) the trailing window spans two calendar years and may include one-time income (tax refunds, bonuses, reimbursements) not captured in the salary forecast for remaining months.`
-  )
-
-  // Excluded categories — important for the AI to understand what's filtered out
-  // and why certain transactions don't appear in income/expense totals.
-  const excludedCats = (ctx.categories ?? []).filter(c => c.exclude_from_totals).map(c => c.category)
-  if (excludedCats.length > 0) {
-    lines.push(
-      `- Categories excluded from all income/expense totals (transfers and credit-card payments, ` +
-      `filtered to prevent double-counting cash that moves between accounts): ${excludedCats.join(', ')}`
-    )
-  }
-
-  const inc = ctx.incomeEstimate
-  if (inc && inc.grossWages > 0) {
-    lines.push(
-      `- Salary profile (${inc.year}${inc.estimated ? ', est.' : ''}, for tax reference only — use "Current year projection" above for actual net income): ` +
-      `$${Math.round(inc.grossWages).toLocaleString()} gross, ` +
-      `~${(inc.effectiveRate * 100).toFixed(0)}% est. effective tax rate ` +
-      `(federal $${Math.round(inc.federalTax).toLocaleString()}, ` +
-      `FICA $${Math.round(inc.ficaTax).toLocaleString()}, ` +
-      `state $${Math.round(inc.stateTax).toLocaleString()})`
-    )
-  }
-
-  if (s.categoryCount) {
-    const byGroup = {}
-    for (const c of ctx.categories) {
-      byGroup[c.group] = (byGroup[c.group] || 0) + 1
-    }
-    const groups = Object.entries(byGroup)
-      .map(([g, n]) => `${g} (${n})`)
-      .join(', ')
-    lines.push(`- Budget categories: ${s.categoryCount} across groups — ${groups}`)
-  }
-
-  if (s.commitmentCount) {
-    const active = ctx.commitments.filter(c => c.status === 'active')
-    const names = (active.length ? active : ctx.commitments).map(c => c.name).join(', ')
-    lines.push(`- Commitments: ${s.commitmentCount} (${s.activeCommitmentCount} active) — ${names}`)
-  }
-
-  if (s.budgetLineItemCount) {
-    lines.push(
-      `- Budget (${ctx.thisYear}): ${s.budgetLineItemCount} line items, ` +
-      `~$${Math.round(s.budgetTotal).toLocaleString()} planned for the year`
-    )
-  } else if (s.budgetYears.length) {
-    lines.push(`- Budget years on file: ${s.budgetYears.join(', ')}`)
-  }
-
-  if (ctx.wealth) {
-    lines.push(
-      `- Latest wealth snapshot (${ctx.wealth.snapshot_date}): ` +
-      `net worth $${Number(ctx.wealth.net_worth || 0).toLocaleString()}`
-    )
-  }
-
-  const scenarios = ctx?.scenarios ?? []
-  if (scenarios.length) {
-    const modeled = scenarios.filter(s => s.state === 'modeled')
-    const committed = scenarios.filter(s => s.state === 'committed')
-    if (committed.length) {
-      lines.push(`\n## Committed Scenarios (${committed.length})`)
-      for (const s of committed) {
-        const total = (s.adjustments ?? []).reduce((sum, a) => sum + cashEffect(a), 0)
-        lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — ${s.adjustments?.length ?? 0} adjustments, net cash effect ${total < 0 ? '−' : '+'}$${Math.abs(Math.round(total)).toLocaleString()}/period`)
-      }
-    }
-    if (modeled.length) {
-      lines.push(`\n## Modeled Scenarios (${modeled.length})`)
-      for (const s of modeled) {
-        const total = (s.adjustments ?? []).reduce((sum, a) => sum + cashEffect(a), 0)
-        lines.push(`- "${s.name}"${s.description ? ': ' + s.description : ''} — ${s.adjustments?.length ?? 0} adjustments, net cash effect ${total < 0 ? '−' : '+'}$${Math.abs(Math.round(total)).toLocaleString()}/period`)
-      }
-    }
-  }
-
-  const prefsBlock = formatPreferencesForBrief(ctx?.aiPreferences)
-  if (prefsBlock) lines.push('\n' + prefsBlock)
-
-  return lines.join('\n')
 }

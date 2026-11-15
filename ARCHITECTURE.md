@@ -50,7 +50,7 @@ The app has two coexisting layers:
 Traditional UI — widgets, sliders, toggles, charts, assumption inputs. Renders directly from Neon. Zero AI token cost. Fast, tactile, always available. The user can interact entirely without invoking the AI.
 
 **AI Layer (conversational)**
-The AI acts *on* the dashboard — it doesn't replace it. User asks a question via the command bar; the AI moves levers, surfaces a scenario widget, and delivers a short narrative answer. The dashboard updates to reflect the AI's output. Chat history is accessible but secondary.
+The AI acts *on* the dashboard — it doesn't replace it. (Original V1 vision; the in-app command bar was removed 2026-11 and Claude chat via the MCP connector now plays this role.) User asks a question; the AI moves levers, surfaces a scenario widget, and delivers a short narrative answer. The dashboard updates to reflect the AI's output. Chat history is accessible but secondary.
 
 These layers are not modes — they coexist. The AI enhances the dashboard; the dashboard gives the AI's output a structured visual home.
 
@@ -78,7 +78,7 @@ The **Dashboard** is the hub — the control center. Each **Module** is a spoke 
   the SW). See `docs/PWA.md`.
 - **Public landing page (added 2026-09-29):** `/welcome`
   (`app/welcome/page.jsx` → `src/modules/landing/`). Every other route renders
-  inside `AppShell` (auth gate, sidebar, AI command bar); `AppRoot` skips the
+  inside `AppShell` (auth gate, sidebar); `AppRoot` skips the
   shell for paths in `PUBLIC_PATHS` so this page needs no session. Its CSS is
   scoped under `.lp` with `lp-`-prefixed class names because `App.css` sets a
   global `body { overflow: hidden }` and defines names like `.app`/`.sidebar`;
@@ -131,12 +131,7 @@ The default landing screen after login. Widget canvas with drag-to-rearrange con
 
 **AI-generated widgets:** Savable as custom widgets. Generated once (one token cost), then rendered deterministically from Neon like any pre-defined widget.
 
-**Command Bar:** Persistent, context-aware input that follows the user across all modules. On desktop: bottom-of-canvas input bar. On mobile: floating action button (FAB) that expands to a bottom sheet. AI responses manifest as widgets or cards in the canvas — not as a separate chat screen.
-
-*(Updated 2026-08-09)* The command bar is also the app's write surface for the
-assistant: it can operate any module through the tool registry (§5.2.0), showing
-a confirmation card before anything is saved, and keeps a ⟲ CHANGES tab listing
-what it wrote with an Undo where one exists.
+**Command Bar (removed 2026-11):** the in-app assistant bar (bottom input bar / mobile FAB, confirmation card, ⟲ CHANGES tab) was removed. The MCP connector (§5.2.2) is now the conversational interface: Claude chat reads and edits the same data through the same tool registry. The only AI left in the UI is one-shot helpers: file parsers (Pay Periods, Credit Cards), Monarch import bucket suggestions, and the Budget tab-match button.
 
 ### 4.2 Cash Flow Timing
 Month-by-month view of when money actually moves. Surfaces large and irregular expenses before they arrive. Powered entirely by the Non-Monthly commitment structure in Neon — no AI required to render.
@@ -428,7 +423,7 @@ Discovered during Supabase → Neon migration assessment (2026-07-04): 5 tables 
 
 **bill_amounts** (77 rows) — per-bill, per-month actual/planned amount overrides.
 
-Monthly itemization (local Codex change, 2026-10-04; migration 023 must be applied before use): `bill_amounts.items` is a nullable JSONB array of `{ id, name, amount }`. NULL retains legacy scalar entry; an empty array is an itemized zero-total month. `amount` remains the single aggregate consumed by Schedule, transfer/savings calculations, and the existing cash-series resolver. The server derives it in cents from validated items. `item_revision` advances on both scalar and item writes; item saves carry the expected monthly row ID and revision. Existing-row UPDATE checks both atomically, while first INSERT refuses conflicts. Scalar writes/deletes refuse itemized rows. Only unlinked variable bills support itemization, preserving existing amount resolution for fixed/forecast/actuals/card-linked bills. The existing pay day determines the item's period; items do not have separate dates or recurrence rules. The shared bill tool registry exposes `list_bill_amount_items`, `add_bill_amount_item`, `update_bill_amount_item`, and `remove_bill_amount_item` to the in-app assistant and MCP through the same authenticated route and validation seam. Live database and MCP execution remain unverified.
+Monthly itemization (local Codex change, 2026-10-04; migration 023 must be applied before use): `bill_amounts.items` is a nullable JSONB array of `{ id, name, amount }`. NULL retains legacy scalar entry; an empty array is an itemized zero-total month. `amount` remains the single aggregate consumed by Schedule, transfer/savings calculations, and the existing cash-series resolver. The server derives it in cents from validated items. `item_revision` advances on both scalar and item writes; item saves carry the expected monthly row ID and revision. Existing-row UPDATE checks both atomically, while first INSERT refuses conflicts. Scalar writes/deletes refuse itemized rows. Only unlinked variable bills support itemization, preserving existing amount resolution for fixed/forecast/actuals/card-linked bills. The existing pay day determines the item's period; items do not have separate dates or recurrence rules. The shared bill tool registry exposes `list_bill_amount_items`, `add_bill_amount_item`, `update_bill_amount_item`, and `remove_bill_amount_item` to MCP (originally also the since-removed in-app assistant) through the same authenticated route and validation seam. Live database and MCP execution remain unverified.
 
 **account_balances** (10 rows) — per-account balance snapshots, twice-monthly (`period_half` 1 or 2).
 
@@ -438,33 +433,32 @@ All five carry `user_id → auth.users(id)` and the same `for all using (user_id
 
 ### 5.2 AI Context Strategy
 
-At session start, the app automatically loads the following from Neon into the AI's context window:
+> **Update 2026-11:** the in-app assistant was removed; the MCP connector (§5.2.2) is the conversational interface and reads live data through `lookup_data` and the other tools. The `buildContextBrief` prompt builder, `sendMessage.js` and the persona/prompt stack are gone. `contextLoader.js` stays, but only as the shared data loader behind `aiContext`, `summary` and `yearTxns` that Dashboard, Forecast, Scenarios, Settings and Wealth read via the shell context (the `aiContext` name is historical). `/api/ai-chat` and `ANTHROPIC_API_KEY` stay for the one-shot parsers and suggestions.
 
-- Trailing 12 months of transactions (summary level, not full row detail) — a full annual cycle so the AI captures seasonality and annual bills rather than anchoring to a rolling quarter
+What `contextLoader.js` loads at session start:
+
+- Trailing 12 months of transactions (summary level, not full row detail) — a full annual cycle so seasonality and annual bills are visible
 - Full budget_categories table (targets and types)
 - Current year budget_line_items (month-by-month schedule)
 - All active commitments with cost structures
 - Current committed scenario (if any)
 - Most recent wealth snapshot
 - Any open modeled scenarios
-- AI personalization preferences (from `ai_preferences`) — rendered into the brief as explicit "how to brief this user" guidance the AI honors
+- AI personalization preferences (from `ai_preferences`), still editable in Settings and available to the connector's briefing tools
 
 This gives the AI enough context to answer any decision question without requiring the user to re-explain their financial situation each session. The context is structured, not a raw data dump — it's formatted as a financial brief the AI can reason against immediately.
 
-**Current-year income/expense projection in context** *(added 2026-06-23):* `buildContextBrief` now computes the same current-year projection as the Income vs. Expenses dashboard widget: YTD actuals from `yearTxns` (Jan–Dec, current year) + salary/budget forecast for remaining months via `incomeVsExpenses()`. This ensures AI briefings quote the same income and expense figures the user sees on screen. The command bar path still uses `ctx.transactions` (trailing 365 days); this is a known gap to resolve.
-
-**yearTxns threading** *(added 2026-06-23):* The dashboard `BriefingWidget` now passes `yearTxns` (the same fresh Jan–Dec slice the widgets use) into `sendAIMessage` → `buildContextBrief`, bypassing `ctx.transactions` which is loaded once at session start and subject to a 1,000-row default limit on the trailing-365-day window.
+*(History, 2026-06-23: `buildContextBrief` and the `yearTxns` threading into `sendAIMessage` existed to keep AI briefings consistent with the dashboard widgets. Both were removed with the in-app assistant in 2026-11; `yearTxns` remains the shared Jan–Dec slice the widgets use.)*
 
 **Query pagination (1,000-row default limit)** *(added 2026-06-23):* All DB helper functions that could realistically return >1000 rows now use a `.range()`-based pagination loop. The original backend's 1,000-row default limit was silent (no error, no warning) — it simply returned a truncated result set. Affected functions: `getRecentTransactions`, `getTransactionsByMonth`, `getTransactionsForYear`, `getDistinctTransactionAccounts`, `getIncomeTransactions`, `getBudgetLineItems`, `getBudgetYears`, `getBillAmountsForBill`, `getBillAmountsRange`. Low-volume tables (categories, commitments, scenarios, snapshots, etc.) are left with default limits.
 
 #### 5.2.0 AI Tool Registry (added 2026-08-09)
 
-The assistant can operate every module the user can operate by hand. All
-AI-callable actions live in one registry, `src/lib/ai/tools/index.js`, which
+*(2026-11: the in-app assistant that originally used this registry was removed; the registry now serves the MCP connector only.)* All AI-callable actions live in one registry, `src/lib/ai/tools/index.js`, which
 composes per-module files (`bills.tools.js`, `budget.tools.js`,
 `forecast.tools.js`, `scenarios.tools.js`, `commitments.tools.js`,
 `wealth.tools.js`, `accounts.tools.js`, `creditcards.tools.js`,
-`income.tools.js`, `settings.tools.js`, `read.tools.js`).
+`income.tools.js`, `settings.tools.js`, `read.tools.js`). The scenario create/adjustment schemas and executors live in `src/lib/ai/tools/scenarioWrites.js` (moved out of the deleted `scenarioAgent.js`).
 
 Each tool declares:
 
@@ -487,57 +481,18 @@ datasets. The context brief (§5.2) is a session summary; `lookup_data` is the
 live path and the assistant is instructed to use it before editing anything
 that already exists.
 
-**Writes are always confirmed.** `src/lib/ai/toolAgent.js` runs the tool loop:
-read calls execute immediately, and any write call pauses the turn, returning
-each call's preview payload for the confirmation card. `confirmPendingActions`
-executes them and re-enters the loop (so a chained change is gated at each
-write); `cancelPendingActions` returns error tool results so the model
-acknowledges the decline. Reads issued in the same turn as a write are executed
-at the pause and held, so the model receives one coherent result set whichever
-way the user decides.
+**Confirmation.** The in-app confirm card, tool loop (`toolAgent.js`) and activity log / undo (`actionLog.js`) were removed in 2026-11. Writes now run when the connecting Claude client's own tool-approval step lets the call through (§5.2.2). The `preview` field on each tool is no longer used by any in-app UI; it is kept so the registry shape is unchanged.
 
-**Activity log.** `src/lib/ai/actionLog.js` records each confirmed write
-(`{ tool, group, summary, undo }`) in localStorage per user, surfaced in the
-assistant's ⟲ CHANGES tab. Undo runs the inverse tool directly, with no AI call.
-Only well-defined inverses are offered — a created record can be deleted; an
-edit over prior values is not reconstructable and shows no Undo.
-
-**Not covered:** transaction rows and CSV import have no manual edit path in the
-UI either, so they stay read-only. The Scenario Composer keeps its own narrow
-in-module agent (`scenarioAgent.js`); the global assistant reaches the same
-scenario capabilities through the registry.
-
-**Cost:** the 39 schemas are ~6.4k tokens, sent with every assistant call and
-covered by the existing system-prompt cache breakpoint (tools sit inside that
-cache prefix), so repeat turns in a session read them at ~0.1x.
+**Not covered:** transaction rows and CSV import have no manual edit path in the UI either, so they stay read-only through the registry.
 
 #### 5.2.1 AI Prompt Stack
 
-All AI calls are assembled from four layers in this order:
+*(Removed 2026-11 along with the in-app assistant: the four-layer stack (persona in `sendMessage.js`, context brief, `*.prompts.js` systemExtra, scenario tool schemas) no longer exists.)* What remains:
 
-1. **Main persona** (`sendMessage.js` → `SYSTEM_PROMPT`) — the assistant's core identity, reasoning style, clarification rules, and financial domain instructions. Appended to every single AI call.
-
-   *(The global assistant additionally gets `assistant.prompts.js` →
-   `buildAssistantSystemExtra()` as layer 3: the rules for acting on the app —
-   read before write, never invent ids, budget vs. forecast are different
-   datasets, every write is user-confirmed.)*
-
-2. **Context brief** (`contextLoader.js` → `buildContextBrief()`) — the user's live financial picture: transactions, budget targets, commitments, scenarios, salary profile. Regenerated per call from Neon data.
-
-3. **systemExtra** (`*.prompts.js` files) — call-specific instructions appended for a given agent or capability. Examples: category name hints for `create_scenario`, existing-adjustment context for `add_adjustment`, phase instructions for the Grill Session interview.
-
-4. **Tool schemas** (`scenarioAgent.js`) — Anthropic tool definitions (`CREATE_SCENARIO_TOOL`, `ADD_ADJUSTMENT_TOOL`). Tool descriptions are part of the prompt in Anthropic's API.
-
-**Source file convention:**
-- `src/lib/ai/sendMessage.js` — main persona (layer 1)
-- `src/lib/ai/toolAgent.js` — the full-capability tool loop (preview → confirm → execute)
-- `src/lib/ai/tools/*.tools.js` — one file per module's tools; `tools/index.js` is the registry
-- `src/lib/ai/contextLoader.js` — context brief (layer 2)
-- `src/lib/ai/*.prompts.js` — systemExtra builders (layer 3) — one file per agent/capability
-- `src/lib/ai/parserBase.js` — shared system prompt builder and utilities for the parser family
-- Parser-specific SYSTEM strings are built with `parserSystem(task)` from `parserBase.js`
-
-When debugging unexpected AI behavior, check the layers in order: is the persona correct? Is the context data fresh? Is systemExtra providing the right framing? Are tool descriptions accurate?
+- `src/lib/ai/aiChatRaw.js` + `/api/ai-chat` — the server-side call path for one-shot helpers; the API key never reaches the browser
+- `src/lib/ai/parserBase.js` — shared system prompt builder (`parserSystem(task)`) for the parser family (`billParser`, `accountParser`, `billAmountsParser`, `creditCardParser`, `categoryMapper`), plus `suggestBuckets` and `suggestTabMatches`
+- `src/lib/ai/models.js` — family-pinned model resolution
+- `src/lib/ai/tools/*.tools.js` — the connector's tool definitions
 
 #### 5.2.2 MCP Connector (added 2026-08-22)
 
@@ -574,7 +529,7 @@ file, which are also bundled into the browser, and webpack refuses to bundle
 Node built-ins into client code.
 
 **Confirmation model.** Every tool's `execute()` already ignores the `ctx`
-argument (only `preview()`, used solely for the in-app confirmation card,
+argument (only `preview()`, which was used solely for the since-removed in-app confirmation card,
 reads it) — so the MCP route calls `executeTool()` directly with an empty
 ctx and skips `buildPreview()`/the pause-for-confirmation step entirely.
 Writes execute the moment the connecting Claude client's own tool-approval
@@ -767,16 +722,13 @@ The parser maps Monarch's Category directly to `budget_categories.category`. Gro
 - **Mobile:** Card-based module navigation (bottom or home screen)
 - **Sidebar items:** Dashboard, Cash Flow Timing, Scenario Planner, Annual Budget Builder, Long-Term Commitments, Wealth Trajectory, Settings, Mapping (Coming Soon)
 
-### 8.2 AI Command Bar
-- **Web:** Persistent input bar at bottom of canvas, follows user across all modules
-- **Mobile:** Floating action button (FAB), expands to bottom sheet
-- **Context-aware:** Knows which module is active; AI responses are scoped to that module's data
-- **Output:** AI responses manifest as widgets or cards in the current canvas view — not as a standalone chat screen
+### 8.2 AI Command Bar (removed 2026-11)
+The bottom command bar and mobile FAB were removed. Claude chat through the MCP connector is the conversational interface (§5.2.2). One-shot AI helpers (file parsers, import bucket suggestions, tab-match button) remain in their own screens.
 
 ### 8.3 Responsive Breakpoints
 - Desktop: full sidebar + widget canvas
 - Tablet: collapsible sidebar + simplified canvas
-- Mobile: card navigation + FAB command bar
+- Mobile: card navigation
 
 ---
 

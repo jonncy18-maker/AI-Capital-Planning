@@ -1,6 +1,5 @@
 import MobileMonthPlan, { MobileMonthSelector, MobileAnnualSummary } from '../common/MobileMonthPlan.jsx'
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
-import GrillSession from './GrillSession.jsx'
 import OutlookView from './OutlookView.jsx'
 import { getTransactionsForAnalysis } from '../../lib/db/transactions.js'
 import { getBudgetCategories, importCategoryMappings } from '../../lib/db/budgetCategories.js'
@@ -810,7 +809,6 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
   const [editing, setEditing] = useState(false)
   const [showReopen, setShowReopen] = useState(false)
   const [statusBusy, setStatusBusy] = useState(false)
-  const [grilling, setGrilling] = useState(false)
   const [viewMode, setViewMode] = useState(initialView)
   const [outlookTargetsFor, setOutlookTargetsFor] = useState(null) // { year, targets }
   const fileRef = useRef(null)
@@ -841,7 +839,7 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
   useEffect(() => { loadYearData(year) }, [year, loadYearData])
 
   // Reference numbers for a future year with no budget yet: the outlook's
-  // group totals for that year, shown as a target and fed to the grill.
+  // group totals for that year, shown as a target.
   const noBudgetYet = !loading && lineItems.length === 0
   useEffect(() => {
     if (!noBudgetYet || year <= CUR_YEAR) return
@@ -1046,11 +1044,9 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
         moduleId="budget"
         mobile={mobile}
         icon="▦"
-        title={viewMode === 'outlook' && !generating && !reviewing && !editing && !grilling ? '5-Year Outlook' : grilling ? 'Budget Interview' : reviewing ? 'Match Detail Tabs' : editing ? 'Edit Budget' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
-        subtitle={viewMode === 'outlook' && !generating && !reviewing && !editing && !grilling
+        title={viewMode === 'outlook' && !generating && !reviewing && !editing ? '5-Year Outlook' : reviewing ? 'Match Detail Tabs' : editing ? 'Edit Budget' : generating ? (analysis?.sourceLabel ? 'Import Budget' : 'Generate Budget') : 'Annual Budget Builder'}
+        subtitle={viewMode === 'outlook' && !generating && !reviewing && !editing
           ? 'Driver-based forward years: one number per group, compounded from the detailed budget.'
-          : grilling
-          ? `Building ${year} budget — AI-guided interview`
           : reviewing
             ? 'Confirm which detail tab feeds each non-monthly category.'
             : editing
@@ -1058,7 +1054,7 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
               : generating
                 ? 'Review and adjust the proposed targets, then save the year.'
                 : 'Build and review a month-by-month budget for the year.'}
-        actions={!generating && !reviewing && !editing && !grilling && (
+        actions={!generating && !reviewing && !editing && (
           <>
             <ViewToggle mode={viewMode} year={year} onChange={setViewMode} />
             {viewMode === 'detailed' && <>
@@ -1077,7 +1073,6 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
               </button>
             ) : lineItems.length > 0 ? (
               <>
-                <button onClick={() => setGrilling(true)} style={ghostBtn}>✦ Grill Session</button>
                 <button onClick={() => setEditing(true)} style={ghostBtn}>✎ Edit</button>
                 <button onClick={handleFinalize} disabled={statusBusy} style={{ ...ghostBtn, opacity: statusBusy ? 0.6 : 1 }}>
                   {statusBusy ? 'Finalizing…' : '🔒 Finalize'}
@@ -1105,21 +1100,10 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
         </div>
       )}
 
-      {viewMode === 'outlook' && !generating && !reviewing && !editing && !grilling ? (
+      {viewMode === 'outlook' && !generating && !reviewing && !editing ? (
         <OutlookView userId={userId} mobile={mobile} initialScenarioId={initialScenarioId} />
       ) : loading ? (
         <div style={{ color: 'var(--tx-3)', fontSize: 14, padding: 32 }}>Loading budget…</div>
-      ) : grilling ? (
-        <GrillSession
-          userId={userId}
-          targetYear={year}
-          commitments={commitments}
-          lineItems={lineItems}
-          outlookTargets={outlookTargets}
-          onGenerateDraft={() => { setGrilling(false); handleAnalyze() }}
-          onCancel={() => setGrilling(false)}
-          mobile={mobile}
-        />
       ) : reviewing && pendingUpload ? (
         <TabMatchReview
           pending={pendingUpload}
@@ -1154,8 +1138,7 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
             No budget for {year} yet
           </div>
           <div style={{ fontSize: 13.5, color: 'var(--tx-2)', lineHeight: 1.6, maxWidth: 460, margin: '0 auto 24px' }}>
-            Use the AI-guided interview to build a thorough {year} budget step by step,
-            or generate one automatically from your transaction history.
+            Generate one automatically from your transaction history, or upload a budget file.
           </div>
           {outlookTargets && (
             <div style={{ maxWidth: 400, margin: '0 auto 20px', textAlign: 'left', border: '1px solid var(--bd)', borderRadius: 10, padding: '12px 16px', background: 'var(--bg-card)' }}>
@@ -1170,27 +1153,8 @@ export default function Budget({ userId, mobile, initialView = 'detailed', initi
               ))}
             </div>
           )}
-          {/* Primary option: Grill Session */}
-          <div style={{ maxWidth: 400, margin: '0 auto 16px', cursor: 'pointer' }} onClick={() => setGrilling(true)}>
-            <div style={{
-              border: '1px solid var(--accent-bd, var(--accent))',
-              borderRadius: 10,
-              padding: '18px 22px',
-              background: 'var(--accent-bg)',
-              textAlign: 'left',
-              transition: 'opacity .15s',
-            }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', marginBottom: 5 }}>
-                ✦ Start Grill Session
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--tx-2)', lineHeight: 1.5 }}>
-                AI-guided interview to build your {year} budget
-              </div>
-            </div>
-          </div>
-          {/* Secondary options */}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...ghostBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
+            <button onClick={handleAnalyze} disabled={analyzing || importing} style={{ ...primaryBtn, opacity: analyzing || importing ? 0.6 : 1 }}>
               {analyzing ? 'Analyzing…' : '✦ Generate from History'}
             </button>
             <button onClick={() => fileRef.current?.click()} disabled={importing || analyzing} style={{ ...ghostBtn, opacity: importing || analyzing ? 0.6 : 1 }}>
