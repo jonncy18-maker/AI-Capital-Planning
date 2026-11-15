@@ -101,6 +101,10 @@ describe('planMappings', () => {
     const categoriesById = new Map([['c1', { id: 'c1', category: 'Auto', mapping_source: null }]])
     expect(map({ categoriesById }).removable).toBe(false)
   })
+  it('is not removable once the user renamed it', () => {
+    const categoriesById = new Map([['c1', { id: 'c1', category: 'My Auto', mapping_source: 'auto_import' }]])
+    expect(map({ categoriesById })).toMatchObject({ removable: false, reason: 'edited' })
+  })
   it('is not removable when referenced elsewhere', () => {
     expect(map({ referencedIds: new Set(['c1']) })).toMatchObject({ removable: false, reason: 'referenced' })
   })

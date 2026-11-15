@@ -75,6 +75,8 @@ export function planMappings({ recorded, categoriesById, usageByName, referenced
     const cat = categoriesById.get(rec.budget_category_id)
     if (!cat) return out(false, 'already_removed')
     if (cat.mapping_source !== 'auto_import') return out(false, 'not_auto_created')
+    // Renamed since the import: the user has taken ownership, so keep it.
+    if (n(cat.category) !== n(rec.category)) return out(false, 'edited')
     if (referencedIds.has(rec.budget_category_id)) return out(false, 'referenced')
 
     const name = n(cat.category)
