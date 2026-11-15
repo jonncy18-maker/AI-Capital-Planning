@@ -2,7 +2,7 @@
 // their execute and preview builders. Shared by the scenario tool registry
 // (tools/scenarios.tools.js), which the MCP connector reaches.
 
-import { createScenario, addAdjustment } from '../../db/scenarios.js'
+import { createScenario, addAdjustment, deleteScenario } from '../../db/scenarios.js'
 import { getBudgetCategories, upsertCategory } from '../../db/budgetCategories.js'
 
 export const CREATE_SCENARIO_TOOL = {
@@ -79,25 +79,44 @@ export async function executeCreateScenario(userId, input) {
     cats = await getBudgetCategories(userId)
   }
 
+  // Resolve every row before the first write, so only the writes can fail midway.
+  const thisYear = new Date().getFullYear()
+  const rows = []
+  let netDelta = 0
+  for (const a of adjustments) {
+    const categoryId = resolveCategoryId(cats, a.category)
+    if (!categoryId) continue
+    const delta = Number(a.delta_amount) || 0
+    rows.push({
+      category_id: categoryId,
+      month: Math.min(12, Math.max(1, Math.round(Number(a.month) || 1))),
+      year: Math.round(Number(a.year) || thisYear),
+      delta_amount: delta,
+      label: a.label || input.name || '',
+    })
+    netDelta += isIncomeCategoryName(cats, a.category) ? delta : -delta
+  }
+
   const scenario = await createScenario(userId, {
     name: input.name || 'New scenario',
     description: input.description || '',
   })
 
-  const thisYear = new Date().getFullYear()
+  // The writes are separate API calls, so a failure partway would leave a
+  // half-built scenario that a retry duplicates. Delete it, then rethrow.
   let written = 0
-  let netDelta = 0
-  for (const a of adjustments) {
-    const categoryId = resolveCategoryId(cats, a.category)
-    if (!categoryId) continue
-    const month = Math.min(12, Math.max(1, Math.round(Number(a.month) || 1)))
-    const year = Math.round(Number(a.year) || thisYear)
-    const delta = Number(a.delta_amount) || 0
-    await addAdjustment(userId, scenario.id, {
-      category_id: categoryId, month, year, delta_amount: delta, label: a.label || input.name || '',
-    })
-    written += 1
-    netDelta += isIncomeCategoryName(cats, a.category) ? delta : -delta
+  try {
+    for (const row of rows) {
+      await addAdjustment(userId, scenario.id, row)
+      written += 1
+    }
+  } catch (err) {
+    try {
+      await deleteScenario(userId, scenario.id)
+    } catch {
+      // Keep the original failure; the half-built scenario is the lesser problem.
+    }
+    throw err
   }
 
   return { scenarioId: scenario.id, name: scenario.name, adjustmentCount: written, netDelta }
