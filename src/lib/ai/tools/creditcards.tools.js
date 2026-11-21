@@ -70,7 +70,7 @@ export const creditCardTools = [
         points_value_cents: toNullableNumber(input.points_value_cents) ?? existing?.points_value_cents ?? null,
         color: existing?.color ?? null,
         active: input.active ?? existing?.active ?? true,
-        display_order: existing?.display_order ?? null,
+        display_order: existing?.display_order ?? 0,
       }
       if (existing) payload.id = existing.id
       const saved = await upsertCreditCard(userId, payload)
