@@ -44,7 +44,11 @@ export async function POST(request) {
   try {
     const sql = getNeonSql()
 
-    const [, inserted] = await sql.transaction([
+    // Committed scenarios are materialized into forecast_line_items, so wiping
+    // the year also wipes them. The third statement re-applies this year's
+    // committed-scenario adjustments, in the same transaction, so a reset never
+    // silently drops a scenario the user already committed.
+    const [, inserted, reapplied] = await sql.transaction([
       sql`
         DELETE FROM forecast_line_items
         WHERE user_id = ${userId} AND budget_year = ${year}
@@ -67,13 +71,30 @@ export async function POST(request) {
           AND bli.category_id IS NOT NULL
         RETURNING id
       `,
+      sql`
+        INSERT INTO forecast_line_items
+          (user_id, budget_year, category_id, month, amount, label, note, source, source_scenario_id)
+        SELECT
+          ${userId}, sa.year, sa.category_id, sa.month, sa.delta_amount,
+          CASE WHEN COALESCE(sa.label, '') <> '' THEN s.name || ' — ' || sa.label ELSE s.name END,
+          'Committed scenario: ' || s.name,
+          'scenario',
+          s.id
+        FROM scenario_adjustments sa
+        JOIN scenarios s ON s.id = sa.scenario_id AND s.user_id = sa.user_id
+        WHERE sa.user_id = ${userId}
+          AND sa.year = ${year}
+          AND s.state = 'committed'
+          AND sa.category_id IS NOT NULL
+        RETURNING id
+      `,
     ])
 
     if (!inserted || inserted.length === 0) {
       return Response.json([])
     }
 
-    const ids = inserted.map(r => r.id)
+    const ids = [...inserted, ...(reapplied ?? [])].map(r => r.id)
     const rows = await sql`
       SELECT
         fli.*,
